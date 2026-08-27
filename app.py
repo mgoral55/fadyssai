@@ -91,9 +91,9 @@ st.markdown("""
         border-color: #5c2c16 !important;
     }
 
-    /* Zmniejszenie marginesu między mapą a listą */
+    /* Zmniejszenie marginesu między listą a mapą */
     iframe {
-        margin-bottom: -15px !important;
+        margin-top: -10px !important;
     }
     
     /* --- POPRAWKI KOLORYSTYCZNE: INPUTY, PRZYCISKI, CZAT --- */
@@ -590,7 +590,6 @@ def ustaw_aktywna_wycieczke_id(wycieczka_id):
 
 def pobierz_skrocone_opcje_wycieczek():
     conn = sqlite3.connect('fadyssai.db')
-    # Pobieramy wyłącznie wycieczki, które NIE są odbyte (odbyta = 0)
     df_w = pd.read_sql('SELECT id, tytul_wycieczki FROM wycieczka WHERE odbyta = 0', conn)
     conn.close()
     if df_w.empty:
@@ -701,7 +700,7 @@ aktualizuj_tool = types.FunctionDeclaration(
     ),
 )
 
-utworz_wycieczke_tool = types.FunctionDeclaration(
+utworz_nowa_wycieczke_tool = types.FunctionDeclaration(
     name="utworz_nowa_wycieczke",
     description="Tworzy nową wycieczkę w bazie danych SQLite.",
     parameters=types.Schema(
@@ -855,7 +854,7 @@ usun_checklist_tool = types.FunctionDeclaration(
 
 fadyssai_tools = types.Tool(function_declarations=[
     aktualizuj_tool, 
-    utworz_wycieczke_tool, 
+    utworz_nowa_wycieczke_tool, 
     edytuj_wycieczke_tool, 
     usun_wycieczke_tool, 
     dodaj_krok_tool, 
@@ -1115,6 +1114,16 @@ def pokaz_checklistu_popup(wycieczka_id):
                     ilosc_str = f" *({itm['ilosc']})*" if pd.notna(itm['ilosc']) and itm['ilosc'] != "1" else ""
                     st.checkbox(f"{itm['nazwa']}{ilosc_str}", key=f"chk_pop_{itm['id']}")
 
+# --- POPUP ZADANIA DLA DZIECI (MODAL) ---
+@st.dialog("🧒 Dodatkowe zadania dla dzieci")
+def pokaz_zadania_dzieci_popup(tekst_zadan):
+    st.markdown("Wykonajcie wspólnie poniższe zadania podczas zwiedzania:")
+    zadania_lista = [z.strip() for z in str(tekst_zadan).split('.') if z.strip()]
+    if not zadania_lista:
+        zadania_lista = [str(tekst_zadan)]
+    for i, zadanie in enumerate(zadania_lista):
+        st.checkbox(f"{zadanie}", key=f"zad_dziecko_modal_{i}")
+
 # --- FUNKCJA RENDEROWANIA KARTY WYCIECZKI (PEŁNY OPIS) ---
 def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_przycisk_aktywnej=True):
     conn = sqlite3.connect('fadyssai.db')
@@ -1250,13 +1259,15 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_przycisk_aktyw
                 st.session_state.jump_to_step = None
 
             st.markdown(anchor_html, unsafe_allow_html=True)
+            
+            # Link do podstrony miejsca w tytule kroku
             st.markdown(f"""
             <div style="background-color:#e6ded1; padding:14px; border-left:6px solid #663223; border-top:1px solid #b89b82; border-bottom:1px solid #b89b82; margin-top:20px; margin-bottom:8px;">
-                <span style="font-size:16pt; font-weight:900; color:#663223; text-transform:uppercase;">🏛️ Krok {krok_num}: {krok_nazwa}</span>
+                <span style="font-size:16pt; font-weight:900; color:#663223; text-transform:uppercase;">🏛️ Krok {krok_num}: </span>
             </div>
             """, unsafe_allow_html=True)
-
-            if st.button(f"🔍 Otwórz szczegóły miejsca: {krok_nazwa}", key=f"btn_miejsce_podstrona_{wycieczka_id}_{k['id']}"):
+            
+            if st.button(f" Miejsce {krok_num}: {krok_nazwa}", key=f"link_krok_miejsce_{wycieczka_id}_{k['id']}"):
                 st.session_state.active_place_id = miejsce_id_cel
                 st.session_state.active_tab = "zabytek"
                 st.query_params["tab"] = "zabytek"
@@ -1329,6 +1340,20 @@ if st.session_state.active_tab == "chat":
 elif st.session_state.active_tab == "zabytek":
     st.markdown('<div class="antique-header">🏛️ Miejsca & Zabytki</div>', unsafe_allow_html=True)
     
+    list_options_zabytek = ["-- Wybierz miejsce z listy --"] + list(df_miejsca['numer_miejsca'].astype(str) + ". " + df_miejsca['nazwa'])
+    curr_zabytek_idx = 0
+    if st.session_state.active_place_id and st.session_state.active_place_id.isdigit():
+        matching_z = [i for i, opt in enumerate(list_options_zabytek) if opt.startswith(st.session_state.active_place_id + ".")]
+        if matching_z:
+            curr_zabytek_idx = matching_z[0]
+
+    wybrany_zabytek_main = st.selectbox("", options=list_options_zabytek, index=curr_zabytek_idx, key="main_zabytek_sb", label_visibility="collapsed")
+    if wybrany_zabytek_main != "-- Wybierz miejsce z listy --":
+        chosen_id_m = wybrany_zabytek_main.split(". ")[0]
+        if chosen_id_m != st.session_state.active_place_id:
+            st.session_state.active_place_id = chosen_id_m
+            st.rerun()
+
     m = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB positron")
     dodaj_marker_domku(m)
 
@@ -1363,20 +1388,6 @@ elif st.session_state.active_tab == "zabytek":
                 st.session_state.active_place_id = clicked_id
                 st.rerun()
 
-    list_options_zabytek = ["-- Wybierz miejsce z listy --"] + list(df_miejsca['numer_miejsca'].astype(str) + ". " + df_miejsca['nazwa'])
-    curr_zabytek_idx = 0
-    if st.session_state.active_place_id and st.session_state.active_place_id.isdigit():
-        matching_z = [i for i, opt in enumerate(list_options_zabytek) if opt.startswith(st.session_state.active_place_id + ".")]
-        if matching_z:
-            curr_zabytek_idx = matching_z[0]
-
-    wybrany_zabytek_main = st.selectbox("", options=list_options_zabytek, index=curr_zabytek_idx, key="main_zabytek_sb", label_visibility="collapsed")
-    if wybrany_zabytek_main != "-- Wybierz miejsce z listy --":
-        chosen_id_m = wybrany_zabytek_main.split(". ")[0]
-        if chosen_id_m != st.session_state.active_place_id:
-            st.session_state.active_place_id = chosen_id_m
-            st.rerun()
-
     st.markdown("---")
 
     if st.session_state.active_place_id:
@@ -1387,12 +1398,31 @@ elif st.session_state.active_tab == "zabytek":
             
             st.markdown(f"""
             <div style="background-color:#e6ded1; padding:12px; border-top:3px solid #b89b82; border-bottom:3px solid #b89b82; text-align:center; font-size:14pt; font-weight:900; text-transform:uppercase; margin-bottom:15px; color:#663223;">
-                🏛️ {p['numer_miejsca']}. {p['nazwa']}
+                🏛️ Miejsce {p['numer_miejsca']}. {p['nazwa']}
             </div>
             """, unsafe_allow_html=True)
 
+            is_visited = int(p.get('odwiedzone', 0)) == 1
+            if is_visited:
+                st.markdown("""
+                <div style="text-align: center; margin-bottom: 10px;">
+                    <span style="background-color: #d4edda; color: #155724; padding: 4px 12px; border-radius: 12px; font-weight: bold; border: 1px solid #c3e6cb; font-size: 11pt;">
+                        ✨ Odwiedzone
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            numer_m = str(p['numer_miejsca'])
+            zdjecie_wyswietlone = False
+            for ekst in ['.jpg', '.jpeg', '.png']:
+                sciezka_zdjecia = os.path.join("zdjecia", f"{numer_m}{ekst}")
+                if os.path.exists(sciezka_zdjecia):
+                    st.image(sciezka_zdjecia, caption=f"{p['nazwa']}")
+                    zdjecie_wyswietlone = True
+                    break
+
             google_search_url = f"https://www.google.com/search?q={p['nazwa']} Kreta"
-            st.markdown(f"<p style='text-align:center;'><a href='{google_search_url}' target='_blank' style='color:#8b4513;k'>🔍 Szukaj w Google</a></p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='text-align:center;'><a href='{google_search_url}' target='_blank' style='color:#8b4513;'>🔍 Szukaj w Google</a></p>", unsafe_allow_html=True)
             
             if pd.notna(p['opis']) and str(p['opis']).strip() != "":
                 st.info(p['opis'])
@@ -1415,8 +1445,10 @@ elif st.session_state.active_tab == "zabytek":
             st.markdown(f"**⚡ Potencjał meltdownu:** {p['potencjal_meltdownu']}")
             st.markdown(f"**🛡️ Strategie na meltdown:** {p['strategie_meltdown']}")
             
-            st.markdown("### 🧒 Zadania dla dzieci")
-            st.markdown(p['zadania_dla_dzieci'])
+            # Przycisk otwierający okno modalne z zadaniami dla dzieci
+            if pd.notna(p['zadania_dla_dzieci']) and str(p['zadania_dla_dzieci']).strip() != "":
+                if st.button("🧒 Dodatkowe zadania dla dzieci", key=f"btn_zad_dzieci_{p['numer_miejsca']}"):
+                    pokaz_zadania_dzieci_popup(p['zadania_dla_dzieci'])
             
             st.markdown(f"**🔗 Najlepiej połączyć z:** {p['najlepiej_polaczyc']}")
 
