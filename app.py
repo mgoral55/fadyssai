@@ -1125,7 +1125,7 @@ def pokaz_zadania_dzieci_popup(tekst_zadan):
         st.checkbox(f"{zadanie}", key=f"zad_dziecko_modal_{i}")
 
 # --- FUNKCJA RENDEROWANIA KARTY WYCIECZKI (PEŁNY OPIS) ---
-def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_przycisk_aktywnej=True):
+def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
     conn = sqlite3.connect('fadyssai.db')
     wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
     kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
@@ -1138,23 +1138,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_przycisk_aktyw
             🚗 Wycieczka #{w_gen['id']}: {w_gen['tytul_wycieczki']}
         </div>
         """, unsafe_allow_html=True)
-        
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if pokaz_przycisk_aktywnej:
-                if st.button(f"🎯 Ustaw jako aktualną", key=f"btn_akt_{wycieczka_id}", use_container_width=True):
-                    ustaw_aktywna_wycieczke_id(wycieczka_id)
-                    st.success(f"Ustawiono wycieczkę #{wycieczka_id} jako aktualną!")
-                    st.rerun()
-        with col_btn2:
-            is_odbyta = int(w_gen.get('odbyta', 0)) == 1
-            if is_odbyta:
-                st.markdown('<div style="background-color:#d4edda; color:#155724; padding:8px; border-radius:6px; text-align:center; font-weight:bold; border:1px solid #c3e6cb;">✨ Wycieczka przebyta</div>', unsafe_allow_html=True)
-            else:
-                if st.button(f"✅ Oznacz jako przebytą", key=f"btn_odbyte_{wycieczka_id}", use_container_width=True):
-                    oznacz_wycieczke_i_miejsca_jako_odbyte(wycieczka_id)
-                    st.success(f"Wycieczka i powiązane miejsca zostały oznaczone jako odbyte!")
-                    st.rerun()
 
         if pokaz_mape:
             punkty_trasy = [(DOMEK_LAT, DOMEK_LON)]
@@ -1260,14 +1243,13 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_przycisk_aktyw
 
             st.markdown(anchor_html, unsafe_allow_html=True)
             
-            # Link do podstrony miejsca w tytule kroku
             st.markdown(f"""
             <div style="background-color:#e6ded1; padding:14px; border-left:6px solid #663223; border-top:1px solid #b89b82; border-bottom:1px solid #b89b82; margin-top:20px; margin-bottom:8px;">
                 <span style="font-size:16pt; font-weight:900; color:#663223; text-transform:uppercase;">🏛️ Krok {krok_num}: </span>
             </div>
             """, unsafe_allow_html=True)
             
-            if st.button(f" Miejsce {krok_num}: {krok_nazwa}", key=f"link_krok_miejsce_{wycieczka_id}_{k['id']}"):
+            if st.button(f"Miejsce {krok_num}. {krok_nazwa}", key=f"link_krok_miejsce_{wycieczka_id}_{k['id']}"):
                 st.session_state.active_place_id = miejsce_id_cel
                 st.session_state.active_tab = "zabytek"
                 st.query_params["tab"] = "zabytek"
@@ -1306,6 +1288,25 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_przycisk_aktyw
                 st.markdown(f"**🛡️ Strategia zapobiegania meltdownowi:** {k['strategie_meltdown']}")
             
             st.markdown("---")
+
+        # --- UMIESZCZENIE PRZYCISKÓW NA SAMYM KOŃCU KARTY WYCIECZKI (PRZED AGENTEM AI) ---
+        st.markdown("---")
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button(f"🎯 Ustaw jako aktualną", key=f"btn_akt_{wycieczka_id}", use_container_width=True):
+                ustaw_aktywna_wycieczke_id(wycieczka_id)
+                st.success(f"Ustawiono wycieczkę #{wycieczka_id} jako aktualną!")
+                st.rerun()
+        with col_btn2:
+            is_odbyta = int(w_gen.get('odbyta', 0)) == 1
+            if is_odbyta:
+                st.markdown('<div style="background-color:#d4edda; color:#155724; padding:8px; border-radius:6px; text-align:center; font-weight:bold; border:1px solid #c3e6cb;">✨ Wycieczka przebyta</div>', unsafe_allow_html=True)
+            else:
+                if st.button(f"✅ Oznacz jako przebytą", key=f"btn_odbyte_{wycieczka_id}", use_container_width=True):
+                    oznacz_wycieczke_i_miejsca_jako_odbyte(wycieczka_id)
+                    st.success(f"Wycieczka i powiązane miejsca zostały oznaczone jako odbyte!")
+                    st.rerun()
+
     else:
         st.warning("Nie znaleziono wybranej wycieczki.")
 
@@ -1445,7 +1446,6 @@ elif st.session_state.active_tab == "zabytek":
             st.markdown(f"**⚡ Potencjał meltdownu:** {p['potencjal_meltdownu']}")
             st.markdown(f"**🛡️ Strategie na meltdown:** {p['strategie_meltdown']}")
             
-            # Przycisk otwierający okno modalne z zadaniami dla dzieci
             if pd.notna(p['zadania_dla_dzieci']) and str(p['zadania_dla_dzieci']).strip() != "":
                 if st.button("🧒 Dodatkowe zadania dla dzieci", key=f"btn_zad_dzieci_{p['numer_miejsca']}"):
                     pokaz_zadania_dzieci_popup(p['zadania_dla_dzieci'])
@@ -1538,6 +1538,6 @@ elif st.session_state.active_tab == "route":
     if not curr_w_check.empty and int(curr_w_check.iloc[0]['odbyta']) == 1:
         st.info("✨ Aktualnie ustawiona wycieczka została już ukończona i przebyta. Wybierz inną wycieczkę z menu wycieczek.")
     else:
-        renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False, pokaz_przycisk_aktywnej=False)
+        renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False)
 
     renderuj_sekcje_czatu_ai("tab_route")
