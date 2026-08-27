@@ -132,9 +132,20 @@ def init_db():
             calosciowy_opis_wycieczki TEXT,
             calosciowa_taktyka_dnia TEXT,
             calkowity_czas_wycieczki_godziny TEXT,
-            szacowana_godzina_powrotu TEXT
+            szacowana_godzina_powrotu TEXT,
+            pobudka TEXT,
+            czas_wyjazdu TEXT
         )
     ''')
+
+    try:
+        cursor.execute("ALTER TABLE wycieczka ADD COLUMN pobudka TEXT")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE wycieczka ADD COLUMN czas_wyjazdu TEXT")
+    except:
+        pass
 
     # Tabela KROK_WYCIECZKI
     cursor.execute('''
@@ -231,15 +242,17 @@ def init_db():
     if cursor.fetchone()[0] == 0:
         # WYCIECZKA 1
         cursor.execute('''
-            INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             "1",
             "Mity i Oceaniczne Głębiny: Pałac w Knossos & Cretaquarium",
             "Wyprawa łącząca mityczną historię starożytnej Krety z podwodnym światem głębin w klimatyzowanym akwarium oraz relaksem nad jeziorem Kournas.",
             "Żelazna kontrola czasu rano w Knossos, obiad w Cretaquarium i popołudniowe wyciszenie nad jeziorem.",
             "12.0",
-            "18:30"
+            "18:30",
+            "07:00",
+            "07:30"
         ))
 
         kroki_w1 = [
@@ -267,15 +280,17 @@ def init_db():
 
         # WYCIECZKA 2
         cursor.execute('''
-            INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             "2",
             "Wyspa Łez i Sekretne Zatoki: Spinalonga & Agios Nikolaos",
             "Malownicza wyprawa na historyczną wyspę-twierdzę Spinalonga z rejsem statkiem z Eloundy oraz popołudniowym relaksem i kawą nad malowniczym jeziorem Voulismeni w Agios Nikolaos.",
             "Wczesny wyjazd na parking w Elounda, rejs na Spinalongę przed największym upałem, a po obiedzie spacer wokół jeziora w Agios Nikolaos.",
             "10.5",
-            "17:00"
+            "17:00",
+            "07:30",
+            "08:00"
         ))
 
         kroki_w2 = [
@@ -499,8 +514,8 @@ def pokaz_checklistu_popup(wycieczka_id):
                     ilosc_str = f" *({itm['ilosc']})*" if pd.notna(itm['ilosc']) and itm['ilosc'] != "1" else ""
                     st.checkbox(f"{itm['nazwa']}{ilosc_str}", key=f"chk_pop_{itm['id']}")
 
-# --- FUNKCJA RENDEROWANIA KARTY WYCIECZKI ---
-def renderuj_karte_wycieczki(wycieczka_id):
+# --- FUNKCJA RENDEROWANIA KARTY WYCIECZKI (PEŁNY OPIS) ---
+def renderuj_karte_wycieczki(wycieczka_id, pokaz_zdjecie_i_mape=True):
     conn = sqlite3.connect('fadyssai.db')
     wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
     kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
@@ -514,59 +529,60 @@ def renderuj_karte_wycieczki(wycieczka_id):
         </div>
         """, unsafe_allow_html=True)
         
-        # 1. ZDJĘCIE
-        pierwsze_miejsce_nr = None
-        if not kroki_df.empty:
-            pierwsze_miejsce_nr = str(kroki_df.iloc[0]['krok_wycieczki'])
-        
-        foto_wycieczki = f"{pierwsze_miejsce_nr}.jpg" if pierwsze_miejsce_nr else "1.jpg"
-        renderuj_zdjecie_lub_placeholder(foto_wycieczki)
-
-        # 2. MAPA
-        punkty_trasy = [(DOMEK_LAT, DOMEK_LON)]
-        surowe_wspolrzedne = [(DOMEK_LAT, DOMEK_LON)]
-        
-        for _, k in kroki_df.iterrows():
-            coords = str(k['wspolrzedne'])
-            if ',' in coords:
-                try:
-                    parts = coords.split(',')
-                    lat = float(parts[0].strip())
-                    lon = float(parts[1].strip())
-                    punkty_trasy.append((lat, lon, str(k['krok_wycieczki']), str(k['nazwa'])))
-                    surowe_wspolrzedne.append((lat, lon))
-                except:
-                    pass
-
-        surowe_wspolrzedne.append((DOMEK_LAT, DOMEK_LON))
-
-        if len(punkty_trasy) > 1:
-            srodek_lat = sum([p[0] for p in punkty_trasy]) / len(punkty_trasy)
-            srodek_lon = sum([p[1] for p in punkty_trasy]) / len(punkty_trasy)
+        if pokaz_zdjecie_i_mape:
+            # 1. ZDJĘCIE
+            pierwsze_miejsce_nr = None
+            if not kroki_df.empty:
+                pierwsze_miejsce_nr = str(kroki_df.iloc[0]['krok_wycieczki'])
             
-            m_trasa = folium.Map(location=[srodek_lat, srodek_lon], zoom_start=10, tiles="CartoDB positron")
-            dodaj_marker_domku(m_trasa)
+            foto_wycieczki = f"{pierwsze_miejsce_nr}.jpg" if pierwsze_miejsce_nr else "1.jpg"
+            renderuj_zdjecie_lub_placeholder(foto_wycieczki)
+
+            # 2. MAPA
+            punkty_trasy = [(DOMEK_LAT, DOMEK_LON)]
+            surowe_wspolrzedne = [(DOMEK_LAT, DOMEK_LON)]
             
-            for p in punkty_trasy:
-                if len(p) == 4:
-                    lat, lon, krok, nazwa = p
-                    icon_html = f'<div style="background-color:#663223;color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-family:Arial;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.4);">{krok}</div>'
-                    icon = folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))
-                    folium.Marker([lat, lon], icon=icon, tooltip=f"Krok {krok}: {nazwa}").add_to(m_trasa)
+            for _, k in kroki_df.iterrows():
+                coords = str(k['wspolrzedne'])
+                if ',' in coords:
+                    try:
+                        parts = coords.split(',')
+                        lat = float(parts[0].strip())
+                        lon = float(parts[1].strip())
+                        punkty_trasy.append((lat, lon, str(k['krok_wycieczki']), str(k['nazwa'])))
+                        surowe_wspolrzedne.append((lat, lon))
+                    except:
+                        pass
+
+            surowe_wspolrzedne.append((DOMEK_LAT, DOMEK_LON))
+
+            if len(punkty_trasy) > 1:
+                srodek_lat = sum([p[0] for p in punkty_trasy]) / len(punkty_trasy)
+                srodek_lon = sum([p[1] for p in punkty_trasy]) / len(punkty_trasy)
                 
-            trasa_po_drogach = pobierz_trase_osrm(surowe_wspolrzedne)
-            if trasa_po_drogach:
-                folium.PolyLine(trasa_po_drogach, color="#8b4513", weight=4, opacity=0.8).add_to(m_trasa)
+                m_trasa = folium.Map(location=[srodek_lat, srodek_lon], zoom_start=10, tiles="CartoDB positron")
+                dodaj_marker_domku(m_trasa)
                 
-            st_folium(m_trasa, width="100%", height=320, returned_objects=[])
+                for p in punkty_trasy:
+                    if len(p) == 4:
+                        lat, lon, krok, nazwa = p
+                        icon_html = f'<div style="background-color:#663223;color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-family:Arial;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.4);">{krok}</div>'
+                        icon = folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))
+                        folium.Marker([lat, lon], icon=icon, tooltip=f"Krok {krok}: {nazwa}").add_to(m_trasa)
+                    
+                trasa_po_drogach = pobierz_trase_osrm(surowe_wspolrzedne)
+                if trasa_po_drogach:
+                    folium.PolyLine(trasa_po_drogach, color="#8b4513", weight=4, opacity=0.8).add_to(m_trasa)
+                    
+                st_folium(m_trasa, width="100%", height=320, returned_objects=[])
 
-        st.markdown("---")
-        
-        # 3. OPIS
-        if pd.notna(w_gen['calosciowy_opis_wycieczki']) and str(w_gen['calosciowy_opis_wycieczki']).strip() != "":
-            st.info(w_gen['calosciowy_opis_wycieczki'])
+            st.markdown("---")
             
-        st.markdown("---")
+            # 3. OPIS
+            if pd.notna(w_gen['calosciowy_opis_wycieczki']) and str(w_gen['calosciowy_opis_wycieczki']).strip() != "":
+                st.info(w_gen['calosciowy_opis_wycieczki'])
+                
+            st.markdown("---")
 
         # 4. ETAPY (Spis treści)
         st.markdown("### 🗺️ Etapy i Miejsca wycieczki")
@@ -579,8 +595,10 @@ def renderuj_karte_wycieczki(wycieczka_id):
 
         st.markdown("---")
 
-        # 5. CZASY
-        st.markdown(f"**⏱️ Czas trwania wycieczki:** {w_gen['calkowity_czas_wycieczki_godziny']}h | Szacowany powrót: **{w_gen['szacowana_godzina_powrotu']}**")
+        # 5. CZASY I POBUDKA
+        pobudka_val = w_gen.get('pobudka', '07:00') if pd.notna(w_gen.get('pobudka')) else '07:00'
+        wyjazd_val = w_gen.get('czas_wyjazdu', '07:30') if pd.notna(w_gen.get('czas_wyjazdu')) else '07:30'
+        st.markdown(f"**⏰ Pobudka:** {pobudka_val} | **🚗 Wyjazd:** {wyjazd_val} | **⏱️ Czas trwania:** {w_gen['calkowity_czas_wycieczki_godziny']}h | Powrót: **{w_gen['szacowana_godzina_powrotu']}**")
 
         st.markdown("---")
 
@@ -601,7 +619,7 @@ def renderuj_karte_wycieczki(wycieczka_id):
 
         st.markdown("---")
 
-        # 8. POSZCZEGÓLNE KROKI
+        # 8. POSZCZEGÓLNE KROKI (PEŁNA ROZPISKA)
         st.markdown("### 📍 Szczegółowe kroki wycieczki")
         for _, k in kroki_df.iterrows():
             krok_num = str(k['krok_wycieczki'])
@@ -844,10 +862,11 @@ elif st.session_state.active_tab == "map":
         if wybrana_mapa_sb:
             wybrana_id = wybrana_mapa_sb.split(". ")[0]
             st.markdown("---")
-            renderuj_karte_wycieczki(wybrana_id)
+            renderuj_karte_wycieczki(wybrana_id, pokaz_zdjecie_i_mape=True)
     else:
         st.info("Brak dostępnych wycieczek w bazie.")
 
 elif st.session_state.active_tab == "route":
     aktualne_id = pobierz_aktywna_wycieczke_id()
-    renderuj_karte_wycieczki(aktualne_id)
+    # Pod samochodzikiem renderujemy pełną kartę, ale pomijamy zdjęcie, mapę i główny opis
+    renderuj_karte_wycieczki(aktualne_id, pokaz_zdjecie_i_mape=False)
