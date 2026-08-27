@@ -8,7 +8,6 @@ from streamlit_folium import st_folium
 import os
 import urllib.request
 import json
-import base64
 
 # --- 1. KONFIGURACJA STRONY I STYL PERGAMINU ---
 st.set_page_config(page_title="Fadyssai - Kreta", layout="centered", page_icon="🧭")
@@ -62,33 +61,6 @@ st.markdown("""
         background-color: #b89b82;
         color: white;
         border-color: #663223;
-    }
-    /* Styl sekcji zdjęć pod belką */
-    .photo-container {
-        width: 100%;
-        margin-bottom: 15px;
-        text-align: center;
-    }
-    .photo-container img {
-        width: 100%;
-        max-height: 250px;
-        object-fit: cover;
-        border-radius: 8px;
-        border: 2px solid #b89b82;
-    }
-    .photo-placeholder {
-        width: 100%;
-        height: 120px;
-        background-color: #e6ded1;
-        border: 2px dashed #b89b82;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #663223;
-        font-style: italic;
-        margin-bottom: 15px;
-        font-size: 14px;
     }
     
     /* --- POPRAWKI KOLORYSTYCZNE: INPUTY, PRZYCISKI, CZAT --- */
@@ -214,7 +186,6 @@ def init_db():
             wspolrzedne TEXT,
             okienko_zwiedzania TEXT,
             godzina_ewakuacji TEXT,
-            cel_nastepny_i_czas TEXT,
             czerwona_strefa_ostrzezenie TEXT,
             strefa_luzu_i_regeneracji TEXT,
             podsumowanie_taktyki TEXT,
@@ -307,12 +278,12 @@ def init_db():
         ))
 
         kroki_w1 = [
-            ("1", "1", "Pałac w Knossos", "35.2980, 25.1631", "08:00 - 09:45", "09:45", "Cretaquarium (25 min)", "BEZWZGLĘDNIE EWAKUOWAĆ SIĘ PRZED 10:00! Tłumy i upał.", "Brak - rygor czasowy.", "Szybkie wejście na otwarcie o 8:00.", "Wysoki (tłumy, brak cienia, duchota)", "Użycie aplikacji 3D na iPadzie jako kotwica uwagi, szybka ewakuacja w razie buntu.", "Legendarna stolica minojskiej Krety z ruinami pałacu króla Minosa."),
-            ("1", "2", "Cretaquarium", "35.3326, 25.2825", "10:10 - 12:00", "12:00", "Obiad na miejscu (0 min)", "Unikać godzin szczytu (11:00 - 15:00).", "Średnia - kawiarnia obok.", "Wyciszenie sensoryczne w klimatyzowanym półmroku.", "Średni (pogłos w betonowych halach, tłum)", "Słuchawki wygłuszające, powolne tempo, półmrok przy akwariach.", "Jedno z największych i najnowocześniejszych oceanariów w basenie Morza Śródziemnego.")
+            ("1", "1", "Pałac w Knossos", "35.2980, 25.1631", "08:00 - 09:45", "09:45", "BEZWZGLĘDNIE EWAKUOWAĆ SIĘ PRZED 10:00! Tłumy i upał.", "Brak - rygor czasowy.", "Szybkie wejście na otwarcie o 8:00.", "Wysoki (tłumy, brak cienia, duchota)", "Użycie aplikacji 3D na iPadzie jako kotwica uwagi, szybka ewakuacja w razie buntu.", "Legendarna stolica minojskiej Krety z ruinami pałacu króla Minosa."),
+            ("1", "2", "Cretaquarium", "35.3326, 25.2825", "10:10 - 12:00", "12:00", "Unikać godzin szczytu (11:00 - 15:00).", "Średnia - kawiarnia obok.", "Wyciszenie sensoryczne w klimatyzowanym półmroku.", "Średni (pogłos w betonowych halach, tłum)", "Słuchawki wygłuszające, powolne tempo, półmrok przy akwariach.", "Jedno z największych i najnowocześniejszych oceanariów w basenie Morza Śródziemnego.")
         ]
         cursor.executemany('''
-            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, cel_nastepny_i_czas, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', kroki_w1)
 
         cursor.execute("INSERT INTO checklist (id_wycieczki, typ) VALUES ('1', 'sprzęt')")
@@ -344,12 +315,12 @@ def init_db():
         ))
 
         kroki_w2 = [
-            ("2", "1", "Elounda - Port i Rejs na Spinalongę", "35.2575, 25.7314", "09:00 - 11:30", "11:30", "Agios Nikolaos (20 min)", "Silne słońce na łodzi i na wyspie. Konieczne nakrycia głowy!", "Odpoczynek w cieniu kawiarni w porcie Elounda.", "Spokojny rejs tradycyjną łodzią i zwiedzanie historycznej twierdzy.", "Średni (długi rejs, nasłonecznienie)", "Okulary przeciwsłoneczne, woda z lodem w termosie, czapka.", "Dawna wenecka twierdza i późniejsza kolonia trędowatych z niezwykłą atmosferą."),
-            ("2", "2", "Agios Nikolaos & Jezioro Voulismeni", "35.1915, 25.7171", "12:50 - 15:30", "15:30", "Powrót do bazy", "Dużo turystów wokół jeziora w godzinach popołudniowych.", "Kawiarnie nad brzegiem jeziora z widokiem na klify.", "Niespieszny obiad i lody nad wodą.", "Niski (przyjemny spacer, dużo miejsc do zatrzymania)", "Lody jako nagroda, swobodne tempo.", "Urokliwe miasteczko wokół bezdennego jeziora połączonego z morzem wąskim kanałem.")
+            ("2", "1", "Elounda - Port i Rejs na Spinalongę", "35.2575, 25.7314", "09:00 - 11:30", "11:30", "Silne słońce na łodzi i na wyspie. Konieczne nakrycia głowy!", "Odpoczynek w cieniu kawiarni w porcie Elounda.", "Spokojny rejs tradycyjną łodzią i zwiedzanie historycznej twierdzy.", "Średni (długi rejs, nasłonecznienie)", "Okulary przeciwsłoneczne, woda z lodem w termosie, czapka.", "Dawna wenecka twierdza i późniejsza kolonia trędowatych z niezwykłą atmosferą."),
+            ("2", "2", "Agios Nikolaos & Jezioro Voulismeni", "35.1915, 25.7171", "12:50 - 15:30", "15:30", "Dużo turystów wokół jeziora w godzinach popołudniowych.", "Kawiarnie nad brzegiem jeziora z widokiem na klify.", "Niespieszny obiad i lody nad wodą.", "Niski (przyjemny spacer, dużo miejsc do zatrzymania)", "Lody jako nagroda, swobodne tempo.", "Urokliwe miasteczko wokół bezdennego jeziora połączonego z morzem wąskim kanałem.")
         ]
         cursor.executemany('''
-            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, cel_nastepny_i_czas, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', kroki_w2)
 
         cursor.execute("INSERT INTO checklist (id_wycieczki, typ) VALUES ('2', 'sprzęt')")
@@ -392,6 +363,150 @@ def utworz_nowa_wycieczke(id, tytul_wycieczki, calosciowy_opis_wycieczki, calosc
     conn.commit()
     conn.close()
     return f"Nowa wycieczka '{tytul_wycieczki}' (ID: {id}) została utworzona w bazie Fadyssai!"
+
+def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, szacowana_godzina_powrotu=None, pobudka=None, czas_wyjazdu=None):
+    conn = sqlite3.connect('fadyssai.db')
+    cursor = conn.cursor()
+    if tytul_wycieczki:
+        cursor.execute('UPDATE wycieczka SET tytul_wycieczki = ? WHERE id = ?', (tytul_wycieczki, str(id)))
+    if calosciowy_opis_wycieczki:
+        cursor.execute('UPDATE wycieczka SET calosciowy_opis_wycieczki = ? WHERE id = ?', (calosciowy_opis_wycieczki, str(id)))
+    if calosciowa_taktyka_dnia:
+        cursor.execute('UPDATE wycieczka SET calosciowa_taktyka_dnia = ? WHERE id = ?', (calosciowa_taktyka_dnia, str(id)))
+    if szacowana_godzina_powrotu:
+        cursor.execute('UPDATE wycieczka SET szacowana_godzina_powrotu = ? WHERE id = ?', (szacowana_godzina_powrotu, str(id)))
+    if pobudka:
+        cursor.execute('UPDATE wycieczka SET pobudka = ? WHERE id = ?', (pobudka, str(id)))
+    if czas_wyjazdu:
+        cursor.execute('UPDATE wycieczka SET czas_wyjazdu = ? WHERE id = ?', (czas_wyjazdu, str(id)))
+    conn.commit()
+    conn.close()
+    return f"Wycieczka #{id} została zaktualizowana."
+
+def usun_wycieczke(id_wycieczki):
+    conn = sqlite3.connect('fadyssai.db')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM wycieczka WHERE id = ?', (str(id_wycieczki),))
+    cursor.execute('DELETE FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
+    cursor.execute('SELECT id FROM checklist WHERE id_wycieczki = ?', (str(id_wycieczki),))
+    chl_rows = cursor.fetchall()
+    for row in chl_rows:
+        cursor.execute('DELETE FROM checklist_item WHERE id_checklisty = ?', (row[0],))
+    cursor.execute('DELETE FROM checklist WHERE id_wycieczki = ?', (str(id_wycieczki),))
+    conn.commit()
+    conn.close()
+    return f"Wycieczka #{id_wycieczki} wraz z krokami i checklistami została całkowicie usunięta z bazy."
+
+def dodaj_krok_do_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis):
+    conn = sqlite3.connect('fadyssai.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO krok_wycieczki (
+            id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, 
+            godzina_ewakuacji, czerwona_strefa_ostrzezenie, 
+            strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, 
+            strategie_meltdown, opis
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (str(id_wycieczki), str(krok_wycieczki), nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis))
+    conn.commit()
+    conn.close()
+    return f"Dodano krok nr {krok_wycieczki} ({nazwa}) do wycieczki #{id_wycieczki} w bazie!"
+
+def edytuj_krok_w_wycieczce(id_wycieczki, krok_wycieczki, nazwa=None, okienko_zwiedzania=None, godzina_ewakuacji=None, czerwona_strefa_ostrzezenie=None, strefa_luzu_i_regeneracji=None, podsumowanie_taktyki=None, potencjal_meltdownu=None, strategie_meltdown=None, opis=None):
+    conn = sqlite3.connect('fadyssai.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? AND (krok_wycieczki = ? OR nazwa LIKE ?)', (str(id_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%"))
+    res = cursor.fetchone()
+    if not res:
+        conn.close()
+        return f"Nie znaleziono kroku {krok_wycieczki} dla wycieczki #{id_wycieczki}."
+    
+    krok_row_id = res[0]
+    if nazwa:
+        cursor.execute('UPDATE krok_wycieczki SET nazwa = ? WHERE id = ?', (nazwa, krok_row_id))
+    if okienko_zwiedzania:
+        cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (okienko_zwiedzania, krok_row_id))
+    if godzina_ewakuacji:
+        cursor.execute('UPDATE krok_wycieczki SET godzina_ewakuacji = ? WHERE id = ?', (godzina_ewakuacji, krok_row_id))
+    if czerwona_strefa_ostrzezenie:
+        cursor.execute('UPDATE krok_wycieczki SET czerwona_strefa_ostrzezenie = ? WHERE id = ?', (czerwona_strefa_ostrzezenie, krok_row_id))
+    if strefa_luzu_i_regeneracji:
+        cursor.execute('UPDATE krok_wycieczki SET strefa_luzu_i_regeneracji = ? WHERE id = ?', (strefa_luzu_i_regeneracji, krok_row_id))
+    if podsumowanie_taktyki:
+        cursor.execute('UPDATE krok_wycieczki SET podsumowanie_taktyki = ? WHERE id = ?', (podsumowanie_taktyki, krok_row_id))
+    if potencjal_meltdownu:
+        cursor.execute('UPDATE krok_wycieczki SET potencjal_meltdownu = ? WHERE id = ?', (potencjal_meltdownu, krok_row_id))
+    if strategie_meltdown:
+        cursor.execute('UPDATE krok_wycieczki SET strategie_meltdown = ? WHERE id = ?', (strategie_meltdown, krok_row_id))
+    if opis:
+        cursor.execute('UPDATE krok_wycieczki SET opis = ? WHERE id = ?', (opis, krok_row_id))
+        
+    conn.commit()
+    conn.close()
+    return f"Krok {krok_wycieczki} w wycieczce #{id_wycieczki} został zaktualizowany."
+
+def usun_krok_z_wycieczki(id_wycieczki, krok_wycieczki):
+    conn = sqlite3.connect('fadyssai.db')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM krok_wycieczki WHERE id_wycieczki = ? AND (krok_wycieczki = ? OR nazwa LIKE ?)', (str(id_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%"))
+    conn.commit()
+    conn.close()
+    return f"Usunięto krok {krok_wycieczki} z wycieczki #{id_wycieczki}."
+
+def dodaj_element_checklisty(id_wycieczki, typ, nazwa, ilosc="1"):
+    conn = sqlite3.connect('fadyssai.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT id FROM checklist WHERE id_wycieczki = ? AND typ = ?', (str(id_wycieczki), typ))
+    res = cursor.fetchone()
+    if res:
+        chl_id = res[0]
+    else:
+        cursor.execute('INSERT INTO checklist (id_wycieczki, typ) VALUES (?, ?)', (str(id_wycieczki), typ))
+        chl_id = cursor.lastrowid
+    cursor.execute('INSERT INTO checklist_item (id_checklisty, nazwa, ilosc) VALUES (?, ?, ?)', (chl_id, nazwa, str(ilosc)))
+    conn.commit()
+    conn.close()
+    return f"Dodano do checklisty ({typ}) wycieczki #{id_wycieczki}: {nazwa} (ilość: {ilosc})"
+
+def edytuj_element_checklisty(id_wycieczki, typ, stara_nazwa, nowa_nazwa=None, nowa_ilosc=None):
+    conn = sqlite3.connect('fadyssai.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT id FROM checklist WHERE id_wycieczki = ? AND typ = ?', (str(id_wycieczki), typ))
+    res = cursor.fetchone()
+    if not res:
+        conn.close()
+        return f"Nie znaleziono checklisty typu {typ} dla wycieczki #{id_wycieczki}."
+    chl_id = res[0]
+    
+    cursor.execute('SELECT id FROM checklist_item WHERE id_checklisty = ? AND nazwa LIKE ?', (chl_id, f"%{stara_nazwa}%"))
+    item_res = cursor.fetchone()
+    if not item_res:
+        conn.close()
+        return f"Nie znaleziono elementu '{stara_nazwa}' w checkliście."
+    item_id = item_res[0]
+    
+    if nowa_nazwa:
+        cursor.execute('UPDATE checklist_item SET nazwa = ? WHERE id = ?', (nowa_nazwa, item_id))
+    if nowa_ilosc:
+        cursor.execute('UPDATE checklist_item SET ilosc = ? WHERE id = ?', (str(nowa_ilosc), item_id))
+        
+    conn.commit()
+    conn.close()
+    return f"Zaktualizowano element '{stara_nazwa}' w checkliście wycieczki #{id_wycieczki}."
+
+def usun_element_checklisty(id_wycieczki, typ, nazwa):
+    conn = sqlite3.connect('fadyssai.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT id FROM checklist WHERE id_wycieczki = ? AND typ = ?', (str(id_wycieczki), typ))
+    res = cursor.fetchone()
+    if not res:
+        conn.close()
+        return f"Nie znaleziono checklisty."
+    chl_id = res[0]
+    cursor.execute('DELETE FROM checklist_item WHERE id_checklisty = ? AND nazwa LIKE ?', (chl_id, f"%{nazwa}%"))
+    conn.commit()
+    conn.close()
+    return f"Usunięto element '{nazwa}' z checklisty wycieczki #{id_wycieczki}."
 
 def pobierz_wszystkie_miejsca():
     conn = sqlite3.connect('fadyssai.db')
@@ -440,17 +555,20 @@ def wczytaj_kontekst_zewnetrzny():
         except:
             pass
             
-    # Wstrzykiwanie aktualnego stanu bazy danych SQLite, aby AI widziało miejsca i wycieczki
     conn = sqlite3.connect('fadyssai.db')
     try:
         miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, typ, czas_dojazdu, orientacyjny_czas, koszt, konieczna_akcja FROM miejsca', conn)
-        wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki FROM wycieczka', conn)
+        wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia FROM wycieczka', conn)
+        kroki_df = pd.read_sql('SELECT id_wycieczki, krok_wycieczki, nazwa, okienko_zwiedzania FROM krok_wycieczki', conn)
+        checklisty_df = pd.read_sql('SELECT c.id_wycieczki, c.typ, i.nazwa, i.ilosc FROM checklist c JOIN checklist_item i ON c.id = i.id_checklisty', conn)
     except:
         miejsca_df = pd.DataFrame()
         wycieczki_df = pd.DataFrame()
+        kroki_df = pd.DataFrame()
+        checklisty_df = pd.DataFrame()
     conn.close()
 
-    tekst += "--- AKTUALNA BAZA MIEJSC I WYCIECZEK W SQLITE ---\n"
+    tekst += "--- AKTUALNA BAZA DANYCH W SQLITE ---\n"
     if not miejsca_df.empty:
         tekst += "Miejsca:\n"
         for _, r in miejsca_df.iterrows():
@@ -458,7 +576,15 @@ def wczytaj_kontekst_zewnetrzny():
     if not wycieczki_df.empty:
         tekst += "\nWycieczki:\n"
         for _, w in wycieczki_df.iterrows():
-            tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} ({w['calosciowy_opis_wycieczki']})\n"
+            tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Opis: {w['calosciowy_opis_wycieczki']} | Taktyka: {w['calosciowa_taktyka_dnia']}\n"
+    if not kroki_df.empty:
+        tekst += "\nKroki wycieczek:\n"
+        for _, k in kroki_df.iterrows():
+            tekst += f"- Wycieczka #{k['id_wycieczki']}, Krok {k['krok_wycieczki']}: {k['nazwa']} (Okienko: {k['okienko_zwiedzania']})\n"
+    if not checklisty_df.empty:
+        tekst += "\nChecklisty:\n"
+        for _, cl in checklisty_df.iterrows():
+            tekst += f"- Wycieczka #{cl['id_wycieczki']} [{cl['typ']}]: {cl['nazwa']} (ilość: {cl['ilosc']})\n"
 
     if os.path.exists("sources"):
         tekst += "\n--- WSPÓLNE ŹRÓDŁA WIEDZY RODZIN ---\n"
@@ -501,7 +627,7 @@ def dodaj_marker_domku(m):
 # --- 3. NARĘDZIA DLA GEMINI ---
 aktualizuj_tool = types.FunctionDeclaration(
     name="aktualizuj_miejsce",
-    description="Aktualizuje informacje o wybranym miejscu na Krecie (np. opis lub konieczną akcję) na podstawie numeru miejsca.",
+    description="Aktualizuje informacje o wybranym miejscu na Krecie na podstawie numeru miejsca.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
@@ -515,7 +641,7 @@ aktualizuj_tool = types.FunctionDeclaration(
 
 utworz_wycieczke_tool = types.FunctionDeclaration(
     name="utworz_nowa_wycieczke",
-    description="Tworzy nową wycieczkę w bazie danych SQLite na podstawie ustaleń z czatu.",
+    description="Tworzy nową wycieczkę w bazie danych SQLite.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
@@ -523,16 +649,160 @@ utworz_wycieczke_tool = types.FunctionDeclaration(
             "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Tytuł wycieczki"),
             "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Opis celów i przebiegu wyprawy"),
             "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Strategia unikania tłumów i meltdownów"),
-            "calkowity_czas_wycieczki_godziny": types.Schema(type=types.Type.STRING, description="Szacowany czas w godzinach, np. '10.0'"),
-            "szacowana_godzina_powrotu": types.Schema(type=types.Type.STRING, description="Godzina powrotu, np. '17:30'"),
-            "pobudka": types.Schema(type=types.Type.STRING, description="Godzina pobudki, np. '07:00'"),
-            "czas_wyjazdu": types.Schema(type=types.Type.STRING, description="Godzina wyjazdu, np. '07:30'"),
+            "calkowity_czas_wycieczki_godziny": types.Schema(type=types.Type.STRING, description="Szacowany czas w godzinach"),
+            "szacowana_godzina_powrotu": types.Schema(type=types.Type.STRING, description="Godzina powrotu"),
+            "pobudka": types.Schema(type=types.Type.STRING, description="Godzina pobudki"),
+            "czas_wyjazdu": types.Schema(type=types.Type.STRING, description="Godzina wyjazdu"),
         },
         required=["id", "tytul_wycieczki", "calosciowy_opis_wycieczki", "calosciowa_taktyka_dnia"]
     ),
 )
 
-fadyssai_tools = types.Tool(function_declarations=[aktualizuj_tool, utworz_wycieczke_tool])
+edytuj_wycieczke_tool = types.FunctionDeclaration(
+    name="edytuj_wycieczke",
+    description="Edytuje parametry istniejącej wycieczki.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "id": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+            "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Nowy tytuł"),
+            "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Nowy opis"),
+            "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Nowa taktyka"),
+            "szacowana_godzina_powrotu": types.Schema(type=types.Type.STRING, description="Nowa godzina powrotu"),
+            "pobudka": types.Schema(type=types.Type.STRING, description="Nowa godzina pobudki"),
+            "czas_wyjazdu": types.Schema(type=types.Type.STRING, description="Nowy czas wyjazdu"),
+        },
+        required=["id"]
+    ),
+)
+
+usun_wycieczke_tool = types.FunctionDeclaration(
+    name="usun_wycieczke",
+    description="Usuwa całą wycieczkę wraz z jej krokami i checklistami z bazy danych.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki do usunięcia"),
+        },
+        required=["id_wycieczki"]
+    ),
+)
+
+dodaj_krok_tool = types.FunctionDeclaration(
+    name="dodaj_krok_do_wycieczki",
+    description="Dodaje nowy krok do istniejącej wycieczki w bazie danych.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+            "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer kroku"),
+            "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca lub etapu"),
+            "wspolrzedne": types.Schema(type=types.Type.STRING, description="Współrzędne GPS"),
+            "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Okienko czasowe"),
+            "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="Godzina ewakuacji"),
+            "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Ostrzeżenie"),
+            "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING, description="Strefa wyciszenia"),
+            "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka dnia"),
+            "potencjal_meltdownu": types.Schema(type=types.Type.STRING, description="Ryzyko meltdowntu"),
+            "strategie_meltdown": types.Schema(type=types.Type.STRING, description="Strategie radzenia sobie"),
+            "opis": types.Schema(type=types.Type.STRING, description="Opis miejsca"),
+        },
+        required=["id_wycieczki", "krok_wycieczki", "nazwa", "wspolrzedne"]
+    ),
+)
+
+edytuj_krok_tool = types.FunctionDeclaration(
+    name="edytuj_krok_w_wycieczce",
+    description="Edytuje parametry istniejącego kroku wycieczki.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+            "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku do edycji"),
+            "nazwa": types.Schema(type=types.Type.STRING, description="Nowa nazwa"),
+            "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Nowe okienko czasowe"),
+            "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="Nowa godzina ewakuacji"),
+            "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Nowe ostrzeżenie"),
+            "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING, description="Nowa strefa luzu"),
+            "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Nowe podsumowanie taktyki"),
+            "potencjal_meltdownu": types.Schema(type=types.Type.STRING, description="Nowy potencjal meltdownu"),
+            "strategie_meltdown": types.Schema(type=types.Type.STRING, description="Nowe strategie meltdown"),
+            "opis": types.Schema(type=types.Type.STRING, description="Nowy opis"),
+        },
+        required=["id_wycieczki", "krok_wycieczki"]
+    ),
+)
+
+usun_krok_tool = types.FunctionDeclaration(
+    name="usun_krok_z_wycieczki",
+    description="Usuwa wskazany krok z wycieczki na podstawie ID wycieczki oraz numeru/nazwy kroku.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+            "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku do usunięcia"),
+        },
+        required=["id_wycieczki", "krok_wycieczki"]
+    ),
+)
+
+dodaj_checklist_tool = types.FunctionDeclaration(
+    name="dodaj_element_checklisty",
+    description="Dodaje nowy element do checklisty (np. sprzęt lub jedzenie) dla wskazanej wycieczki.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki, np. '1'"),
+            "typ": types.Schema(type=types.Type.STRING, description="Typ checklisty, np. 'sprzęt' lub 'jedzenie'"),
+            "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa przedmiotu"),
+            "ilosc": types.Schema(type=types.Type.STRING, description="Ilość, domyślnie '1'"),
+        },
+        required=["id_wycieczki", "typ", "nazwa"]
+    ),
+)
+
+edytuj_checklist_tool = types.FunctionDeclaration(
+    name="edytuj_element_checklisty",
+    description="Edytuje istniejący element w checkliście wycieczki.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+            "typ": types.Schema(type=types.Type.STRING, description="Typ checklisty ('sprzęt' lub 'jedzenie')"),
+            "stara_nazwa": types.Schema(type=types.Type.STRING, description="Aktualna nazwa elementu"),
+            "nowa_nazwa": types.Schema(type=types.Type.STRING, description="Nowa nazwa elementu"),
+            "nowa_ilosc": types.Schema(type=types.Type.STRING, description="Nowa ilość"),
+        },
+        required=["id_wycieczki", "typ", "stara_nazwa"]
+    ),
+)
+
+usun_checklist_tool = types.FunctionDeclaration(
+    name="usun_element_checklisty",
+    description="Usuwa element z checklisty wycieczki.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+            "typ": types.Schema(type=types.Type.STRING, description="Typ checklisty ('sprzęt' lub 'jedzenie')"),
+            "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa elementu do usunięcia"),
+        },
+        required=["id_wycieczki", "typ", "nazwa"]
+    ),
+)
+
+fadyssai_tools = types.Tool(function_declarations=[
+    aktualizuj_tool, 
+    utworz_wycieczke_tool, 
+    edytuj_wycieczke_tool, 
+    usun_wycieczke_tool, 
+    dodaj_krok_tool, 
+    edytuj_krok_tool, 
+    usun_krok_tool, 
+    dodaj_checklist_tool, 
+    edytuj_checklist_tool, 
+    usun_checklist_tool
+])
 
 # --- WSPÓLNA FUNKCJA OBSŁUGI CZATU AI ---
 def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
@@ -545,10 +815,11 @@ def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
 
     client = genai.Client(api_key=gemini_api_key)
     zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
+    
     system_prompt = f"""Jesteś inteligentnym, empatycznym asystentem podróży Fadyssai na Kretę.
 {zewnetrzny_kontekst}
-- Masz pełny wgląd w bazę miejsc oraz istniejące wycieczki w bazie SQLite.
-- Jeśli wspólnie z użytkownikami ustalicie nową wycieczkę lub zmianę, użyj narzędzia `utworz_nowa_wycieczke` lub `aktualizuj_miejsce`, aby zapisać je bezpośrednio w bazie danych."""
+- Masz pełny wgląd w całą bazę danych SQLite, obejmującą tabele: `miejsca`, `wycieczka`, `krok_wycieczki` oraz tabele powiązane z checklistami.
+- **BARDZO WAŻNE:** Nigdy nie zapisuj, nie modyfikuj ani nie usuwaj niczego w bazie danych samowolnie. Modyfikacje i usuwanie (użycie narzędzi takich jak `utworz_nowa_wycieczke`, `edytuj_wycieczke`, `usun_wycieczke`, `aktualizuj_miejsce`, `dodaj_krok_do_wycieczki`, `edytuj_krok_w_wycieczce`, `usun_krok_z_wycieczki`, `dodaj_element_checklisty`, `edytuj_element_checklisty`, `usun_element_checklisty`) mogą być wywołane **wyłącznie wtedy, gdy użytkownik wyda jednoznaczne, bezpośrednie polecenie**. W przeciwnym razie tylko rozmawiasz i doradzasz."""
 
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -608,6 +879,22 @@ def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
                             wynik_bazy = aktualizuj_miejsce(**args)
                         elif call_name == "utworz_nowa_wycieczke":
                             wynik_bazy = utworz_nowa_wycieczke(**args)
+                        elif call_name == "edytuj_wycieczke":
+                            wynik_bazy = edytuj_wycieczke(**args)
+                        elif call_name == "usun_wycieczke":
+                            wynik_bazy = usun_wycieczke(**args)
+                        elif call_name == "dodaj_krok_do_wycieczki":
+                            wynik_bazy = dodaj_krok_do_wycieczki(**args)
+                        elif call_name == "edytuj_krok_w_wycieczce":
+                            wynik_bazy = edytuj_krok_w_wycieczce(**args)
+                        elif call_name == "usun_krok_z_wycieczki":
+                            wynik_bazy = usun_krok_z_wycieczki(**args)
+                        elif call_name == "dodaj_element_checklisty":
+                            wynik_bazy = dodaj_element_checklisty(**args)
+                        elif call_name == "edytuj_element_checklisty":
+                            wynik_bazy = edytuj_element_checklisty(**args)
+                        elif call_name == "usun_element_checklisty":
+                            wynik_bazy = usun_element_checklisty(**args)
                         else:
                             wynik_bazy = "Wykonano operację."
                         
@@ -692,6 +979,13 @@ with st.sidebar:
     
     st.markdown("---")
     
+    if st.button("🗑️ Nowy czat", use_container_width=True):
+        st.session_state.chat_history = []
+        st.success("Rozpoczęto nowy czat!")
+        st.rerun()
+
+    st.markdown("---")
+    
     st.header("📚 Wspólne Źródła Wiedzy")
     st.markdown("Wrzuć pliki tekstowe lub notatki, z których asystent ma korzystać dla całej grupy:")
     
@@ -742,24 +1036,6 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-# Pomocnicza funkcja obsługująca ścieżkę do podfolderu "zdjęcia"
-def renderuj_zdjecie_lub_placeholder(nazwa_pliku):
-    mozliwe_katalogi = ["zdjęcia", "zdjecia", "."]
-    sciezka_pliku = None
-    
-    for kat in mozliwe_katalogi:
-        pelna = os.path.join(kat, nazwa_pliku)
-        if os.path.exists(pelna):
-            sciezka_pliku = pelna
-            break
-            
-    if sciezka_pliku:
-        with open(sciezka_pliku, "rb") as image_file:
-            encoded = base64.b64encode(image_file.read()).decode("utf-8")
-        st.markdown(f'<div class="photo-container"><img src="data:image/jpeg;base64,{encoded}"></div>', unsafe_allow_html=True)
-    else:
-        st.markdown(f'<div class="photo-placeholder">📷 [Brak pliku {nazwa_pliku} w folderze "zdjęcia"]</div>', unsafe_allow_html=True)
-
 # --- POPUP CHECKLISTY (MODAL) ---
 @st.dialog("🎒 Checklista Wycieczki")
 def pokaz_checklistu_popup(wycieczka_id):
@@ -789,7 +1065,7 @@ def pokaz_checklistu_popup(wycieczka_id):
                     st.checkbox(f"{itm['nazwa']}{ilosc_str}", key=f"chk_pop_{itm['id']}")
 
 # --- FUNKCJA RENDEROWANIA KARTY WYCIECZKI (PEŁNY OPIS) ---
-def renderuj_karte_wycieczki(wycieczka_id, pokaz_zdjecie_i_mape=True):
+def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
     conn = sqlite3.connect('fadyssai.db')
     wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
     kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
@@ -803,14 +1079,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_zdjecie_i_mape=True):
         </div>
         """, unsafe_allow_html=True)
         
-        if pokaz_zdjecie_i_mape:
-            pierwsze_miejsce_nr = None
-            if not kroki_df.empty:
-                pierwsze_miejsce_nr = str(kroki_df.iloc[0]['krok_wycieczki'])
-            
-            foto_wycieczki = f"{pierwsze_miejsce_nr}.jpg" if pierwsze_miejsce_nr else "1.jpg"
-            renderuj_zdjecie_lub_placeholder(foto_wycieczki)
-
+        if pokaz_mape:
             punkty_trasy = [(DOMEK_LAT, DOMEK_LON)]
             surowe_wspolrzedne = [(DOMEK_LAT, DOMEK_LON)]
             
@@ -933,7 +1202,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_zdjecie_i_mape=True):
                 st.write(k['opis'])
                 
             st.markdown(f"**🕒 Okienko zwiedzania:** {k['okienko_zwiedzania']} (Ewakuacja: {k['godzina_ewakuacji']})")
-            st.markdown(f"**🚗 Następny cel:** {k['cel_nastepny_i_czas']}")
             
             if pd.notna(k['czerwona_strefa_ostrzezenie']) and str(k['czerwona_strefa_ostrzezenie']).strip() != "":
                 st.warning(f"**🚨 Ostrzeżenie / Czerwona Strefa:** {k['czerwona_strefa_ostrzezenie']}")
@@ -976,7 +1244,6 @@ if st.session_state.active_tab == "chat":
                 pass
     st_folium(m_chat, width="100%", height=320, returned_objects=[])
     
-    # Czat AI na zakładce głównej czatu
     renderuj_sekcje_czatu_ai("tab_chat")
 
 elif st.session_state.active_tab == "zabytek":
@@ -1045,8 +1312,6 @@ elif st.session_state.active_tab == "zabytek":
                 🏛️ {p['numer_miejsca']}. {p['nazwa']}
             </div>
             """, unsafe_allow_html=True)
-            
-            renderuj_zdjecie_lub_placeholder(f"{p['numer_miejsca']}.jpg")
 
             google_search_url = f"https://www.google.com/search?q={p['nazwa']} Kreta"
             st.markdown(f"<p style='text-align:center;'><a href='{google_search_url}' target='_blank' style='color:#8b4513;'>🔍 Szukaj w Google</a></p>", unsafe_allow_html=True)
@@ -1077,29 +1342,86 @@ elif st.session_state.active_tab == "zabytek":
             
             st.markdown(f"**🔗 Najlepiej połączyć z:** {p['najlepiej_polaczyc']}")
 
-    # Czat AI na dole ekranu szczegółów miejsca
     renderuj_sekcje_czatu_ai("tab_zabytek")
 
 elif st.session_state.active_tab == "map":
     st.markdown("### 🗺️ Wybór Wycieczki")
     
-    wycieczki_options = pobierz_skrocone_opcje_wycieczek()
-    if wycieczki_options:
-        wybrana_mapa_sb = st.selectbox("Wybierz wycieczkę do przeglądania:", options=wycieczki_options, key="map_wycieczka_select")
+    opcje_wycieczek_lista = ["-- Wybierz wycieczkę lub zobacz mapę wszystkich miejsc --"] + wycieczki_options
+    wybrana_mapa_sb = st.selectbox("Wybierz wycieczkę do przeglądania:", options=opcje_wycieczek_lista, key="map_wycieczka_select")
+    
+    # Informacja o tym gdzie występuje dane miejsce (przesunięta bezpośrednio pod combobox z wycieczkami)
+    if "last_clicked_place_info" in st.session_state and st.session_state.last_clicked_place_info:
+        st.markdown(st.session_state.last_clicked_place_info)
+
+    if wybrana_mapa_sb == "-- Wybierz wycieczkę lub zobacz mapę wszystkich miejsc --":
+        st.markdown("---")
+        st.info("🗺️ Wyświetlam zbiorczą mapę wszystkich dostępnych miejsc na Krecie. Kliknij w dowolny znacznik, aby zobaczyć, w których wycieczkach występuje:")
         
+        m_all = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB positron")
+        dodaj_marker_domku(m_all)
+        
+        for _, row in df_miejsca.iterrows():
+            coords = str(row['wspolrzedne'])
+            if ',' in coords:
+                try:
+                    parts = coords.split(',')
+                    lat = float(parts[0].strip())
+                    lon = float(parts[1].strip())
+                    name = row['nazwa']
+                    num = str(row['numer_miejsca'])
+                    typ_raw = str(row.get('typ', '')).strip().lower()
+                    bg_color = COLORS.get(typ_raw, DEFAULT_COLOR)
+                    text_color = "black" if typ_raw == 'activity' else "white"
+                    
+                    icon_html = f'<div style="background-color:{bg_color};color:{text_color};border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-family:Arial;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.4);">{num}</div>'
+                    icon = folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))
+                    folium.Marker([lat, lon], icon=icon, tooltip=f"{num}. {name}").add_to(m_all)
+                except:
+                    pass
+        
+        map_all_data = st_folium(m_all, width="100%", height=400)
+        
+        if map_all_data and map_all_data.get("last_object_clicked_tooltip"):
+            clicked_tooltip = map_all_data["last_object_clicked_tooltip"]
+            if "." in clicked_tooltip:
+                klikniety_numer_miejsca = clicked_tooltip.split(".")[0].strip()
+                
+                conn = sqlite3.connect('fadyssai.db')
+                powiazane_kroki = pd.read_sql('''
+                    SELECT DISTINCT k.id_wycieczki, w.tytul_wycieczki 
+                    FROM krok_wycieczki k 
+                    JOIN wycieczka w ON k.id_wycieczki = w.id 
+                    WHERE k.krok_wycieczki = ? OR k.nazwa LIKE ?
+                ''', conn, params=(klikniety_numer_miejsca, f"%{clicked_tooltip.split('.')[1].strip()}%"))
+                conn.close()
+                
+                info_tekst = ""
+                if not powiazane_kroki.empty:
+                    info_tekst = f"📌 Miejsce **{clicked_tooltip}** znajduje się w następujących wycieczkach:\n"
+                    for _, row_w in powiazane_kroki.iterrows():
+                        info_tekst += f"- **Wycieczka #{row_w['id_wycieczki']}**: {row_w['tytul_wycieczki']}\n"
+                else:
+                    info_tekst = f"📌 Miejsce **{clicked_tooltip}** nie jest obecnie przypisane jako krok w żadnej wycieczce."
+                
+                if st.session_state.get("last_clicked_text") != clicked_tooltip:
+                    st.session_state.last_clicked_text = clicked_tooltip
+                    st.session_state.last_clicked_place_info = info_tekst
+                    st.rerun()
+    else:
+        if "last_clicked_place_info" in st.session_state:
+            st.session_state.last_clicked_place_info = None
+            st.session_state.last_clicked_text = None
+            
         if wybrana_mapa_sb:
             wybrana_id = wybrana_mapa_sb.split(". ")[0]
             st.markdown("---")
-            renderuj_karte_wycieczki(wybrana_id, pokaz_zdjecie_i_mape=True)
-    else:
-        st.info("Brak dostępnych wycieczek w bazie.")
+            renderuj_karte_wycieczki(wybrana_id, pokaz_mape=True)
 
-    # Czat AI na dole ekranu wyboru wycieczki
     renderuj_sekcje_czatu_ai("tab_map")
 
 elif st.session_state.active_tab == "route":
     aktualne_id = pobierz_aktywna_wycieczke_id()
-    renderuj_karte_wycieczki(aktualne_id, pokaz_zdjecie_i_mape=False)
+    renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False)
 
-    # Czat AI na dole ekranu aktywnej trasy/wycieczki
     renderuj_sekcje_czatu_ai("tab_route")
