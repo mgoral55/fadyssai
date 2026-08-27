@@ -534,6 +534,124 @@ utworz_wycieczke_tool = types.FunctionDeclaration(
 
 fadyssai_tools = types.Tool(function_declarations=[aktualizuj_tool, utworz_wycieczke_tool])
 
+# --- WSPÓLNA FUNKCJA OBSŁUGI CZATU AI ---
+def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
+    st.markdown("---")
+    st.markdown("### 💬 Asystent AI Fadyssai")
+    
+    if not gemini_api_key:
+        st.info("👈 Wprowadź swój klucz API Google Gemini w menu bocznym, aby uruchomić czat i zarządzać wycieczkami w bazie.")
+        return
+
+    client = genai.Client(api_key=gemini_api_key)
+    zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
+    system_prompt = f"""Jesteś inteligentnym, empatycznym asystentem podróży Fadyssai na Kretę.
+{zewnetrzny_kontekst}
+- Masz pełny wgląd w bazę miejsc oraz istniejące wycieczki w bazie SQLite.
+- Jeśli wspólnie z użytkownikami ustalicie nową wycieczkę lub zmianę, użyj narzędzia `utworz_nowa_wycieczke` lub `aktualizuj_miejsce`, aby zapisać je bezpośrednio w bazie danych."""
+
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    for message in st.session_state.chat_history:
+        role = message["role"]
+        content = message["content"]
+        with st.chat_message(role):
+            if isinstance(content, str):
+                st.markdown(content)
+            elif hasattr(content, "parts"):
+                for p in content.parts:
+                    if hasattr(p, "text") and p.text:
+                        st.markdown(p.text)
+
+    prompt = st.chat_input("Rozmawiaj o wycieczkach, kminie plany...", key=f"chat_input_{klucz_unikalny_sufiks}")
+    if prompt:
+        user_content = types.Content(role="user", parts=[types.Part.from_text(text=prompt)])
+        st.session_state.chat_history.append({"role": "user", "content": prompt, "raw_content": user_content})
+        
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            try:
+                contents = [item["raw_content"] for item in st.session_state.chat_history if "raw_content" in item]
+                if not contents:
+                    contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
+
+                with st.spinner(f"Analizuję plan (model: {wybrany_model})..."):
+                    response = client.models.generate_content(
+                        model=wybrany_model,
+                        contents=contents,
+                        config=types.GenerateContentConfig(
+                            tools=[fadyssai_tools],
+                            system_instruction=system_prompt
+                        )
+                    )
+
+                assistant_reply = ""
+                candidate = response.candidates[0] if response.candidates else None
+                has_fc = False
+                if candidate and candidate.content and candidate.content.parts:
+                    for p in candidate.content.parts:
+                        if p.function_call:
+                            has_fc = True
+                            break
+
+                if has_fc or response.function_calls:
+                    model_content = candidate.content
+                    calls = response.function_calls if response.function_calls else [p.function_call for p in model_content.parts if p.function_call]
+                    
+                    for call in calls:
+                        args = call.args
+                        call_name = call.name
+                        if call_name == "aktualizuj_miejsce":
+                            wynik_bazy = aktualizuj_miejsce(**args)
+                        elif call_name == "utworz_nowa_wycieczke":
+                            wynik_bazy = utworz_nowa_wycieczke(**args)
+                        else:
+                            wynik_bazy = "Wykonano operację."
+                        
+                        with st.spinner("Zapisuję zmiany w bazie SQLite..."):
+                            follow_up = client.models.generate_content(
+                                model=wybrany_model,
+                                contents=contents + [
+                                    model_content,
+                                    types.Content(role="user", parts=[types.Part.from_function_response(name=call_name, response={"result": wynik_bazy})])
+                                ],
+                                config=types.GenerateContentConfig(tools=[fadyssai_tools])
+                            )
+                        
+                        fu_cand = follow_up.candidates[0] if follow_up.candidates else None
+                        if fu_cand and fu_cand.content and fu_cand.content.parts:
+                            text_parts = [p.text for p in fu_cand.content.parts if hasattr(p, "text") and p.text]
+                            assistant_reply = "".join(text_parts) if text_parts else "Operacja została zakończona pomyślnie."
+                            st.session_state.chat_history.append({
+                                "role": "assistant", 
+                                "content": assistant_reply, 
+                                "raw_content": fu_cand.content
+                            })
+                        else:
+                            assistant_reply = "Operacja została zaktualizowana w bazie."
+                else:
+                    text_parts = [p.text for p in candidate.content.parts if hasattr(p, "text") and p.text] if candidate and candidate.content and candidate.content.parts else []
+                    assistant_reply = "".join(text_parts) if text_parts else (response.text if hasattr(response, "text") else "Brak odpowiedzi.")
+                    
+                    st.session_state.chat_history.append({
+                        "role": "assistant", 
+                        "content": assistant_reply, 
+                        "raw_content": candidate.content if candidate else types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)])
+                    })
+            except Exception as e:
+                assistant_reply = f"Wystąpił błąd podczas komunikacji z AI: {e}"
+                st.session_state.chat_history.append({
+                    "role": "assistant", 
+                    "content": assistant_reply, 
+                    "raw_content": types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)])
+                })
+
+            st.markdown(assistant_reply)
+            st.rerun()
+
 # --- 4. STAN APLIKACJI (Domyślnie chat) ---
 if "tab" in st.query_params:
     st.session_state.active_tab = st.query_params["tab"]
@@ -563,6 +681,15 @@ wycieczki_options = pobierz_skrocone_opcje_wycieczek()
 with st.sidebar:
     st.header("⚙️ Ustawienia Asystenta")
     gemini_api_key = st.text_input("Klucz API Google Gemini", type="password", key="api_key_input")
+    
+    dostepne_modele = [
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash-lite",
+        "gemini-3.5-flash",
+        "gemini-3.6-flash"
+    ]
+    wybrany_model = st.selectbox("Wybierz model AI", options=dostepne_modele, index=0)
+    
     st.markdown("---")
     
     st.header("📚 Wspólne Źródła Wiedzy")
@@ -849,75 +976,8 @@ if st.session_state.active_tab == "chat":
                 pass
     st_folium(m_chat, width="100%", height=320, returned_objects=[])
     
-    st.markdown("---")
-    st.markdown("### 💬 Asystent AI Fadyssai")
-    
-    if not gemini_api_key:
-        st.info("👈 Wprowadź swój klucz API Google Gemini w menu bocznym, aby uruchomić czat i zarządzać wycieczkami w bazie.")
-    else:
-        client = genai.Client(api_key=gemini_api_key)
-
-        zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
-        system_prompt = f"""Jesteś inteligentnym, empatycznym asystentem podróży Fadyssai na Kretę.
-{zewnetrzny_kontekst}
-- Masz pełny wgląd w bazę miejsc oraz istniejące wycieczki w bazie SQLite.
-- Jeśli wspólnie z użytkownikami ustalicie nową wycieczkę lub zmianę, użyj narzędzia `utworz_nowa_wycieczke` lub `aktualizuj_miejsce`, aby zapisać je bezpośrednio w bazie danych."""
-
-        if "chat_history" not in st.session_state:
-            st.session_state.chat_history = []
-
-        for message in st.session_state.chat_history:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-
-        if prompt := st.chat_input("Rozmawiaj o wycieczkach, kminie plany lub rzuć 'Utwórz nową wycieczkę nr 3...'..."):
-            st.session_state.chat_history.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            with st.chat_message("assistant"):
-                try:
-                    contents = []
-                    for m in st.session_state.chat_history:
-                        role_val = "user" if m["role"] == "user" else "model"
-                        contents.append(types.Content(role=role_val, parts=[types.Part.from_text(text=m["content"])]))
-
-                    response = client.models.generate_content(
-                        model='gemini-3.6-flash',
-                        contents=contents,
-                        config=types.GenerateContentConfig(
-                            tools=[fadyssai_tools],
-                            system_instruction=system_prompt
-                        )
-                    )
-
-                    if response.function_calls:
-                        for call in response.function_calls:
-                            args = call.args
-                            if call.name == "aktualizuj_miejsce":
-                                wynik_bazy = aktualizuj_miejsce(**args)
-                            elif call.name == "utworz_nowa_wycieczke":
-                                wynik_bazy = utworz_nowa_wycieczke(**args)
-                            else:
-                                wynik_bazy = "Wykonano operację."
-                            
-                            follow_up = client.models.generate_content(
-                                model='gemini-3.6-flash',
-                                contents=contents + [
-                                    types.Content(role="model", parts=[types.Part.from_function_call(name=call.name, args=args)]),
-                                    types.Content(role="user", parts=[types.Part.from_function_response(name=call.name, response={"result": wynik_bazy})])
-                                ],
-                                config=types.GenerateContentConfig(tools=[fadyssai_tools])
-                            )
-                            assistant_reply = follow_up.text
-                    else:
-                        assistant_reply = response.text
-                except Exception as e:
-                    assistant_reply = f"Wystąpił błąd podczas komunikacji z AI: {e}"
-
-                st.markdown(assistant_reply)
-                st.session_state.chat_history.append({"role": "assistant", "content": assistant_reply})
-                st.rerun()
+    # Czat AI na zakładce głównej czatu
+    renderuj_sekcje_czatu_ai("tab_chat")
 
 elif st.session_state.active_tab == "zabytek":
     st.markdown("### 🏛️ Wybór Miejsca / Zabytku")
@@ -1017,6 +1077,9 @@ elif st.session_state.active_tab == "zabytek":
             
             st.markdown(f"**🔗 Najlepiej połączyć z:** {p['najlepiej_polaczyc']}")
 
+    # Czat AI na dole ekranu szczegółów miejsca
+    renderuj_sekcje_czatu_ai("tab_zabytek")
+
 elif st.session_state.active_tab == "map":
     st.markdown("### 🗺️ Wybór Wycieczki")
     
@@ -1031,6 +1094,12 @@ elif st.session_state.active_tab == "map":
     else:
         st.info("Brak dostępnych wycieczek w bazie.")
 
+    # Czat AI na dole ekranu wyboru wycieczki
+    renderuj_sekcje_czatu_ai("tab_map")
+
 elif st.session_state.active_tab == "route":
     aktualne_id = pobierz_aktywna_wycieczke_id()
     renderuj_karte_wycieczki(aktualne_id, pokaz_zdjecie_i_mape=False)
+
+    # Czat AI na dole ekranu aktywnej trasy/wycieczki
+    renderuj_sekcje_czatu_ai("tab_route")
