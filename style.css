@@ -10,144 +10,12 @@ import urllib.request
 import json
 import base64
 
-# --- 1. KONFIGURACJA STRONY I STYL PERGAMINU ---
+# --- 1. KONFIGURACJA STRONY I ŁADOWANIE CSS ---
 st.set_page_config(page_title="Fadyssai - Kreta", layout="centered", page_icon="🧭")
 
-st.markdown("""
-    <style>
-    /* Globalne tło pergaminu i czcionka */
-    .stApp {
-        background-color: #f4ecdf;
-        color: #3b2f2f;
-    }
-    /* Pasek boczny w klimacie */
-    [data-testid="stSidebar"] {
-        background-color: #e6ded1;
-        color: #3b2f2f !important;
-    }
-    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, [data-testid="stSidebar"] label, [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {
-        color: #3b2f2f !important;
-    }
-    /* Stylizacja nagłówków */
-    h3 {
-        color: #663223;
-        font-family: Georgia, serif;
-    }
-    /* Styl dla paska nawigacyjnego i belek przycisków */
-    .custom-nav-bar {
-        display: flex;
-        justify-content: space-between;
-        gap: 6px;
-        width: 100%;
-        margin-bottom: 0.5rem;
-    }
-    .custom-nav-btn {
-        flex: 1;
-        background-color: #e6ded1;
-        border: 1px solid #b89b82;
-        color: #663223;
-        padding: 6px 0;
-        text-align: center;
-        border-radius: 8px;
-        font-size: 18px;
-        text-decoration: none;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        cursor: pointer;
-    }
-    .custom-nav-btn:hover {
-        background-color: #d4c8b8;
-        border-color: #663223;
-    }
-    .custom-nav-btn.active {
-        background-color: #b89b82;
-        color: white;
-        border-color: #663223;
-    }
-    /* Styl sekcji zdjęć pod belką */
-    .photo-container {
-        width: 100%;
-        margin-bottom: 15px;
-        text-align: center;
-    }
-    .photo-container img {
-        width: 100%;
-        max-height: 250px;
-        object-fit: cover;
-        border-radius: 8px;
-        border: 2px solid #b89b82;
-    }
-    .photo-placeholder {
-        width: 100%;
-        height: 120px;
-        background-color: #e6ded1;
-        border: 2px dashed #b89b82;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #663223;
-        font-style: italic;
-        margin-bottom: 15px;
-        font-size: 14px;
-    }
-    
-    /* --- POPRAWKI KOLORYSTYCZNE: INPUTY, PRZYCISKI, CZAT --- */
-    [data-testid="stSidebar"] input {
-        background-color: #fcf8f2 !important;
-        color: #3b2f2f !important;
-        border: 1px solid #b89b82 !important;
-    }
-    [data-testid="stSidebar"] button, [data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] {
-        background-color: #e6ded1 !important;
-        color: #3b2f2f !important;
-        border: 1px solid #b89b82 !important;
-    }
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] {
-        background-color: #fcf8f2 !important;
-        border: 1px dashed #b89b82 !important;
-        border-radius: 8px;
-        padding: 10px;
-    }
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] section, 
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] button {
-        background-color: #e6ded1 !important;
-        color: #3b2f2f !important;
-    }
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] small, 
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] span, 
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] div {
-        color: #3b2f2f !important;
-    }
-
-    [data-testid="stChatMessage"] {
-        background-color: #e6ded1 !important;
-        border: 1px solid #b89b82 !important;
-        border-radius: 12px !important;
-        color: #3b2f2f !important;
-    }
-    [data-testid="stChatMessage"] p, [data-testid="stChatMessage"] span, [data-testid="stChatMessage"] div {
-        color: #3b2f2f !important;
-    }
-    
-    .stChatInputContainer {
-        background-color: #e6ded1 !important;
-        border-radius: 12px !important;
-        border: 1px solid #b89b82 !important;
-    }
-    .stChatInputContainer textarea {
-        color: #3b2f2f !important;
-        background-color: #fcf8f2 !important;
-    }
-    [data-testid="stChatInput"] {
-        background-color: #e6ded1 !important;
-        color: #3b2f2f !important;
-    }
-    div[data-testid="stChatInput"] > div {
-        background-color: #e6ded1 !important;
-        border: 1px solid #b89b82 !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
+if os.path.exists("style.css"):
+    with open("style.css", "r", encoding="utf-8") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
 # Stałe współrzędne domu
 DOMEK_LAT = 35.5914
@@ -430,7 +298,7 @@ def pobierz_skrocone_opcje_wycieczek():
         opcje.append(f"{wid}. {skrocony}")
     return opcje
 
-# Pomocnicza funkcja ładowania zewnętrznego kontekstu, źródeł ORAZ całej bazy danych SQLite dla AI
+# Pomocnicza funkcja ładowania zewnętrznego kontekstu, źródeł ORAZ bazy SQLite
 def wczytaj_kontekst_zewnetrzny():
     tekst = ""
     if os.path.exists("context.md"):
@@ -440,7 +308,6 @@ def wczytaj_kontekst_zewnetrzny():
         except:
             pass
             
-    # Wstrzykiwanie aktualnego stanu bazy danych SQLite, aby AI widziało miejsca i wycieczki
     conn = sqlite3.connect('fadyssai.db')
     try:
         miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, typ, czas_dojazdu, orientacyjny_czas, koszt, konieczna_akcja FROM miejsca', conn)
@@ -863,7 +730,15 @@ if st.session_state.active_tab == "chat":
 - Masz pełny wgląd w bazę miejsc oraz istniejące wycieczki w bazie SQLite.
 - Jeśli wspólnie z użytkownikami ustalicie nową wycieczkę lub zmianę, użyj narzędzia `utworz_nowa_wycieczke` lub `aktualizuj_miejsce`, aby zapisać je bezpośrednio w bazie danych."""
 
-        if "chat_history" not in st.session_state:
+        if "chat_session_obj" not in st.session_state or st.session_state.get("current_api_key") != gemini_api_key:
+            st.session_state.current_api_key = gemini_api_key
+            st.session_state.chat_session_obj = client.chats.create(
+                model='gemini-3.6-flash',
+                config=types.GenerateContentConfig(
+                    tools=[fadyssai_tools],
+                    system_instruction=system_prompt
+                )
+            )
             st.session_state.chat_history = []
 
         for message in st.session_state.chat_history:
@@ -877,21 +752,9 @@ if st.session_state.active_tab == "chat":
 
             with st.chat_message("assistant"):
                 try:
-                    contents = []
-                    for m in st.session_state.chat_history:
-                        role_val = "user" if m["role"] == "user" else "model"
-                        contents.append(types.Content(role=role_val, parts=[types.Part.from_text(text=m["content"])]))
-
-                    response = client.models.generate_content(
-                        model='gemini-3.6-flash',
-                        contents=contents,
-                        config=types.GenerateContentConfig(
-                            tools=[fadyssai_tools],
-                            system_instruction=system_prompt
-                        )
-                    )
-
-                    if response.function_calls:
+                    response = st.session_state.chat_session_obj.send_message(prompt)
+                    
+                    while response.function_calls:
                         for call in response.function_calls:
                             args = call.args
                             if call.name == "aktualizuj_miejsce":
@@ -901,17 +764,14 @@ if st.session_state.active_tab == "chat":
                             else:
                                 wynik_bazy = "Wykonano operację."
                             
-                            follow_up = client.models.generate_content(
-                                model='gemini-3.6-flash',
-                                contents=contents + [
-                                    types.Content(role="model", parts=[types.Part.from_function_call(name=call.name, args=args)]),
-                                    types.Content(role="user", parts=[types.Part.from_function_response(name=call.name, response={"result": wynik_bazy})])
-                                ],
-                                config=types.GenerateContentConfig(tools=[fadyssai_tools])
+                            response = st.session_state.chat_session_obj.send_message(
+                                types.Part.from_function_response(
+                                    name=call.name,
+                                    response={"result": wynik_bazy}
+                                )
                             )
-                            assistant_reply = follow_up.text
-                    else:
-                        assistant_reply = response.text
+                    
+                    assistant_reply = response.text
                 except Exception as e:
                     assistant_reply = f"Wystąpił błąd podczas komunikacji z AI: {e}"
 
