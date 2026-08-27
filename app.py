@@ -62,6 +62,39 @@ st.markdown("""
         color: white;
         border-color: #663223;
     }
+    /* Eleganckie belki nagłówkowe w stylu antycznym */
+    .antique-header {
+        background: linear-gradient(to right, #d4c8b8, #e6ded1, #d4c8b8);
+        border: 2px solid #b89b82;
+        border-radius: 8px;
+        padding: 12px 16px;
+        text-align: center;
+        color: #663223;
+        font-family: Georgia, serif;
+        font-size: 18px;
+        font-weight: bold;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+        margin-bottom: 10px;
+        letter-spacing: 1px;
+    }
+    
+    /* Poprawka widoczności napisów w przyciskach Streamlita */
+    .stButton > button {
+        background-color: #e6ded1 !important;
+        color: #5c2c16 !important;
+        border: 1px solid #8c6a53 !important;
+        font-weight: 600 !important;
+    }
+    .stButton > button:hover {
+        background-color: #d4c8b8 !important;
+        color: #3b1c0e !important;
+        border-color: #5c2c16 !important;
+    }
+
+    /* Zmniejszenie marginesu między mapą (st_folium) a listą selectbox */
+    iframe {
+        margin-bottom: -15px !important;
+    }
     
     /* --- POPRAWKI KOLORYSTYCZNE: INPUTY, PRZYCISKI, CZAT --- */
     [data-testid="stSidebar"] input {
@@ -939,11 +972,11 @@ def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
             st.markdown(assistant_reply)
             st.rerun()
 
-# --- 4. STAN APLIKACJI (Domyślnie chat) ---
+# --- 4. STAN APLIKACJI (Domyślnie Miejsca) ---
 if "tab" in st.query_params:
     st.session_state.active_tab = st.query_params["tab"]
 elif "active_tab" not in st.session_state:
-    st.session_state.active_tab = "chat"
+    st.session_state.active_tab = "zabytek"  # Domyślnie wchodzi w Miejsca i Zabytki
 
 if "active_place_id" not in st.session_state:
     st.session_state.active_place_id = None
@@ -1003,17 +1036,6 @@ with st.sidebar:
         for z in zrodla:
             st.text(f"• {z}")
 
-# --- NAWIGACJA WSTECZ NA SAMEJ GÓRZE STRONY ---
-col_back, col_empty = st.columns([1, 4])
-with col_back:
-    if st.button("⬅️ Powrót"):
-        if st.session_state.active_tab == "zabytek" and st.session_state.active_place_id is not None:
-            st.session_state.active_place_id = None
-        elif st.session_state.active_tab != "chat":
-            st.session_state.active_tab = "chat"
-            st.query_params["tab"] = "chat"
-        st.rerun()
-
 # --- GŁÓWNY INTERFEJS: 2 RZĘDY IKONEK ---
 domek_maps_url = "https://www.google.com/maps/search/?api=1&query=35.5914,24.0918"
 sklep_maps_url = "https://www.google.com/maps/search/?api=1&query=35.586222,24.091861"
@@ -1030,8 +1052,8 @@ st.markdown(f"""
         <a href="?tab=chat" target="_self" class="custom-nav-btn {active_chat}" title="Czat AI">💬</a>
     </div>
     <div class="custom-nav-bar" style="margin-bottom: 1rem;">
-        <a href="?tab=zabytek" target="_self" class="custom-nav-btn {active_zabytek}" title="Zabytek / Mapa miejsc">🏛️</a>
-        <a href="?tab=map" target="_self" class="custom-nav-btn {active_map}" title="Wybór Wycieczki">🗺️</a>
+        <a href="?tab=zabytek" target="_self" class="custom-nav-btn {active_zabytek}" title="Miejsca">🏛️</a>
+        <a href="?tab=map" target="_self" class="custom-nav-btn {active_map}" title="Wycieczki">🗺️</a>
         <a href="?tab=route" target="_self" class="custom-nav-btn {active_route}" title="Trasa i Wycieczka">🚗</a>
     </div>
 """, unsafe_allow_html=True)
@@ -1065,7 +1087,7 @@ def pokaz_checklistu_popup(wycieczka_id):
                     st.checkbox(f"{itm['nazwa']}{ilosc_str}", key=f"chk_pop_{itm['id']}")
 
 # --- FUNKCJA RENDEROWANIA KARTY WYCIECZKI (PEŁNY OPIS) ---
-def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
+def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_przycisk_aktywnej=True):
     conn = sqlite3.connect('fadyssai.db')
     wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
     kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
@@ -1079,6 +1101,14 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
         </div>
         """, unsafe_allow_html=True)
         
+        if pokaz_przycisk_aktywnej:
+            col_btn_akt, col_dummy = st.columns([2, 3])
+            with col_btn_akt:
+                if st.button(f"🎯 Ustaw jako aktualną (Wycieczka #{w_gen['id']})", key=f"btn_akt_{wycieczka_id}"):
+                    ustaw_aktywna_wycieczke_id(wycieczka_id)
+                    st.success(f"Ustawiono wycieczkę #{wycieczka_id} jako aktualną!")
+                    st.rerun()
+
         if pokaz_mape:
             punkty_trasy = [(DOMEK_LAT, DOMEK_LON)]
             surowe_wspolrzedne = [(DOMEK_LAT, DOMEK_LON)]
@@ -1177,7 +1207,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
             </div>
             """, unsafe_allow_html=True)
 
-            if st.button(f"🔍 Otwórz szczegóły miejsca: {krok_nazwa}", key=f"btn_miejsce_podstrona_{k['id']}"):
+            if st.button(f"🔍 Otwórz szczegóły miejsca: {krok_nazwa}", key=f"btn_miejsce_podstrona_{wycieczka_id}_{k['id']}"):
                 st.session_state.active_place_id = miejsce_id_cel
                 st.session_state.active_tab = "zabytek"
                 st.query_params["tab"] = "zabytek"
@@ -1247,24 +1277,7 @@ if st.session_state.active_tab == "chat":
     renderuj_sekcje_czatu_ai("tab_chat")
 
 elif st.session_state.active_tab == "zabytek":
-    st.markdown("### 🏛️ Wybór Miejsca / Zabytku")
-    
-    list_options_zabytek = ["-- Wybierz miejsce z listy --"] + list(df_miejsca['numer_miejsca'].astype(str) + ". " + df_miejsca['nazwa'])
-    curr_zabytek_idx = 0
-    if st.session_state.active_place_id and st.session_state.active_place_id.isdigit():
-        matching_z = [i for i, opt in enumerate(list_options_zabytek) if opt.startswith(st.session_state.active_place_id + ".")]
-        if matching_z:
-            curr_zabytek_idx = matching_z[0]
-
-    wybrany_zabytek_main = st.selectbox("Wybierz miejsce do wyświetlenia:", options=list_options_zabytek, index=curr_zabytek_idx, key="main_zabytek_sb")
-    if wybrany_zabytek_main != "-- Wybierz miejsce z listy --":
-        chosen_id_m = wybrany_zabytek_main.split(". ")[0]
-        if chosen_id_m != st.session_state.active_place_id:
-            st.session_state.active_place_id = chosen_id_m
-            st.rerun()
-
-    st.markdown("---")
-    st.info("💡 Kliknij w dowolny punkt na poniższej mapie lub wybierz z listy powyżej, aby zobaczyć szczegóły miejsca.")
+    st.markdown('<div class="antique-header">🏛️ Miejsca & Zabytki</div>', unsafe_allow_html=True)
     
     m = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB positron")
     dodaj_marker_domku(m)
@@ -1298,6 +1311,20 @@ elif st.session_state.active_tab == "zabytek":
             if clicked_id.isdigit() and clicked_id != st.session_state.active_place_id:
                 st.session_state.active_place_id = clicked_id
                 st.rerun()
+
+    list_options_zabytek = ["-- Wybierz miejsce z listy --"] + list(df_miejsca['numer_miejsca'].astype(str) + ". " + df_miejsca['nazwa'])
+    curr_zabytek_idx = 0
+    if st.session_state.active_place_id and st.session_state.active_place_id.isdigit():
+        matching_z = [i for i, opt in enumerate(list_options_zabytek) if opt.startswith(st.session_state.active_place_id + ".")]
+        if matching_z:
+            curr_zabytek_idx = matching_z[0]
+
+    wybrany_zabytek_main = st.selectbox("", options=list_options_zabytek, index=curr_zabytek_idx, key="main_zabytek_sb", label_visibility="collapsed")
+    if wybrany_zabytek_main != "-- Wybierz miejsce z listy --":
+        chosen_id_m = wybrany_zabytek_main.split(". ")[0]
+        if chosen_id_m != st.session_state.active_place_id:
+            st.session_state.active_place_id = chosen_id_m
+            st.rerun()
 
     st.markdown("---")
 
@@ -1345,19 +1372,15 @@ elif st.session_state.active_tab == "zabytek":
     renderuj_sekcje_czatu_ai("tab_zabytek")
 
 elif st.session_state.active_tab == "map":
-    st.markdown("### 🗺️ Wybór Wycieczki")
+    st.markdown('<div class="antique-header">🗺️ Wycieczki</div>', unsafe_allow_html=True)
     
     opcje_wycieczek_lista = ["-- Wybierz wycieczkę lub zobacz mapę wszystkich miejsc --"] + wycieczki_options
-    wybrana_mapa_sb = st.selectbox("Wybierz wycieczkę do przeglądania:", options=opcje_wycieczek_lista, key="map_wycieczka_select")
+    wybrana_mapa_sb = st.selectbox("", options=opcje_wycieczek_lista, key="map_wycieczka_select", label_visibility="collapsed")
     
-    # Informacja o tym gdzie występuje dane miejsce (przesunięta bezpośrednio pod combobox z wycieczkami)
     if "last_clicked_place_info" in st.session_state and st.session_state.last_clicked_place_info:
         st.markdown(st.session_state.last_clicked_place_info)
 
     if wybrana_mapa_sb == "-- Wybierz wycieczkę lub zobacz mapę wszystkich miejsc --":
-        st.markdown("---")
-        st.info("🗺️ Wyświetlam zbiorczą mapę wszystkich dostępnych miejsc na Krecie. Kliknij w dowolny znacznik, aby zobaczyć, w których wycieczkach występuje:")
-        
         m_all = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB positron")
         dodaj_marker_domku(m_all)
         
@@ -1421,7 +1444,8 @@ elif st.session_state.active_tab == "map":
     renderuj_sekcje_czatu_ai("tab_map")
 
 elif st.session_state.active_tab == "route":
+    st.markdown('<div class="antique-header">🚗 Aktualna Trasa i Wycieczka</div>', unsafe_allow_html=True)
     aktualne_id = pobierz_aktywna_wycieczke_id()
-    renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False)
+    renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False, pokaz_przycisk_aktywnej=False)
 
     renderuj_sekcje_czatu_ai("tab_route")
