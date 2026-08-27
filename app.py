@@ -9,7 +9,7 @@ import os
 import urllib.request
 import json
 import base64
-import streamlit.components.v1 as components
+import time
 
 # --- 1. KONFIGURACJA STRONY I STYL PERGAMINU ---
 st.set_page_config(page_title="Fadyssai - Kreta", layout="centered", page_icon="🧭")
@@ -24,6 +24,10 @@ st.markdown("""
     /* Pasek boczny w klimacie */
     [data-testid="stSidebar"] {
         background-color: #e6ded1;
+        color: #3b2f2f !important;
+    }
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, [data-testid="stSidebar"] label, [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {
+        color: #3b2f2f !important;
     }
     /* Stylizacja nagłówków */
     h3 {
@@ -87,6 +91,62 @@ st.markdown("""
         margin-bottom: 15px;
         font-size: 14px;
     }
+    
+    /* --- POPRAWKI KOLORYSTYCZNE: INPUTY, PRZYCISKI, CZAT --- */
+    [data-testid="stSidebar"] input {
+        background-color: #fcf8f2 !important;
+        color: #3b2f2f !important;
+        border: 1px solid #b89b82 !important;
+    }
+    [data-testid="stSidebar"] button, [data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] {
+        background-color: #e6ded1 !important;
+        color: #3b2f2f !important;
+        border: 1px solid #b89b82 !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stFileUploader"] {
+        background-color: #fcf8f2 !important;
+        border: 1px dashed #b89b82 !important;
+        border-radius: 8px;
+        padding: 10px;
+    }
+    [data-testid="stSidebar"] [data-testid="stFileUploader"] section, 
+    [data-testid="stSidebar"] [data-testid="stFileUploader"] button {
+        background-color: #e6ded1 !important;
+        color: #3b2f2f !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stFileUploader"] small, 
+    [data-testid="stSidebar"] [data-testid="stFileUploader"] span, 
+    [data-testid="stSidebar"] [data-testid="stFileUploader"] div {
+        color: #3b2f2f !important;
+    }
+
+    [data-testid="stChatMessage"] {
+        background-color: #e6ded1 !important;
+        border: 1px solid #b89b82 !important;
+        border-radius: 12px !important;
+        color: #3b2f2f !important;
+    }
+    [data-testid="stChatMessage"] p, [data-testid="stChatMessage"] span, [data-testid="stChatMessage"] div {
+        color: #3b2f2f !important;
+    }
+    
+    .stChatInputContainer {
+        background-color: #e6ded1 !important;
+        border-radius: 12px !important;
+        border: 1px solid #b89b82 !important;
+    }
+    .stChatInputContainer textarea {
+        color: #3b2f2f !important;
+        background-color: #fcf8f2 !important;
+    }
+    [data-testid="stChatInput"] {
+        background-color: #e6ded1 !important;
+        color: #3b2f2f !important;
+    }
+    div[data-testid="stChatInput"] > div {
+        background-color: #e6ded1 !important;
+        border: 1px solid #b89b82 !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -99,7 +159,6 @@ def init_db():
     conn = sqlite3.connect('fadyssai.db')
     cursor = conn.cursor()
     
-    # Tabela miejsc
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS miejsca (
             numer_miejsca TEXT PRIMARY KEY,
@@ -125,7 +184,6 @@ def init_db():
         )
     ''')
 
-    # Tabela WYCIECZKA
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS wycieczka (
             id TEXT PRIMARY KEY,
@@ -148,7 +206,6 @@ def init_db():
     except:
         pass
 
-    # Tabela KROK_WYCIECZKI
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS krok_wycieczki (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -168,7 +225,6 @@ def init_db():
         )
     ''')
 
-    # Tabela CHECKLIST
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS checklist (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -177,7 +233,6 @@ def init_db():
         )
     ''')
 
-    # Tabela CHECKLIST_ITEM
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS checklist_item (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -187,7 +242,6 @@ def init_db():
         )
     ''')
 
-    # Tabela przechowująca ID aktywnej wycieczki
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS aktywna_wycieczka (
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -197,7 +251,6 @@ def init_db():
     cursor.execute('INSERT OR IGNORE INTO aktywna_wycieczka (id, aktualne_id_wycieczki) VALUES (1, "1")')
     conn.commit()
 
-    # Synchronizacja miejsc z miejsca.csv (jeśli istnieje)
     if os.path.exists("miejsca.csv"):
         try:
             df_csv = pd.read_csv("miejsca.csv", encoding="utf-8-sig")
@@ -238,10 +291,8 @@ def init_db():
             ))
         conn.commit()
 
-    # Sprawdzenie, czy tabele wycieczek są puste – jeśli tak, wstawiamy domyślne wycieczki
     cursor.execute('SELECT COUNT(*) FROM wycieczka')
     if cursor.fetchone()[0] == 0:
-        # WYCIECZKA 1
         cursor.execute('''
             INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -279,7 +330,6 @@ def init_db():
             (ch1_j, "Musy owocowe", "6")
         ])
 
-        # WYCIECZKA 2
         cursor.execute('''
             INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -381,15 +431,31 @@ def pobierz_skrocone_opcje_wycieczek():
         opcje.append(f"{wid}. {skrocony}")
     return opcje
 
-# Pomocnicza funkcja ładowania zewnętrznego kontekstu
+# Pomocnicza funkcja ładowania zewnętrznego kontekstu (zoptymalizowana pod limity tokenów)
 def wczytaj_kontekst_zewnetrzny():
+    tekst = ""
     if os.path.exists("context.md"):
         try:
             with open("context.md", "r", encoding="utf-8") as f:
-                return f.read()
+                tekst += f.read() + "\n\n"
         except:
             pass
-    return "Jesteś asystentem podróży Fadyssai na Kretę dla rodziny z dziećmi."
+            
+    if os.path.exists("sources"):
+        tekst += "--- WSPÓLNE ŹRÓDŁA WIEDZY RODZIN --- \n"
+        for plik in os.listdir("sources"):
+            sciezka = os.path.join("sources", plik)
+            if os.path.isfile(sciezka) and (plik.endswith(".txt") or plik.endswith(".md")):
+                try:
+                    with open(sciezka, "r", encoding="utf-8", errors="ignore") as sf:
+                        zawartosc = sf.read()
+                        # Ograniczamy długość plików tekstowych w źródłach, aby nie przekraczać limitu 429
+                        if len(zawartosc) > 3000:
+                            zawartosc = zawartosc[:3000] + "\n[... skrócono ze względu na limit długości ...]"
+                        tekst += f"\n[Źródło: {plik}]\n" + zawartosc + "\n"
+                except:
+                    pass
+    return tekst if tekst else "Jesteś asystentem podróży Fadyssai na Kretę."
 
 # Pomocnicza funkcja pobierająca trasę po drogach z OSRM
 def pobierz_trase_osrm(punkty):
@@ -475,12 +541,28 @@ DEFAULT_COLOR = '#DC3545'
 df_miejsca = pobierz_wszystkie_miejsca()
 wycieczki_options = pobierz_skrocone_opcje_wycieczek()
 
-# --- PANEL BOCZNY (CZYSTY - BEZ COMBOBOXÓW) ---
+# --- PANEL BOCZNY (WSPÓLNE ŹRÓDŁA WIEDZY + KLUCZ API) ---
 with st.sidebar:
     st.header("⚙️ Ustawienia Asystenta")
     gemini_api_key = st.text_input("Klucz API Google Gemini", type="password", key="api_key_input")
     st.markdown("---")
-    st.markdown("💡 *Wprowadź swój osobisty klucz API, aby rozmawiać z asystentem na swoim telefonie.*")
+    
+    st.header("📚 Wspólne Źródła Wiedzy")
+    st.markdown("Wrzuć pliki tekstowe lub notatki, z których asystent ma korzystać dla całej grupy:")
+    
+    os.makedirs("sources", exist_ok=True)
+    uploaded_file = st.file_uploader("Dodaj źródło", type=["txt", "md", "pdf"])
+    if uploaded_file is not None:
+        file_path = os.path.join("sources", uploaded_file.name)
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        st.success(f"Dodano źródło: {uploaded_file.name}")
+        
+    zrodla = [f for f in os.listdir("sources") if os.path.isfile(os.path.join("sources", f))]
+    if zrodla:
+        st.markdown("**Aktywne źródła:**")
+        for z in zrodla:
+            st.text(f"• {z}")
 
 # --- NAWIGACJA WSTECZ NA SAMEJ GÓRZE STRONY ---
 col_back, col_empty = st.columns([1, 4])
@@ -577,7 +659,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_zdjecie_i_mape=True):
         """, unsafe_allow_html=True)
         
         if pokaz_zdjecie_i_mape:
-            # 1. ZDJĘCIE
             pierwsze_miejsce_nr = None
             if not kroki_df.empty:
                 pierwsze_miejsce_nr = str(kroki_df.iloc[0]['krok_wycieczki'])
@@ -585,7 +666,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_zdjecie_i_mape=True):
             foto_wycieczki = f"{pierwsze_miejsce_nr}.jpg" if pierwsze_miejsce_nr else "1.jpg"
             renderuj_zdjecie_lub_placeholder(foto_wycieczki)
 
-            # 2. MAPA
             punkty_trasy = [(DOMEK_LAT, DOMEK_LON)]
             surowe_wspolrzedne = [(DOMEK_LAT, DOMEK_LON)]
             
@@ -625,13 +705,11 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_zdjecie_i_mape=True):
 
             st.markdown("---")
             
-            # 3. OPIS
             if pd.notna(w_gen['calosciowy_opis_wycieczki']) and str(w_gen['calosciowy_opis_wycieczki']).strip() != "":
                 st.info(w_gen['calosciowy_opis_wycieczki'])
                 
             st.markdown("---")
 
-        # 4. ETAPY (Spis treści)
         st.markdown("### 🗺️ Etapy i Miejsca wycieczki")
         for _, k in kroki_df.iterrows():
             krok_num = str(k['krok_wycieczki'])
@@ -642,20 +720,17 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_zdjecie_i_mape=True):
 
         st.markdown("---")
 
-        # 5. CZASY I POBUDKA
         pobudka_val = w_gen.get('pobudka', '07:00') if pd.notna(w_gen.get('pobudka')) else '07:00'
         wyjazd_val = w_gen.get('czas_wyjazdu', '07:30') if pd.notna(w_gen.get('czas_wyjazdu')) else '07:30'
         st.markdown(f"**⏰ Pobudka:** {pobudka_val} | **🚗 Wyjazd:** {wyjazd_val} | **⏱️ Czas trwania:** {w_gen['calkowity_czas_wycieczki_godziny']}h | Powrót: **{w_gen['szacowana_godzina_powrotu']}**")
 
         st.markdown("---")
 
-        # 6. PRZYCISK CHECKLISTY W POPUPIE
         if st.button("🎒 Otwórz checklistę wycieczki (Popup)", key=f"btn_chk_popup_{wycieczka_id}"):
             pokaz_checklistu_popup(wycieczka_id)
 
         st.markdown("---")
 
-        # 7. TAKTYKA DNIA W RAMCE
         if pd.notna(w_gen['calosciowa_taktyka_dnia']) and str(w_gen['calosciowa_taktyka_dnia']).strip() != "":
             st.markdown(f"""
             <div style="background-color:#e6ded1; padding:14px; border:2px solid #b89b82; border-radius:8px; margin-bottom:20px;">
@@ -666,7 +741,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_zdjecie_i_mape=True):
 
         st.markdown("---")
 
-        # 8. POSZCZEGÓLNE KROKI (PEŁNA ROZPISKA)
         st.markdown("### 📍 Szczegółowe kroki wycieczki")
         for _, k in kroki_df.iterrows():
             krok_num = str(k['krok_wycieczki'])
@@ -765,6 +839,12 @@ if st.session_state.active_tab == "chat":
     else:
         client = genai.Client(api_key=gemini_api_key)
 
+        zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
+        system_prompt = f"""Jesteś inteligentnym, empatycznym asystentem podróży Fadyssai na Kretę.
+{zewnetrzny_kontekst}
+- Masz pełny wgląd w bazę miejsc oraz istniejące wycieczki w bazie SQLite.
+- Jeśli wspólnie z użytkownikami ustalicie nową wycieczkę lub zmianę, użyj narzędzia `utworz_nowa_wycieczke` lub `aktualizuj_miejsce`, aby zapisać je bezpośrednio w bazie danych."""
+
         if "chat_history" not in st.session_state:
             st.session_state.chat_history = []
 
@@ -778,45 +858,56 @@ if st.session_state.active_tab == "chat":
                 st.markdown(prompt)
 
             with st.chat_message("assistant"):
-                contents = [types.Content(role="user" if m["role"] == "user" else "model", parts=[types.Part.from_text(text=m["content"])]) for m in st.session_state.chat_history]
+                try:
+                    contents = []
+                    for m in st.session_state.chat_history:
+                        role_val = "user" if m["role"] == "user" else "model"
+                        contents.append(types.Content(role=role_val, parts=[types.Part.from_text(text=m["content"])]))
 
-                zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
-                system_prompt = f"""Jesteś inteligentnym, empatycznym asystentem podróży Fadyssai na Kretę.
-{zewnetrzny_kontekst}
-- Masz pełny wgląd w bazę miejsc oraz istniejące wycieczki w bazie SQLite.
-- Jeśli wspólnie z użytkownikami ustalicie nową wycieczkę lub zmianę, użyj narzędzia `utworz_nowa_wycieczke` lub `aktualizuj_miejsce`, aby zapisać je bezpośrednio w bazie danych."""
+                    # Bezpieczna próba wysłania zapytania z obsługą ewentualnego przeciążenia limitu (błąd 429)
+                    response = None
+                    for attempt in range(3):
+                        try:
+                            response = client.models.generate_content(
+                                model='gemini-3.6-flash',
+                                contents=contents,
+                                config=types.GenerateContentConfig(
+                                    tools=[fadyssai_tools],
+                                    system_instruction=system_prompt
+                                )
+                            )
+                            break
+                        except Exception as api_err:
+                            if "429" in str(api_err) and attempt < 2:
+                                time.sleep(5)  # Odczekaj chwilę w razie przekroczenia limitu
+                            else:
+                                raise api_err
 
-                response = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        tools=[fadyssai_tools],
-                        system_instruction=system_prompt
-                    )
-                )
-
-                if response.function_calls:
-                    for call in response.function_calls:
-                        if call.name == "aktualizuj_miejsce":
+                    if response and response.function_calls:
+                        for call in response.function_calls:
                             args = call.args
-                            wynik_bazy = aktualizuj_miejsce(**args)
-                        elif call.name == "utworz_nowa_wycieczke":
-                            args = call.args
-                            wynik_bazy = utworz_nowa_wycieczke(**args)
-                        else:
-                            wynik_bazy = "Wykonano operację."
+                            if call.name == "aktualizuj_miejsce":
+                                wynik_bazy = aktualizuj_miejsce(**args)
+                            elif call.name == "utworz_nowa_wycieczke":
+                                wynik_bazy = utworz_nowa_wycieczke(**args)
+                            else:
+                                wynik_bazy = "Wykonano operację."
                             
-                        follow_up = client.models.generate_content(
-                            model='gemini-2.5-flash',
-                            contents=contents + [
-                                types.Content(role="model", parts=[types.Part.from_function_call(name=call.name, args=args)]),
-                                types.Content(role="user", parts=[types.Part.from_function_response(name=call.name, response={"result": wynik_bazy})])
-                            ],
-                            config=types.GenerateContentConfig(tools=[fadyssai_tools])
-                        )
-                        assistant_reply = follow_up.text
-                else:
-                    assistant_reply = response.text
+                            follow_up = client.models.generate_content(
+                                model='gemini-3.6-flash',
+                                contents=contents + [
+                                    types.Content(role="model", parts=[types.Part.from_function_call(name=call.name, args=args)]),
+                                    types.Content(role="user", parts=[types.Part.from_function_response(name=call.name, response={"result": wynik_bazy})])
+                                ],
+                                config=types.GenerateContentConfig(tools=[fadyssai_tools])
+                            )
+                            assistant_reply = follow_up.text
+                    elif response:
+                        assistant_reply = response.text
+                    else:
+                        assistant_reply = "Brak odpowiedzi od modelu."
+                except Exception as e:
+                    assistant_reply = f"Wystąpił błąd podczas komunikacji z AI: {e}"
 
                 st.markdown(assistant_reply)
                 st.session_state.chat_history.append({"role": "assistant", "content": assistant_reply})
@@ -825,7 +916,6 @@ if st.session_state.active_tab == "chat":
 elif st.session_state.active_tab == "zabytek":
     st.markdown("### 🏛️ Wybór Miejsca / Zabytku")
     
-    # --- COMBOBOX WYBORU MIEJSCA NAD MAPĄ ---
     list_options_zabytek = ["-- Wybierz miejsce z listy --"] + list(df_miejsca['numer_miejsca'].astype(str) + ". " + df_miejsca['nazwa'])
     curr_zabytek_idx = 0
     if st.session_state.active_place_id and st.session_state.active_place_id.isdigit():
@@ -868,7 +958,6 @@ elif st.session_state.active_tab == "zabytek":
 
     map_data = st_folium(m, width="100%", height=380)
 
-    # Obsługa kliknięcia w marker na mapie
     if map_data and map_data.get("last_object_clicked_tooltip"):
         clicked_tooltip = map_data["last_object_clicked_tooltip"]
         if "." in clicked_tooltip:
@@ -891,7 +980,6 @@ elif st.session_state.active_tab == "zabytek":
             </div>
             """, unsafe_allow_html=True)
             
-            # --- ZDJĘCIE MIEJSCA (Z FOLDERU ZDJĘCIA) ---
             renderuj_zdjecie_lub_placeholder(f"{p['numer_miejsca']}.jpg")
 
             google_search_url = f"https://www.google.com/search?q={p['nazwa']} Kreta"
@@ -939,5 +1027,4 @@ elif st.session_state.active_tab == "map":
 
 elif st.session_state.active_tab == "route":
     aktualne_id = pobierz_aktywna_wycieczke_id()
-    # Pod samochodzikiem renderujemy pełny widok wycieczki bez zdjęcia, mapy i opisu
     renderuj_karte_wycieczki(aktualne_id, pokaz_zdjecie_i_mape=False)
