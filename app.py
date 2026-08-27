@@ -415,49 +415,21 @@ DEFAULT_COLOR = '#DC3545'
 df_miejsca = pobierz_wszystkie_miejsca()
 wycieczki_options = pobierz_skrocone_opcje_wycieczek()
 
-# --- PANEL BOCZNY (MENU WYSUWANE) ---
+# --- PANEL BOCZNY (CZYSTY - BEZ COMBOBOXÓW) ---
 with st.sidebar:
-    st.header("🧭 Menu Fadyssai")
-    
-    if wycieczki_options:
-        aktualne_id = pobierz_aktywna_wycieczke_id()
-        curr_idx = 0
-        for idx, opt in enumerate(wycieczki_options):
-            if opt.startswith(aktualne_id + "."):
-                curr_idx = idx
-                break
-                
-        wybrana_wycieczka_sb = st.selectbox("🚗 Wybierz aktywną wycieczkę:", options=wycieczki_options, index=curr_idx)
-        if wybrana_wycieczka_sb:
-            nowe_id = wybrana_wycieczka_sb.split(". ")[0]
-            if nowe_id != aktualne_id:
-                ustaw_aktywna_wycieczke_id(nowe_id)
-                st.rerun()
-
-    st.markdown("---")
-    
-    list_options = ["-- Wybierz miejsce --"] + list(df_miejsca['numer_miejsca'].astype(str) + ". " + df_miejsca['nazwa'])
-    current_index = 0
-    if st.session_state.active_place_id and st.session_state.active_place_id.isdigit():
-        matching = [i for i, opt in enumerate(list_options) if opt.startswith(st.session_state.active_place_id + ".")]
-        if matching:
-            current_index = matching[0]
-            
-    selected_place_selectbox = st.selectbox(
-        "🔍 Wybierz miejsce:",
-        options=list_options,
-        index=current_index
-    )
-
-    if selected_place_selectbox != "-- Wybierz miejsce --":
-        chosen_id = selected_place_selectbox.split(". ")[0]
-        if chosen_id != st.session_state.active_place_id:
-            st.session_state.active_place_id = chosen_id
-            st.rerun()
-
-    st.markdown("---")
     st.header("⚙️ Ustawienia Asystenta")
     gemini_api_key = st.text_input("Klucz API Google Gemini", type="password", key="api_key_input")
+
+# --- NAWIGACJA WSTECZ NA SAMEJ GÓRZE STRONY ---
+col_back, col_empty = st.columns([1, 4])
+with col_back:
+    if st.button("⬅️ Powrót"):
+        if st.session_state.active_tab == "zabytek" and st.session_state.active_place_id is not None:
+            st.session_state.active_place_id = None
+        elif st.session_state.active_tab != "chat":
+            st.session_state.active_tab = "chat"
+            st.query_params["tab"] = "chat"
+        st.rerun()
 
 # --- GŁÓWNY INTERFEJS: 2 RZĘDY IKONEK ---
 domek_maps_url = "https://www.google.com/maps/search/?api=1&query=35.5914,24.0918"
@@ -483,7 +455,6 @@ st.markdown(f"""
 
 # Pomocnicza funkcja obsługująca ścieżkę do podfolderu "zdjęcia"
 def renderuj_zdjecie_lub_placeholder(nazwa_pliku):
-    # Sprawdzamy w podfolderze "zdjęcia" oraz "zdjecia" (na wypadek literówek w nazwie folderu)
     mozliwe_katalogi = ["zdjęcia", "zdjecia", "."]
     sciezka_pliku = None
     
@@ -500,12 +471,10 @@ def renderuj_zdjecie_lub_placeholder(nazwa_pliku):
     else:
         st.markdown(f'<div class="photo-placeholder">📷 [Brak pliku {nazwa_pliku} w folderze "zdjęcia"]</div>', unsafe_allow_html=True)
 
-# --- FUNKCJA RENDEROWANIA KARTY WYCIECZKI ---
-def renderuj_karte_wycieczki(wycieczka_id):
+# --- POPUP CHECKLISTY (MODAL) ---
+@st.dialog("🎒 Checklista Wycieczki")
+def pokaz_checklistu_popup(wycieczka_id):
     conn = sqlite3.connect('fadyssai.db')
-    wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
-    kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
-    
     checklisty_df = pd.read_sql('SELECT * FROM checklist WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
     items_df = pd.DataFrame()
     if not checklisty_df.empty:
@@ -516,6 +485,26 @@ def renderuj_karte_wycieczki(wycieczka_id):
             placeholders = ','.join(['?'] * len(ids_chl))
             items_df = pd.read_sql(f'SELECT * FROM checklist_item WHERE id_checklisty IN ({placeholders})', conn, params=ids_chl)
     conn.close()
+
+    if checklisty_df.empty or items_df.empty:
+        st.info("Brak zdefiniowanej checklisty dla tej wycieczki.")
+    else:
+        for _, chl in checklisty_df.iterrows():
+            typ_chl = chl['typ'].capitalize()
+            chl_id = chl['id']
+            powiazane_itemy = items_df[items_df['id_checklisty'] == chl_id]
+            if not powiazane_itemy.empty:
+                st.markdown(f"**📌 {typ_chl}:**")
+                for _, itm in powiazane_itemy.iterrows():
+                    ilosc_str = f" *({itm['ilosc']})*" if pd.notna(itm['ilosc']) and itm['ilosc'] != "1" else ""
+                    st.checkbox(f"{itm['nazwa']}{ilosc_str}", key=f"chk_pop_{itm['id']}")
+
+# --- FUNKCJA RENDEROWANIA KARTY WYCIECZKI ---
+def renderuj_karte_wycieczki(wycieczka_id):
+    conn = sqlite3.connect('fadyssai.db')
+    wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
+    kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
+    conn.close()
     
     if not wycieczka_row.empty:
         w_gen = wycieczka_row.iloc[0]
@@ -525,7 +514,7 @@ def renderuj_karte_wycieczki(wycieczka_id):
         </div>
         """, unsafe_allow_html=True)
         
-        # --- ZDJĘCIE WYCIECZKI (NUMER PIERWSZEGO MIEJSCA) ---
+        # 1. ZDJĘCIE
         pierwsze_miejsce_nr = None
         if not kroki_df.empty:
             pierwsze_miejsce_nr = str(kroki_df.iloc[0]['krok_wycieczki'])
@@ -533,7 +522,7 @@ def renderuj_karte_wycieczki(wycieczka_id):
         foto_wycieczki = f"{pierwsze_miejsce_nr}.jpg" if pierwsze_miejsce_nr else "1.jpg"
         renderuj_zdjecie_lub_placeholder(foto_wycieczki)
 
-        # --- MAPA TRASY WYCIECZKI PO DROGACH (OSRM) ---
+        # 2. MAPA
         punkty_trasy = [(DOMEK_LAT, DOMEK_LON)]
         surowe_wspolrzedne = [(DOMEK_LAT, DOMEK_LON)]
         
@@ -556,7 +545,6 @@ def renderuj_karte_wycieczki(wycieczka_id):
             srodek_lon = sum([p[1] for p in punkty_trasy]) / len(punkty_trasy)
             
             m_trasa = folium.Map(location=[srodek_lat, srodek_lon], zoom_start=10, tiles="CartoDB positron")
-            
             dodaj_marker_domku(m_trasa)
             
             for p in punkty_trasy:
@@ -574,55 +562,82 @@ def renderuj_karte_wycieczki(wycieczka_id):
 
         st.markdown("---")
         
+        # 3. OPIS
         if pd.notna(w_gen['calosciowy_opis_wycieczki']) and str(w_gen['calosciowy_opis_wycieczki']).strip() != "":
             st.info(w_gen['calosciowy_opis_wycieczki'])
             
-        st.markdown(f"**Taktyka dnia:** {w_gen['calosciowa_taktyka_dnia']}")
-        st.markdown(f"**⏱️ Czas trwania / Powrót:** {w_gen['calkowity_czas_wycieczki_godziny']}h | Powrót: {w_gen['szacowana_godzina_powrotu']}")
-        
-        if not checklisty_df.empty:
-            st.markdown("---")
-            st.markdown("### 🎒 Checklista Wycieczki")
-            for _, chl in checklisty_df.iterrows():
-                typ_chl = chl['typ'].capitalize()
-                chl_id = chl['id']
-                powiazane_itemy = items_df[items_df['id_checklisty'] == chl_id] if not items_df.empty else pd.DataFrame()
-                
-                if not powiazane_itemy.empty:
-                    st.markdown(f"**📌 {typ_chl}:**")
-                    for _, itm in powiazane_itemy.iterrows():
-                        ilosc_str = f" *({itm['ilosc']})*" if pd.notna(itm['ilosc']) and itm['ilosc'] != "1" else ""
-                        st.markdown(f"- {itm['nazwa']}{ilosc_str}")
-
         st.markdown("---")
+
+        # 4. ETAPY (Spis treści)
         st.markdown("### 🗺️ Etapy i Miejsca wycieczki")
-        
-        kroki_html = "<div style='border-left: 4px solid #b89b82; padding-left: 12px; margin-bottom: 20px;'>"
         for _, k in kroki_df.iterrows():
-            kroki_html += f"<div style='margin-bottom: 6px; font-weight: bold; color: #663223;'>Krok {k['krok_wycieczki']}: {k['nazwa']}</div>"
-        kroki_html += "</div>"
-        st.markdown(kroki_html, unsafe_allow_html=True)
-        
+            krok_num = str(k['krok_wycieczki'])
+            krok_nazwa = str(k['nazwa'])
+            if st.button(f"📌 Przejdź do kroku {krok_num}: {krok_nazwa}", key=f"spis_{wycieczka_id}_{k['id']}"):
+                st.query_params["anchor"] = f"krok_{k['id']}"
+                st.rerun()
+
         st.markdown("---")
 
-        for _, k in kroki_df.iterrows():
+        # 5. CZASY
+        st.markdown(f"**⏱️ Czas trwania wycieczki:** {w_gen['calkowity_czas_wycieczki_godziny']}h | Szacowany powrót: **{w_gen['szacowana_godzina_powrotu']}**")
+
+        st.markdown("---")
+
+        # 6. PRZYCISK CHECKLISTY W POPUPIE
+        if st.button("🎒 Otwórz checklistę wycieczki (Popup)", key=f"btn_chk_popup_{wycieczka_id}"):
+            pokaz_checklistu_popup(wycieczka_id)
+
+        st.markdown("---")
+
+        # 7. TAKTYKA DNIA W RAMCE
+        if pd.notna(w_gen['calosciowa_taktyka_dnia']) and str(w_gen['calosciowa_taktyka_dnia']).strip() != "":
             st.markdown(f"""
-            <div style="background-color:#e6ded1; padding:10px; border-left:4px solid #8b4513; margin-top:10px; margin-bottom:5px; font-weight:bold; color:#663223;">
-                {k['krok_wycieczki']}. {k['nazwa']}
+            <div style="background-color:#e6ded1; padding:14px; border:2px solid #b89b82; border-radius:8px; margin-bottom:20px;">
+                <span style="font-size:12pt; font-weight:bold; color:#663223;">🧠 TAKTYKA DNIA:</span><br>
+                <span style="color:#3b2f2f;">{w_gen['calosciowa_taktyka_dnia']}</span>
             </div>
             """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # 8. POSZCZEGÓLNE KROKI
+        st.markdown("### 📍 Szczegółowe kroki wycieczki")
+        for _, k in kroki_df.iterrows():
+            krok_num = str(k['krok_wycieczki'])
+            krok_nazwa = str(k['nazwa'])
             
-            google_search_url = f"https://www.google.com/search?q={k['nazwa']} Kreta"
+            pasujące_miejsce = df_miejsca[df_miejsca['numer_miejsca'] == krok_num]
+            if not pasujące_miejsce.empty:
+                miejsce_id_cel = str(pasujące_miejsce.iloc[0]['numer_miejsca'])
+            else:
+                miejsce_id_cel = "1"
+
+            st.markdown(f'<div id="krok_{k["id"]}"></div>', unsafe_allow_html=True)
+
+            st.markdown(f"""
+            <div style="background-color:#e6ded1; padding:14px; border-left:6px solid #663223; border-top:1px solid #b89b82; border-bottom:1px solid #b89b82; margin-top:20px; margin-bottom:8px;">
+                <span style="font-size:16pt; font-weight:900; color:#663223; text-transform:uppercase;">🏛️ Krok {krok_num}: {krok_nazwa}</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if st.button(f"🔍 Otwórz szczegóły miejsca: {krok_nazwa}", key=f"btn_miejsce_podstrona_{k['id']}"):
+                st.session_state.active_place_id = miejsce_id_cel
+                st.query_params["tab"] = "zabytek"
+                st.rerun()
+
+            google_search_url = f"https://www.google.com/search?q={krok_nazwa} Kreta"
             gps_maps_url = f"https://www.google.com/maps/search/?api=1&query={k['wspolrzedne']}"
-            sklep_maps_url = f"https://www.google.com/maps/search/?api=1&query=supermarket+near+{k['wspolrzedne']}"
-            resto_maps_url = f"https://www.google.com/maps/search/?api=1&query=restaurant+near+{k['wspolrzedne']}"
+            coords_clean = str(k['wspolrzedne']).replace(" ", "")
+            sklep_maps_url = f"https://www.google.com/maps/search/supermarket/@{coords_clean},15z"
+            resto_maps_url = f"https://www.google.com/maps/search/restaurant/@{coords_clean},15z"
 
             st.markdown(f"""
                 <div class="custom-nav-bar" style="margin-bottom: 10px;">
                     <a href="{google_search_url}" target="_blank" class="custom-nav-btn" title="Szukaj w Google">🔍</a>
                     <a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" title="Pineska GPS">📍</a>
-                    <a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" title="Najbliższy sklep spożywczy">🛒</a>
-                    <a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" title="Najbliższa restauracja">🍽️</a>
+                    <a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" title="Najbliższy sklep spożywczy w pobliżu kroku">🛒</a>
+                    <a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" title="Najbliższa restauracja w pobliżu kroku">🍽️</a>
                 </div>
             """, unsafe_allow_html=True)
 
@@ -728,7 +743,25 @@ if st.session_state.active_tab == "chat":
                 st.rerun()
 
 elif st.session_state.active_tab == "zabytek":
-    st.info("💡 Kliknij w dowolny punkt na poniższej mapie, aby zobaczyć szczegóły miejsca.")
+    st.markdown("### 🏛️ Wybór Miejsca / Zabytku")
+    
+    # --- COMBOBOX WYBORU MIEJSCA NAD MAPĄ ---
+    list_options_zabytek = ["-- Wybierz miejsce z listy --"] + list(df_miejsca['numer_miejsca'].astype(str) + ". " + df_miejsca['nazwa'])
+    curr_zabytek_idx = 0
+    if st.session_state.active_place_id and st.session_state.active_place_id.isdigit():
+        matching_z = [i for i, opt in enumerate(list_options_zabytek) if opt.startswith(st.session_state.active_place_id + ".")]
+        if matching_z:
+            curr_zabytek_idx = matching_z[0]
+
+    wybrany_zabytek_main = st.selectbox("Wybierz miejsce do wyświetlenia:", options=list_options_zabytek, index=curr_zabytek_idx, key="main_zabytek_sb")
+    if wybrany_zabytek_main != "-- Wybierz miejsce z listy --":
+        chosen_id_m = wybrany_zabytek_main.split(". ")[0]
+        if chosen_id_m != st.session_state.active_place_id:
+            st.session_state.active_place_id = chosen_id_m
+            st.rerun()
+
+    st.markdown("---")
+    st.info("💡 Kliknij w dowolny punkt na poniższej mapie lub wybierz z listy powyżej, aby zobaczyć szczegóły miejsca.")
     
     m = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB positron")
     dodaj_marker_domku(m)
@@ -754,14 +787,6 @@ elif st.session_state.active_tab == "zabytek":
                 pass
 
     map_data = st_folium(m, width="100%", height=380)
-
-    if map_data and map_data.get("last_object_clicked_tooltip"):
-        clicked_tooltip = map_data["last_object_clicked_tooltip"]
-        if "." in clicked_tooltip:
-            clicked_id = clicked_tooltip.split(".")[0].strip()
-            if clicked_id.isdigit() and clicked_id != st.session_state.active_place_id:
-                st.session_state.active_place_id = clicked_id
-                st.rerun()
 
     st.markdown("---")
 
