@@ -91,7 +91,7 @@ st.markdown("""
         border-color: #5c2c16 !important;
     }
 
-    /* Zmniejszenie marginesu między mapą (st_folium) a listą selectbox */
+    /* Zmniejszenie marginesu między mapą a listą */
     iframe {
         margin-bottom: -15px !important;
     }
@@ -184,7 +184,8 @@ def init_db():
             strategie_meltdown TEXT,
             ochrona_slonce TEXT,
             najlepiej_polaczyc TEXT,
-            zadania_dla_dzieci TEXT
+            zadania_dla_dzieci TEXT,
+            odwiedzone INTEGER DEFAULT 0
         )
     ''')
 
@@ -197,10 +198,19 @@ def init_db():
             calkowity_czas_wycieczki_godziny TEXT,
             szacowana_godzina_powrotu TEXT,
             pobudka TEXT,
-            czas_wyjazdu TEXT
+            czas_wyjazdu TEXT,
+            odbyta INTEGER DEFAULT 0
         )
     ''')
 
+    try:
+        cursor.execute("ALTER TABLE miejsca ADD COLUMN odwiedzone INTEGER DEFAULT 0")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE wycieczka ADD COLUMN odbyta INTEGER DEFAULT 0")
+    except:
+        pass
     try:
         cursor.execute("ALTER TABLE wycieczka ADD COLUMN pobudka TEXT")
     except:
@@ -264,12 +274,12 @@ def init_db():
         
         for _, row in df_csv.iterrows():
             cursor.execute('''
-                INSERT OR REPLACE INTO miejsca (
+                INSERT OR IGNORE INTO miejsca (
                     numer_miejsca, nazwa, nazwa_angielska, opis, wspolrzedne, typ,
                     czas_dojazdu, godziny_otwarcia, najlepsza_pora, orientacyjny_czas,
                     koszt, konieczna_akcja, zaplecze_gastro, ile_jedzenia, trudnosc_adhd,
-                    potencjal_meltdownu, strategie_meltdown, ochrona_slonce, najlepiej_polaczyc, zadania_dla_dzieci
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    potencjal_meltdownu, strategie_meltdown, ochrona_slonce, najlepiej_polaczyc, zadania_dla_dzieci, odwiedzone
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             ''', (
                 str(row.get('numer miejsca', '')),
                 str(row.get('nazwa', '')),
@@ -297,8 +307,8 @@ def init_db():
     cursor.execute('SELECT COUNT(*) FROM wycieczka')
     if cursor.fetchone()[0] == 0:
         cursor.execute('''
-            INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, odbyta)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
         ''', (
             "1",
             "Mity i Oceaniczne Głębiny: Pałac w Knossos & Cretaquarium",
@@ -334,8 +344,8 @@ def init_db():
         ])
 
         cursor.execute('''
-            INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, odbyta)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
         ''', (
             "2",
             "Wyspa Łez i Sekretne Zatoki: Spinalonga & Agios Nikolaos",
@@ -375,6 +385,22 @@ def init_db():
 
 init_db()
 
+def oznacz_wycieczke_i_miejsca_jako_odbyte(id_wycieczki):
+    conn = sqlite3.connect('fadyssai.db')
+    cursor = conn.cursor()
+    cursor.execute('UPDATE wycieczka SET odbyta = 1 WHERE id = ?', (str(id_wycieczki),))
+    
+    cursor.execute('SELECT krok_wycieczki FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
+    kroki = cursor.fetchall()
+    
+    for k in kroki:
+        numer_miejsca = k[0]
+        cursor.execute('UPDATE miejsca SET odwiedzone = 1 WHERE numer_miejsca = ?', (str(numer_miejsca),))
+        
+    conn.commit()
+    conn.close()
+    return f"Wycieczka #{id_wycieczki} oraz powiązane z nią miejsca zostały oznaczone jako odbyte!"
+
 def aktualizuj_miejsce(numer_miejsca, opis=None, konieczna_akcja=None):
     conn = sqlite3.connect('fadyssai.db')
     cursor = conn.cursor()
@@ -390,8 +416,8 @@ def utworz_nowa_wycieczke(id, tytul_wycieczki, calosciowy_opis_wycieczki, calosc
     conn = sqlite3.connect('fadyssai.db')
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT OR REPLACE INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, odbyta)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
     ''', (str(id), tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, str(calkowity_czas_wycieczki_godziny), szacowana_godzina_powrotu, pobudka, czas_wyjazdu))
     conn.commit()
     conn.close()
@@ -564,7 +590,8 @@ def ustaw_aktywna_wycieczke_id(wycieczka_id):
 
 def pobierz_skrocone_opcje_wycieczek():
     conn = sqlite3.connect('fadyssai.db')
-    df_w = pd.read_sql('SELECT id, tytul_wycieczki FROM wycieczka', conn)
+    # Pobieramy wyłącznie wycieczki, które NIE są odbyte (odbyta = 0)
+    df_w = pd.read_sql('SELECT id, tytul_wycieczki FROM wycieczka WHERE odbyta = 0', conn)
     conn.close()
     if df_w.empty:
         return []
@@ -590,8 +617,8 @@ def wczytaj_kontekst_zewnetrzny():
             
     conn = sqlite3.connect('fadyssai.db')
     try:
-        miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, typ, czas_dojazdu, orientacyjny_czas, koszt, konieczna_akcja FROM miejsca', conn)
-        wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia FROM wycieczka', conn)
+        miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, typ, czas_dojazdu, orientacyjny_czas, koszt, konieczna_akcja, odwiedzone FROM miejsca', conn)
+        wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, odbyta FROM wycieczka', conn)
         kroki_df = pd.read_sql('SELECT id_wycieczki, krok_wycieczki, nazwa, okienko_zwiedzania FROM krok_wycieczki', conn)
         checklisty_df = pd.read_sql('SELECT c.id_wycieczki, c.typ, i.nazwa, i.ilosc FROM checklist c JOIN checklist_item i ON c.id = i.id_checklisty', conn)
     except:
@@ -605,11 +632,13 @@ def wczytaj_kontekst_zewnetrzny():
     if not miejsca_df.empty:
         tekst += "Miejsca:\n"
         for _, r in miejsca_df.iterrows():
-            tekst += f"- Nr {r['numer_miejsca']}: {r['nazwa']} (Typ: {r['typ']}, Dojazd: {r['czas_dojazdu']}, Koszt: {r['koszt']}, Akcja: {r['konieczna_akcja']})\n"
+            tekst += f"- Nr {r['numer_miejsca']}: {r['nazwa']} (Typ: {r['typ']}, Odwiedzone: {r['odwiedzone']}, Dojazd: {r['czas_dojazdu']}, Koszt: {r['koszt']})\n"
     if not wycieczki_df.empty:
         tekst += "\nWycieczki:\n"
         for _, w in wycieczki_df.iterrows():
-            tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Opis: {w['calosciowy_opis_wycieczki']} | Taktyka: {w['calosciowa_taktyka_dnia']}\n"
+            if int(w.get('odbyta', 0)) == 1:
+                continue
+            tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} (Odbyta: {w['odbyta']}) | Opis: {w['calosciowy_opis_wycieczki']}\n"
     if not kroki_df.empty:
         tekst += "\nKroki wycieczek:\n"
         for _, k in kroki_df.iterrows():
@@ -1101,12 +1130,21 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_przycisk_aktyw
         </div>
         """, unsafe_allow_html=True)
         
-        if pokaz_przycisk_aktywnej:
-            col_btn_akt, col_dummy = st.columns([2, 3])
-            with col_btn_akt:
-                if st.button(f"🎯 Ustaw jako aktualną (Wycieczka #{w_gen['id']})", key=f"btn_akt_{wycieczka_id}"):
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if pokaz_przycisk_aktywnej:
+                if st.button(f"🎯 Ustaw jako aktualną", key=f"btn_akt_{wycieczka_id}", use_container_width=True):
                     ustaw_aktywna_wycieczke_id(wycieczka_id)
                     st.success(f"Ustawiono wycieczkę #{wycieczka_id} jako aktualną!")
+                    st.rerun()
+        with col_btn2:
+            is_odbyta = int(w_gen.get('odbyta', 0)) == 1
+            if is_odbyta:
+                st.markdown('<div style="background-color:#d4edda; color:#155724; padding:8px; border-radius:6px; text-align:center; font-weight:bold; border:1px solid #c3e6cb;">✨ Wycieczka przebyta</div>', unsafe_allow_html=True)
+            else:
+                if st.button(f"✅ Oznacz jako przebytą", key=f"btn_odbyte_{wycieczka_id}", use_container_width=True):
+                    oznacz_wycieczke_i_miejsca_jako_odbyte(wycieczka_id)
+                    st.success(f"Wycieczka i powiązane miejsca zostały oznaczone jako odbyte!")
                     st.rerun()
 
         if pokaz_mape:
@@ -1197,12 +1235,23 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_przycisk_aktyw
                 miejsce_id_cel = "1"
 
             is_target_step = (st.session_state.jump_to_step == f"krok_{k['id']}")
+            
+            anchor_html = f'<div id="krok_{k["id"]}"></div>'
             if is_target_step:
-                st.success(f"👇 Wybrany krok: {krok_nazwa}")
+                anchor_html = f'''
+                    <div id="krok_{k["id"]}"></div>
+                    <script>
+                        setTimeout(function() {{
+                            var el = document.getElementById("krok_{k["id"]}");
+                            if(el) {{ el.scrollIntoView({{behavior: "smooth", block: "start"}}); }}
+                        }}, 100);
+                    </script>
+                '''
                 st.session_state.jump_to_step = None
 
+            st.markdown(anchor_html, unsafe_allow_html=True)
             st.markdown(f"""
-            <div id="krok_{k['id']}" style="background-color:#e6ded1; padding:14px; border-left:6px solid #663223; border-top:1px solid #b89b82; border-bottom:1px solid #b89b82; margin-top:20px; margin-bottom:8px;">
+            <div style="background-color:#e6ded1; padding:14px; border-left:6px solid #663223; border-top:1px solid #b89b82; border-bottom:1px solid #b89b82; margin-top:20px; margin-bottom:8px;">
                 <span style="font-size:16pt; font-weight:900; color:#663223; text-transform:uppercase;">🏛️ Krok {krok_num}: {krok_nazwa}</span>
             </div>
             """, unsafe_allow_html=True)
@@ -1264,7 +1313,8 @@ if st.session_state.active_tab == "chat":
                 name = row['nazwa']
                 num = str(row['numer_miejsca'])
                 typ_raw = str(row.get('typ', '')).strip().lower()
-                bg_color = COLORS.get(typ_raw, DEFAULT_COLOR)
+                is_visited = int(row.get('odwiedzone', 0)) == 1
+                bg_color = '#6c757d' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
                 text_color = "black" if typ_raw == 'activity' else "white"
                 
                 icon_html = f'<div style="background-color:{bg_color};color:{text_color};border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-family:Arial;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.4);">{num}</div>'
@@ -1292,7 +1342,8 @@ elif st.session_state.active_tab == "zabytek":
                 name = row['nazwa']
                 num = str(row['numer_miejsca'])
                 typ_raw = str(row.get('typ', '')).strip().lower()
-                bg_color = COLORS.get(typ_raw, DEFAULT_COLOR)
+                is_visited = int(row.get('odwiedzone', 0)) == 1
+                bg_color = '#6c757d' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
                 text_color = "black" if typ_raw == 'activity' else "white"
                 
                 icon_html = f'<div style="background-color:{bg_color};color:{text_color};border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-family:Arial;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.4);">{num}</div>'
@@ -1341,7 +1392,7 @@ elif st.session_state.active_tab == "zabytek":
             """, unsafe_allow_html=True)
 
             google_search_url = f"https://www.google.com/search?q={p['nazwa']} Kreta"
-            st.markdown(f"<p style='text-align:center;'><a href='{google_search_url}' target='_blank' style='color:#8b4513;'>🔍 Szukaj w Google</a></p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='text-align:center;'><a href='{google_search_url}' target='_blank' style='color:#8b4513;k'>🔍 Szukaj w Google</a></p>", unsafe_allow_html=True)
             
             if pd.notna(p['opis']) and str(p['opis']).strip() != "":
                 st.info(p['opis'])
@@ -1394,7 +1445,8 @@ elif st.session_state.active_tab == "map":
                     name = row['nazwa']
                     num = str(row['numer_miejsca'])
                     typ_raw = str(row.get('typ', '')).strip().lower()
-                    bg_color = COLORS.get(typ_raw, DEFAULT_COLOR)
+                    is_visited = int(row.get('odwiedzone', 0)) == 1
+                    bg_color = '#6c757d' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
                     text_color = "black" if typ_raw == 'activity' else "white"
                     
                     icon_html = f'<div style="background-color:{bg_color};color:{text_color};border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-family:Arial;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.4);">{num}</div>'
@@ -1415,17 +1467,17 @@ elif st.session_state.active_tab == "map":
                     SELECT DISTINCT k.id_wycieczki, w.tytul_wycieczki 
                     FROM krok_wycieczki k 
                     JOIN wycieczka w ON k.id_wycieczki = w.id 
-                    WHERE k.krok_wycieczki = ? OR k.nazwa LIKE ?
+                    WHERE (k.krok_wycieczki = ? OR k.nazwa LIKE ?) AND w.odbyta = 0
                 ''', conn, params=(klikniety_numer_miejsca, f"%{clicked_tooltip.split('.')[1].strip()}%"))
                 conn.close()
                 
                 info_tekst = ""
                 if not powiazane_kroki.empty:
-                    info_tekst = f"📌 Miejsce **{clicked_tooltip}** znajduje się w następujących wycieczkach:\n"
+                    info_tekst = f"📌 Miejsce **{clicked_tooltip}** znajduje się w następujących aktywnych wycieczkach:\n"
                     for _, row_w in powiazane_kroki.iterrows():
                         info_tekst += f"- **Wycieczka #{row_w['id_wycieczki']}**: {row_w['tytul_wycieczki']}\n"
                 else:
-                    info_tekst = f"📌 Miejsce **{clicked_tooltip}** nie jest obecnie przypisane jako krok w żadnej wycieczce."
+                    info_tekst = f"📌 Miejsce **{clicked_tooltip}** nie jest obecnie przypisane jako krok w żadnej aktywnej wycieczce."
                 
                 if st.session_state.get("last_clicked_text") != clicked_tooltip:
                     st.session_state.last_clicked_text = clicked_tooltip
@@ -1446,6 +1498,14 @@ elif st.session_state.active_tab == "map":
 elif st.session_state.active_tab == "route":
     st.markdown('<div class="antique-header">🚗 Aktualna Trasa i Wycieczka</div>', unsafe_allow_html=True)
     aktualne_id = pobierz_aktywna_wycieczke_id()
-    renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False, pokaz_przycisk_aktywnej=False)
+    
+    conn = sqlite3.connect('fadyssai.db')
+    curr_w_check = pd.read_sql('SELECT odbyta FROM wycieczka WHERE id = ?', conn, params=(str(aktualne_id),))
+    conn.close()
+    
+    if not curr_w_check.empty and int(curr_w_check.iloc[0]['odbyta']) == 1:
+        st.info("✨ Aktualnie ustawiona wycieczka została już ukończona i przebyta. Wybierz inną wycieczkę z menu wycieczek.")
+    else:
+        renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False, pokaz_przycisk_aktywnej=False)
 
     renderuj_sekcje_czatu_ai("tab_route")
