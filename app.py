@@ -84,13 +84,18 @@ st.markdown("""
         background-color: rgba(255, 255, 255, 0.05);
         border: 1px solid rgba(255, 255, 255, 0.1);
         color: #94a3b8;
-        padding: 8px 0;
+        padding: 6px 0;
         text-align: center;
         border-radius: 10px;
-        font-size: 20px;
+        font-size: 11px;
+        font-weight: 600;
         text-decoration: none;
         cursor: pointer;
         transition: all 0.2s ease;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
     }
     .bottom-nav-btn:hover {
         background-color: rgba(56, 189, 248, 0.15);
@@ -117,16 +122,26 @@ st.markdown("""
         background-color: #111e38;
         border: 1px solid #334155;
         color: #f8fafc;
-        padding: 6px 0;
+        padding: 6px 4px;
         text-align: center;
         border-radius: 8px;
-        font-size: 16px;
+        font-size: 11px;
+        font-weight: 600;
         text-decoration: none;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
     }
     .custom-nav-btn:hover {
         background-color: #1e293b;
         border-color: #38bdf8;
         color: #38bdf8;
+    }
+    .custom-nav-btn.active {
+        background-color: #38bdf8;
+        color: #0b1329;
+        border-color: #38bdf8;
     }
 
     .logistics-card {
@@ -1135,7 +1150,9 @@ def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
     
     system_prompt = f"""Jesteś inteligentnym asystentem podróży OdyssAi na Kretę.
 {zewnetrzny_kontekst}
-- Masz wgląd w bazę danych oraz w notatki i wskazówki wpisane przez użytkownika. Korzystaj z nich jako rzetelnego źródła wiedzy. Chronisz miejsca z flagą Base = true."""
+- Masz wgląd w bazę danych oraz w notatki i wskazówki wpisane przez użytkownika. Korzystaj z nich jako rzetelnego źródła wiedzy. 
+- ŻELAZNA ZASADA: Zawsze bezwzględnie upewnij się, że wypełniasz wszystkie wymagane pola (required) bazy danych przed dodaniem lub modyfikacją jakichkolwiek danych.
+- Chronisz miejsca z flagą Base = true."""
 
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -1434,14 +1451,18 @@ with st.sidebar:
     st.markdown("### 🧭 Szybka Nawigacja")
     st.markdown(f"""
         <div class="custom-nav-bar">
-            <a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" title="Sklep">🛒</a>
-            <a href="{domek_maps_url}" target="_blank" class="custom-nav-btn" title="Domek">🏠</a>
-            <a href="?tab=chat" target="_self" class="custom-nav-btn {active_chat_sidebar}" title="Asystent AI">💬</a>
+            <a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" title="Sklep"><span>🛒</span><span>Sklep</span></a>
+            <a href="{domek_maps_url}" target="_blank" class="custom-nav-btn" title="Domek"><span>🏠</span><span>Domek</span></a>
+            <a href="?tab=chat" target="_self" class="custom-nav-btn {active_chat_sidebar}" title="Asystent AI"><span>💬</span><span>Asystent</span></a>
         </div>
     """, unsafe_allow_html=True)
 
     st.markdown("---")
     st.header("⚙️ Ustawienia Asystenta")
+    
+    if "api_key_input" not in st.session_state:
+        st.session_state.api_key_input = "AQ.Ab8RN6JvgXsJSd38hgosyhFJJrGwMvHQqX72bb0MlpYQTKRMzg"
+
     gemini_api_key = st.text_input("Klucz API Google Gemini", type="password", key="api_key_input")
     
     dostepne_modele = [
@@ -1459,9 +1480,9 @@ active_route = "active" if st.session_state.active_tab == "route" else ""
 
 st.markdown(f"""
     <div class="bottom-nav-container">
-        <a href="?tab=zabytek" target="_self" class="bottom-nav-btn {active_zabytek}">🏛️</a>
-        <a href="?tab=map" target="_self" class="bottom-nav-btn {active_map}">🗺️</a>
-        <a href="?tab=route" target="_self" class="bottom-nav-btn {active_route}">🚗</a>
+        <a href="?tab=zabytek" target="_self" class="bottom-nav-btn {active_zabytek}"><span>🏛️</span><span>Miejsca</span></a>
+        <a href="?tab=map" target="_self" class="bottom-nav-btn {active_map}"><span>🗺️</span><span>Wycieczki</span></a>
+        <a href="?tab=route" target="_self" class="bottom-nav-btn {active_route}"><span>🚗</span><span>Aktualna Wycieczka</span></a>
     </div>
 """, unsafe_allow_html=True)
 
@@ -1509,7 +1530,7 @@ elif st.session_state.active_tab == "zabytek":
         </div>
     """, unsafe_allow_html=True)
     
-    st.markdown("### 🗺️ Mapa lokalizacji")
+    st.markdown("### 🗺️ Nasze miejsca")
     m = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB dark_matter")
     dodaj_marker_domku(m)
 
@@ -1533,6 +1554,26 @@ elif st.session_state.active_tab == "zabytek":
                 pass
 
     map_data = st_folium(m, width="100%", height=300)
+
+    # Działająca lista wyboru miejsc pod mapą z natychmiastowym callbackiem
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("##### 📍 Szybki wybór miejsca z listy:")
+    
+    miejsca_opcje_lista = [f"{r['numer_miejsca']}. {r['nazwa']}" for _, r in df_miejsca.iterrows()]
+    
+    def aktualizuj_wybrane_miejsce():
+        wybrany_tekst = st.session_state.selected_place_sb
+        if wybrany_tekst:
+            wybrany_num = wybrany_tekst.split(".")[0].strip()
+            st.session_state.active_place_id = wybrany_num
+
+    st.selectbox(
+        "Wybierz miejsce:", 
+        options=miejsca_opcje_lista, 
+        key="selected_place_sb", 
+        on_change=aktualizuj_wybrane_miejsce,
+        label_visibility="collapsed"
+    )
 
     if map_data and map_data.get("last_object_clicked_tooltip"):
         clicked_tooltip = map_data["last_object_clicked_tooltip"]
@@ -1664,8 +1705,8 @@ elif st.session_state.active_tab == "map":
         <div class="adventure-header">
             <div style="font-size:24px;">🗺️</div>
             <div>
-                <div class="adventure-title-text">OdyssAi • Mapa Wypraw</div>
-                <div class="adventure-subtitle">Eksploruj szlaki i punkty strategiczne</div>
+                <div class="adventure-title-text">OdyssAi • Wycieczki i Trasy</div>
+                <div class="adventure-subtitle">Wybierz wycieczkę lub przeglądaj miejsca</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
