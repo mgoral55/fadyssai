@@ -9,265 +9,232 @@ import os
 import urllib.request
 import json
 import re
+import base64
 
-# --- 1. KONFIGURACJA STRONY I STYL PERGAMINU (MOBILE FIRST / UX ADHD) ---
+# --- 1. KONFIGURACJA STRONY I DESIGN SYSTEM: DUCH PRZYGODY (DARK + NEONY) ---
 st.set_page_config(page_title="OdyssAi - Kreta", layout="centered", page_icon="🧭")
 
 st.markdown("""
     <style>
     .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 70px !important;
+        padding-top: 0.5rem !important;
+        padding-bottom: 90px !important;
+        max-width: 600px;
     }
     .stApp {
-        background-color: #f4ecdf;
-        color: #3b2f2f;
+        background-color: #0b1329;
+        color: #f8fafc;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
     [data-testid="stSidebar"] {
-        background-color: #e6ded1;
-        color: #3b2f2f !important;
+        background-color: #111e38;
+        color: #f8fafc !important;
+        border-right: 1px solid #1e293b;
     }
     [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, [data-testid="stSidebar"] label, [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {
-        color: #3b2f2f !important;
+        color: #f8fafc !important;
     }
     h3 {
-        color: #663223;
-        font-family: Georgia, serif;
+        color: #38bdf8;
+        font-size: 1.15rem;
+        font-weight: 700;
+        margin-top: 0.5rem;
+        margin-bottom: 0.25rem;
     }
+    
+    /* Belka tytułowa z wektorowym SVG logiem */
+    .adventure-header {
+        background: linear-gradient(135deg, #111e38 0%, #1e293b 100%);
+        border: 1.5px solid #38bdf8;
+        border-radius: 12px;
+        padding: 8px 12px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 8px;
+        box-shadow: 0 4px 15px rgba(56, 189, 248, 0.15);
+    }
+    .adventure-title-text {
+        font-size: 1.1rem;
+        font-weight: 800;
+        color: #f8fafc;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+    }
+    .adventure-subtitle {
+        font-size: 0.75rem;
+        color: #38bdf8;
+        font-weight: 600;
+    }
+
+    /* Pasek nawigacji dolnej */
     .bottom-nav-container {
         position: fixed;
         bottom: 0;
         left: 0;
         right: 0;
-        background-color: #e6ded1;
-        border-top: 2px solid #b89b82;
+        background-color: rgba(17, 30, 56, 0.95);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-top: 1px solid rgba(56, 189, 248, 0.2);
         padding: 8px 12px;
         display: flex;
         justify-content: space-around;
         gap: 6px;
         z-index: 99999;
-        box-shadow: 0 -2px 10px rgba(0,0,0,0.15);
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
     }
     .bottom-nav-btn {
         flex: 1;
-        background-color: #fcf8f2;
-        border: 1px solid #b89b82;
-        color: #663223;
+        background-color: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: #94a3b8;
         padding: 8px 0;
         text-align: center;
-        border-radius: 8px;
+        border-radius: 10px;
         font-size: 20px;
         text-decoration: none;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         cursor: pointer;
+        transition: all 0.2s ease;
     }
     .bottom-nav-btn:hover {
-        background-color: #d4c8b8;
-        border-color: #663223;
+        background-color: rgba(56, 189, 248, 0.15);
+        color: #38bdf8;
+        border-color: rgba(56, 189, 248, 0.4);
     }
     .bottom-nav-btn.active {
-        background-color: #b89b82;
-        color: white;
-        border-color: #663223;
+        background-color: #38bdf8;
+        color: #0b1329;
+        border-color: #38bdf8;
+        font-weight: bold;
+        box-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
     }
+
     .custom-nav-bar {
         display: flex;
         justify-content: space-between;
         gap: 6px;
         width: 100%;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.4rem;
     }
     .custom-nav-btn {
         flex: 1;
-        background-color: #e6ded1;
-        border: 1px solid #b89b82;
-        color: #663223;
+        background-color: #111e38;
+        border: 1px solid #334155;
+        color: #f8fafc;
         padding: 6px 0;
         text-align: center;
         border-radius: 8px;
-        font-size: 18px;
-        text-decoration: none;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        cursor: pointer;
-    }
-    .custom-nav-btn:hover {
-        background-color: #d4c8b8;
-        border-color: #663223;
-    }
-    .custom-nav-btn.active {
-        background-color: #b89b82;
-        color: white;
-        border-color: #663223;
-    }
-    .sidebar-nav-bar {
-        display: flex;
-        justify-content: space-between;
-        gap: 4px;
-        width: 100%;
-        margin-bottom: 0.5rem;
-    }
-    .sidebar-nav-btn {
-        flex: 1;
-        background-color: #e6ded1;
-        border: 1px solid #b89b82;
-        color: #663223;
-        padding: 6px 0;
-        text-align: center;
-        border-radius: 6px;
         font-size: 16px;
         text-decoration: none;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-        cursor: pointer;
     }
-    .sidebar-nav-btn:hover {
-        background-color: #d4c8b8;
-        border-color: #663223;
+    .custom-nav-btn:hover {
+        background-color: #1e293b;
+        border-color: #38bdf8;
+        color: #38bdf8;
     }
-    .sidebar-nav-btn.active {
-        background-color: #b89b82;
-        color: white;
-        border-color: #663223;
-    }
+
     .logistics-card {
-        background-color: #fcf8f2;
-        border: 1.5px solid #b89b82;
-        border-radius: 12px;
-        padding: 12px;
+        background-color: #111e38;
+        border: 1px solid #1e293b;
+        border-radius: 10px;
+        padding: 10px;
         text-align: left;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-        margin-bottom: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        margin-bottom: 4px;
     }
     .logistics-title {
-        font-size: 9pt;
-        font-weight: bold;
-        color: #8c6a53;
-        margin-bottom: 4px;
+        font-size: 8.5pt;
+        font-weight: 700;
+        color: #94a3b8;
+        margin-bottom: 2px;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
     }
     .logistics-value {
-        font-size: 12pt;
-        font-weight: bold;
-        color: #3b2f2f;
+        font-size: 11pt;
+        font-weight: 800;
+        color: #f8fafc;
     }
+
     .net-box {
-        background-color: #fcf8f2;
-        border: 1.5px solid #b89b82;
-        border-radius: 12px;
-        padding: 12px;
-        margin-bottom: 10px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        background-color: #111e38;
+        border: 1px solid #1e293b;
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 6px;
     }
     .net-box-evac {
-        background-color: #fdf2f2;
-        border: 1.5px solid #f5c6cb;
-        border-radius: 12px;
-        padding: 12px;
-        margin-bottom: 10px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        background-color: rgba(239, 68, 68, 0.1);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 6px;
     }
     .net-box-regen {
-        background-color: #f2f9f4;
-        border: 1.5px solid #c3e6cb;
-        border-radius: 12px;
-        padding: 12px;
-        margin-bottom: 10px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        background-color: rgba(34, 197, 94, 0.1);
+        border: 1px solid rgba(34, 197, 94, 0.3);
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 6px;
     }
     .net-box-warn {
-        background-color: #fcf0f0;
-        border: 1.5px solid #f8d7da;
-        border-radius: 12px;
-        padding: 12px;
-        margin-bottom: 10px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        background-color: rgba(245, 158, 11, 0.1);
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 6px;
     }
     .net-title {
-        font-size: 9pt;
-        font-weight: bold;
-        color: #8c6a53;
-        margin-bottom: 4px;
+        font-size: 8.5pt;
+        font-weight: 700;
+        color: #94a3b8;
+        margin-bottom: 2px;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
     }
     .net-title-evac {
-        font-size: 9pt;
-        font-weight: bold;
-        color: #a71d2a;
-        margin-bottom: 4px;
+        font-size: 8.5pt;
+        font-weight: 700;
+        color: #f87171;
+        margin-bottom: 2px;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
     }
     .net-title-regen {
-        font-size: 9pt;
-        font-weight: bold;
-        color: #155724;
-        margin-bottom: 4px;
+        font-size: 8.5pt;
+        font-weight: 700;
+        color: #4ade80;
+        margin-bottom: 2px;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
     }
     .net-title-warn {
-        font-size: 9pt;
-        font-weight: bold;
-        color: #721c24;
-        margin-bottom: 4px;
+        font-size: 8.5pt;
+        font-weight: 700;
+        color: #fbbf24;
+        margin-bottom: 2px;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
     }
     .net-text {
-        font-size: 10.5pt;
-        color: #3b2f2f;
-    }
-    .antique-header {
-        background: linear-gradient(to right, #d4c8b8, #e6ded1, #d4c8b8);
-        border: 2px solid #b89b82;
-        border-radius: 8px;
-        padding: 12px 16px;
-        text-align: center;
-        color: #663223;
-        font-family: Georgia, serif;
-        font-size: 18px;
-        font-weight: bold;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.15);
-        margin-bottom: 10px;
-        letter-spacing: 1px;
+        font-size: 10pt;
+        color: #cbd5e1;
+        line-height: 1.35;
     }
     .stButton > button {
-        background-color: #e6ded1 !important;
-        color: #5c2c16 !important;
-        border: 1px solid #8c6a53 !important;
-        font-weight: 600 !important;
+        background-color: #111e38 !important;
+        color: #f8fafc !important;
+        border: 1.5px solid #334155 !important;
+        font-weight: 700 !important;
+        border-radius: 8px !important;
+        padding: 0.4rem 0.8rem !important;
     }
     .stButton > button:hover {
-        background-color: #d4c8b8 !important;
-        color: #3b1c0e !important;
-        border-color: #5c2c16 !important;
+        background-color: #38bdf8 !important;
+        color: #0b1329 !important;
+        border-color: #38bdf8 !important;
     }
-    iframe {
-        margin-top: -10px !important;
-    }
-    [data-testid="stSidebar"] input {
-        background-color: #fcf8f2 !important;
-        color: #3b2f2f !important;
-        border: 1px solid #b89b82 !important;
-    }
-    [data-testid="stChatMessage"] {
-        background-color: #e6ded1 !important;
-        border: 1px solid #b89b82 !important;
-        border-radius: 12px !important;
-        color: #3b2f2f !important;
-    }
-    [data-testid="stChatMessage"] p, [data-testid="stChatMessage"] span, [data-testid="stChatMessage"] div {
-        color: #3b2f2f !important;
-    }
-    .stChatInputContainer {
-        background-color: #e6ded1 !important;
-        border-radius: 12px !important;
-        border: 1px solid #b89b82 !important;
-    }
-    .stChatInputContainer textarea {
-        color: #3b2f2f !important;
-        background-color: #fcf8f2 !important;
+    [data-testid="stExpander"] {
+        border: 1px solid #1e293b !important;
+        border-radius: 10px !important;
+        background-color: #111e38 !important;
+        margin-bottom: 6px !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -529,7 +496,7 @@ def aktualizuj_miejsce(numer_miejsca, opis=None, konieczna_akcja=None):
     res = cursor.fetchone()
     if res and str(res[0]).lower() == 'true':
         conn.close()
-        return f"OSTRZEŻENIE: Miejsce nr {numer_miejsca} pochodzi z bazy bazowej (CSV) i ma ustawioną flagę Base=true. Modyfikacja tego miejsca przez AI jest zablokowana!"
+        return f"OSTRZEŻENIE: Miejsce nr {numer_miejsca} pochodzi z bazy bazowej (CSV) i ma flagę Base=true. Modyfikacja zablokowana!"
 
     if opis:
         cursor.execute('UPDATE miejsca SET opis = ? WHERE numer_miejsca = ?', (opis, str(numer_miejsca)))
@@ -537,7 +504,7 @@ def aktualizuj_miejsce(numer_miejsca, opis=None, konieczna_akcja=None):
         cursor.execute('UPDATE miejsca SET konieczna_akcja = ? WHERE numer_miejsca = ?', (konieczna_akcja, str(numer_miejsca)))
     conn.commit()
     conn.close()
-    return f"Miejsce nr {numer_miejsca} w bazie OdyssAi zostało zaktualizowane!"
+    return f"Miejsce nr {numer_miejsca} zostało zaktualizowane!"
 
 def usun_miejsce(numer_miejsca):
     conn = sqlite3.connect('odyssai.db')
@@ -546,12 +513,12 @@ def usun_miejsce(numer_miejsca):
     res = cursor.fetchone()
     if res and str(res[0]).lower() == 'true':
         conn.close()
-        return f"OSTRZEŻENIE: Miejsce nr {numer_miejsca} pochodzi z bazy bazowej (CSV) i ma ustawioną flagę Base=true. Usuwanie tego miejsca jest absolutnie zablokowane!"
+        return f"OSTRZEŻENIE: Miejsce nr {numer_miejsca} pochodzi z bazy bazowej (CSV) i ma flagę Base=true. Usuwanie zablokowane!"
     
     cursor.execute('DELETE FROM miejsca WHERE numer_miejsca = ?', (str(numer_miejsca),))
     conn.commit()
     conn.close()
-    return f"Miejsce nr {numer_miejsca} zostało usunięte z bazy."
+    return f"Miejsce nr {numer_miejsca} zostało usunięte."
 
 def utworz_nowa_wycieczke(id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu):
     conn = sqlite3.connect('odyssai.db')
@@ -562,7 +529,7 @@ def utworz_nowa_wycieczke(id, tytul_wycieczki, calosciowy_opis_wycieczki, calosc
     ''', (str(id), tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, str(calkowity_czas_wycieczki_godziny), szacowana_godzina_powrotu, pobudka, czas_wyjazdu))
     conn.commit()
     conn.close()
-    return f"Nowa wycieczka '{tytul_wycieczki}' (ID: {id}) została utworzona w bazie OdyssAi!"
+    return f"Nowa wycieczka '{tytul_wycieczki}' (ID: {id}) została utworzona!"
 
 def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, szacowana_godzina_powrotu=None, pobudka=None, czas_wyjazdu=None):
     conn = sqlite3.connect('odyssai.db')
@@ -595,7 +562,7 @@ def usun_wycieczke(id_wycieczki):
     cursor.execute('DELETE FROM checklist WHERE id_wycieczki = ?', (str(id_wycieczki),))
     conn.commit()
     conn.close()
-    return f"Wycieczka #{id_wycieczki} wraz z krokami i checklistami została całkowicie usunięta z bazy."
+    return f"Wycieczka #{id_wycieczki} została usunięta."
 
 def dodaj_krok_do_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis):
     conn = sqlite3.connect('odyssai.db')
@@ -610,7 +577,7 @@ def dodaj_krok_do_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, ok
     ''', (str(id_wycieczki), str(krok_wycieczki), nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis))
     conn.commit()
     conn.close()
-    return f"Dodano krok nr {krok_wycieczki} ({nazwa}) do wycieczki #{id_wycieczki} w bazie!"
+    return f"Dodano krok nr {krok_wycieczki} ({nazwa}) do wycieczki #{id_wycieczki}!"
 
 def edytuj_krok_w_wycieczce(id_wycieczki, krok_wycieczki, nazwa=None, okienko_zwiedzania=None, godzina_ewakuacji=None, czerwona_strefa_ostrzezenie=None, strefa_luzu_i_regeneracji=None, podsumowanie_taktyki=None, potencjal_meltdownu=None, strategie_meltdown=None, opis=None):
     conn = sqlite3.connect('odyssai.db')
@@ -619,8 +586,7 @@ def edytuj_krok_w_wycieczce(id_wycieczki, krok_wycieczki, nazwa=None, okienko_zw
     res = cursor.fetchone()
     if not res:
         conn.close()
-        return f"Nie znaleziono kroku {krok_wycieczki} dla wycieczki #{id_wycieczki}."
-    
+        return f"Nie znaleziono kroku."
     krok_row_id = res[0]
     if nazwa:
         cursor.execute('UPDATE krok_wycieczki SET nazwa = ? WHERE id = ?', (nazwa, krok_row_id))
@@ -640,10 +606,9 @@ def edytuj_krok_w_wycieczce(id_wycieczki, krok_wycieczki, nazwa=None, okienko_zw
         cursor.execute('UPDATE krok_wycieczki SET strategie_meltdown = ? WHERE id = ?', (strategie_meltdown, krok_row_id))
     if opis:
         cursor.execute('UPDATE krok_wycieczki SET opis = ? WHERE id = ?', (opis, krok_row_id))
-        
     conn.commit()
     conn.close()
-    return f"Krok {krok_wycieczki} w wycieczce #{id_wycieczki} został zaktualizowany."
+    return f"Krok {krok_wycieczki} zaktualizowany."
 
 def usun_krok_z_wycieczki(id_wycieczki, krok_wycieczki):
     conn = sqlite3.connect('odyssai.db')
@@ -651,7 +616,7 @@ def usun_krok_z_wycieczki(id_wycieczki, krok_wycieczki):
     cursor.execute('DELETE FROM krok_wycieczki WHERE id_wycieczki = ? AND (krok_wycieczki = ? OR nazwa LIKE ?)', (str(id_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%"))
     conn.commit()
     conn.close()
-    return f"Usunięto krok {krok_wycieczki} z wycieczki #{id_wycieczki}."
+    return f"Usunięto krok."
 
 def dodaj_element_checklisty(id_wycieczki, typ, nazwa, ilosc="1"):
     conn = sqlite3.connect('odyssai.db')
@@ -666,7 +631,7 @@ def dodaj_element_checklisty(id_wycieczki, typ, nazwa, ilosc="1"):
     cursor.execute('INSERT INTO checklist_item (id_checklisty, nazwa, ilosc) VALUES (?, ?, ?)', (chl_id, nazwa, str(ilosc)))
     conn.commit()
     conn.close()
-    return f"Dodano do checklisty ({typ}) wycieczki #{id_wycieczki}: {nazwa} (ilość: {ilosc})"
+    return f"Dodano do checklisty."
 
 def edytuj_element_checklisty(id_wycieczki, typ, stara_nazwa, nowa_nazwa=None, nowa_ilosc=None):
     conn = sqlite3.connect('odyssai.db')
@@ -675,24 +640,21 @@ def edytuj_element_checklisty(id_wycieczki, typ, stara_nazwa, nowa_nazwa=None, n
     res = cursor.fetchone()
     if not res:
         conn.close()
-        return f"Nie znaleziono checklisty typu {typ} dla wycieczki #{id_wycieczki}."
+        return f"Nie znaleziono checklisty."
     chl_id = res[0]
-    
     cursor.execute('SELECT id FROM checklist_item WHERE id_checklisty = ? AND nazwa LIKE ?', (chl_id, f"%{stara_nazwa}%"))
     item_res = cursor.fetchone()
     if not item_res:
         conn.close()
-        return f"Nie znaleziono elementu '{stara_nazwa}' w checkliście."
+        return f"Nie znaleziono elementu."
     item_id = item_res[0]
-    
     if nowa_nazwa:
         cursor.execute('UPDATE checklist_item SET nazwa = ? WHERE id = ?', (nowa_nazwa, item_id))
     if nowa_ilosc:
         cursor.execute('UPDATE checklist_item SET ilosc = ? WHERE id = ?', (str(nowa_ilosc), item_id))
-        
     conn.commit()
     conn.close()
-    return f"Zaktualizowano element '{stara_nazwa}' w checkliście wycieczki #{id_wycieczki}."
+    return f"Zaktualizowano element."
 
 def usun_element_checklisty(id_wycieczki, typ, nazwa):
     conn = sqlite3.connect('odyssai.db')
@@ -701,12 +663,12 @@ def usun_element_checklisty(id_wycieczki, typ, nazwa):
     res = cursor.fetchone()
     if not res:
         conn.close()
-        return f"Nie znaleziono checklisty."
+        return f"Nie znaleziono."
     chl_id = res[0]
     cursor.execute('DELETE FROM checklist_item WHERE id_checklisty = ? AND nazwa LIKE ?', (chl_id, f"%{nazwa}%"))
     conn.commit()
     conn.close()
-    return f"Usunięto element '{nazwa}' z checklisty wycieczki #{id_wycieczki}."
+    return f"Usunięto element."
 
 def pobierz_wszystkie_miejsca():
     conn = sqlite3.connect('odyssai.db')
@@ -746,7 +708,7 @@ def pobierz_skrocone_opcje_wycieczek():
     return opcje
 
 def wczytaj_kontekst_zewnetrzny():
-    tekst = "Jesteś asystentem podróży OdyssAi na Kretę.\n--- AKTUALNA BAZA DANYCH W SQLITE ---\n"
+    tekst = "Jesteś asystentem podróży OdyssAi na Kretę.\n--- BAZA DANYCH SQLITE ---\n"
     conn = sqlite3.connect('odyssai.db')
     try:
         miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, typ, czas_dojazdu, orientacyjny_czas, koszt, konieczna_akcja, odwiedzone, Base FROM miejsca', conn)
@@ -763,23 +725,13 @@ def wczytaj_kontekst_zewnetrzny():
     if not miejsca_df.empty:
         tekst += "Miejsca:\n"
         for _, r in miejsca_df.iterrows():
-            base_flag = r.get('Base', 'false')
-            tekst += f"- Nr {r['numer_miejsca']}: {r['nazwa']} (Typ: {r['typ']}, Odwiedzone: {r['odwiedzone']}, Base: {base_flag}, Dojazd: {r['czas_dojazdu']}, Koszt: {r['koszt']})\n"
+            tekst += f"- Nr {r['numer_miejsca']}: {r['nazwa']} (Typ: {r['typ']}, Odwiedzone: {r['odwiedzone']}, Dojazd: {r['czas_dojazdu']})\n"
     if not wycieczki_df.empty:
         tekst += "\nWycieczki:\n"
         for _, w in wycieczki_df.iterrows():
             if int(w.get('odbyta', 0)) == 1:
                 continue
-            tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} (Odbyta: {w['odbyta']}) | Opis: {w['calosciowy_opis_wycieczki']}\n"
-    if not kroki_df.empty:
-        tekst += "\nKroki wycieczek:\n"
-        for _, k in kroki_df.iterrows():
-            tekst += f"- Wycieczka #{k['id_wycieczki']}, Krok {k['krok_wycieczki']}: {k['nazwa']} (Okienko: {k['okienko_zwiedzania']})\n"
-    if not checklisty_df.empty:
-        tekst += "\nChecklisty:\n"
-        for _, cl in checklisty_df.iterrows():
-            tekst += f"- Wycieczka #{cl['id_wycieczki']} [{cl['typ']}]: {cl['nazwa']} (ilość: {cl['ilosc']})\n"
-
+            tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Opis: {w['calosciowy_opis_wycieczki']}\n"
     return tekst
 
 def pobierz_trase_osrm(punkty):
@@ -799,11 +751,10 @@ def pobierz_trase_osrm(punkty):
     return [[p[0], p[1]] for p in punkty]
 
 def dodaj_marker_domku(m):
-    domek_icon_html = '<div style="background-color:black;color:white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.5);">🏠</div>'
+    domek_icon_html = '<div style="background-color:#38bdf8;color:#0b1329;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">🏠</div>'
     domek_icon = folium.DivIcon(html=domek_icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=domek_icon, tooltip="Nasz Domek").add_to(m)
 
-# --- POPUP CHECKLISTY (MODAL) ---
 @st.dialog("🎒 Checklista Wycieczki")
 def pokaz_checklistu_popup(wycieczka_id):
     conn = sqlite3.connect('odyssai.db')
@@ -819,7 +770,7 @@ def pokaz_checklistu_popup(wycieczka_id):
     conn.close()
 
     if checklisty_df.empty or items_df.empty:
-        st.info("Brak zdefiniowanej checklisty dla tej wycieczki.")
+        st.info("Brak zdefiniowanej checklisty.")
     else:
         for _, chl in checklisty_df.iterrows():
             typ_chl = chl['typ'].capitalize()
@@ -832,196 +783,175 @@ def pokaz_checklistu_popup(wycieczka_id):
                     ilosc_str = f" *({ilosc_val})*" if pd.notna(ilosc_val) and ilosc_val != "1" else ""
                     st.checkbox(f"{itm['nazwa']}{ilosc_str}", key=f"chk_pop_{itm['id']}")
 
+# Narzędzia AI
 aktualizuj_tool = types.FunctionDeclaration(
     name="aktualizuj_miejsce",
-    description="Aktualizuje informacje o wybranym miejscu na Krecie na podstawie numeru miejsca. UWAGA: Miejsca z flagą Base=true nie mogą być modyfikowane.",
+    description="Aktualizuje informacje o miejscu na Krecie.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "numer_miejsca": types.Schema(type=types.Type.STRING, description="Numer miejsca, np. '1'"),
-            "opis": types.Schema(type=types.Type.STRING, description="Nowy opis miejsca"),
-            "konieczna_akcja": types.Schema(type=types.Type.STRING, description="Nowa konieczna akcja"),
+            "numer_miejsca": types.Schema(type=types.Type.STRING, description="Numer miejsca"),
+            "opis": types.Schema(type=types.Type.STRING, description="Nowy opis"),
+            "konieczna_akcja": types.Schema(type=types.Type.STRING, description="Nowa akcja"),
         },
         required=["numer_miejsca"]
     ),
 )
-
 usun_miejsce_tool = types.FunctionDeclaration(
     name="usun_miejsce",
-    description="Usuwa miejsce z bazy danych. UWAGA: Miejsca z flagą Base=true nie mogą być pod żadnym pozorem usuwane.",
+    description="Usuwa miejsce z bazy.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
-        properties={
-            "numer_miejsca": types.Schema(type=types.Type.STRING, description="Numer miejsca do usunięcia"),
-        },
+        properties={"numer_miejsca": types.Schema(type=types.Type.STRING)},
         required=["numer_miejsca"]
     ),
 )
-
 utworz_nowa_wycieczke_tool = types.FunctionDeclaration(
     name="utworz_nowa_wycieczke",
-    description="Tworzy nową wycieczkę w bazie danych SQLite.",
+    description="Tworzy nową wycieczkę.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "id": types.Schema(type=types.Type.STRING, description="Unikalny numer id wycieczki, np. '3'"),
-            "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Tytuł wycieczki"),
-            "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Opis celów i przebiegu wyprawy"),
-            "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Strategia unikania tłumów i meltdownów"),
-            "calkowity_czas_wycieczki_godziny": types.Schema(type=types.Type.STRING, description="Szacowany czas w godzinach"),
-            "szacowana_godzina_powrotu": types.Schema(type=types.Type.STRING, description="Godzina powrotu"),
-            "pobudka": types.Schema(type=types.Type.STRING, description="Godzina pobudki"),
-            "czas_wyjazdu": types.Schema(type=types.Type.STRING, description="Godzina wyjazdu"),
+            "id": types.Schema(type=types.Type.STRING),
+            "tytul_wycieczki": types.Schema(type=types.Type.STRING),
+            "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING),
+            "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING),
+            "calkowity_czas_wycieczki_godziny": types.Schema(type=types.Type.STRING),
+            "szacowana_godzina_powrotu": types.Schema(type=types.Type.STRING),
+            "pobudka": types.Schema(type=types.Type.STRING),
+            "czas_wyjazdu": types.Schema(type=types.Type.STRING),
         },
         required=["id", "tytul_wycieczki", "calosciowy_opis_wycieczki", "calosciowa_taktyka_dnia"]
     ),
 )
-
 edytuj_wycieczke_tool = types.FunctionDeclaration(
     name="edytuj_wycieczke",
-    description="Edytuje parametry istniejącej wycieczki.",
+    description="Edytuje parametry wycieczki.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "id": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-            "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Nowy tytuł"),
-            "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Nowy opis"),
-            "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Nowa taktyka"),
-            "szacowana_godzina_powrotu": types.Schema(type=types.Type.STRING, description="Nowa godzina powrotu"),
-            "pobudka": types.Schema(type=types.Type.STRING, description="Nowa godzina pobudki"),
-            "czas_wyjazdu": types.Schema(type=types.Type.STRING, description="Nowy czas wyjazdu"),
+            "id": types.Schema(type=types.Type.STRING),
+            "tytul_wycieczki": types.Schema(type=types.Type.STRING),
+            "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING),
+            "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING),
+            "szacowana_godzina_powrotu": types.Schema(type=types.Type.STRING),
+            "pobudka": types.Schema(type=types.Type.STRING),
+            "czas_wyjazdu": types.Schema(type=types.Type.STRING),
         },
         required=["id"]
     ),
 )
-
 usun_wycieczke_tool = types.FunctionDeclaration(
     name="usun_wycieczke",
-    description="Usuwa całą wycieczkę wraz z jej krokami i checklistami z bazy danych.",
+    description="Usuwa wycieczkę.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
-        properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki do usunięcia"),
-        },
+        properties={"id_wycieczki": types.Schema(type=types.Type.STRING)},
         required=["id_wycieczki"]
     ),
 )
-
 dodaj_krok_tool = types.FunctionDeclaration(
     name="dodaj_krok_do_wycieczki",
-    description="Dodaje nowy krok do istniejącej wycieczki w bazie danych.",
+    description="Dodaje krok do wycieczki.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-            "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer kroku"),
-            "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca lub etapu"),
-            "wspolrzedne": types.Schema(type=types.Type.STRING, description="Współrzędne GPS"),
-            "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Okienko czasowe"),
-            "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="Godzina ewakuacji"),
-            "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Ostrzeżenie"),
-            "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING, description="Strefa wyciszenia"),
-            "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka dnia"),
-            "potencjal_meltdownu": types.Schema(type=types.Type.STRING, description="Ryzyko meltdowntu"),
-            "strategie_meltdown": types.Schema(type=types.Type.STRING, description="Strategie radzenia sobie"),
-            "opis": types.Schema(type=types.Type.STRING, description="Opis miejsca"),
+            "id_wycieczki": types.Schema(type=types.Type.STRING),
+            "krok_wycieczki": types.Schema(type=types.Type.STRING),
+            "nazwa": types.Schema(type=types.Type.STRING),
+            "wspolrzedne": types.Schema(type=types.Type.STRING),
+            "okienko_zwiedzania": types.Schema(type=types.Type.STRING),
+            "godzina_ewakuacji": types.Schema(type=types.Type.STRING),
+            "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING),
+            "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING),
+            "podsumowanie_taktyki": types.Schema(type=types.Type.STRING),
+            "potencjal_meltdownu": types.Schema(type=types.Type.STRING),
+            "strategie_meltdown": types.Schema(type=types.Type.STRING),
+            "opis": types.Schema(type=types.Type.STRING),
         },
         required=["id_wycieczki", "krok_wycieczki", "nazwa", "wspolrzedne"]
     ),
 )
-
 edytuj_krok_tool = types.FunctionDeclaration(
     name="edytuj_krok_w_wycieczce",
-    description="Edytuje parametry istniejącego kroku wycieczki.",
+    description="Edytuje krok wycieczki.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-            "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku do edycji"),
-            "nazwa": types.Schema(type=types.Type.STRING, description="Nowa nazwa"),
-            "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Nowe okienko czasowe"),
-            "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="Nowa godzina ewakuacji"),
-            "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Nowe ostrzeżenie"),
-            "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING, description="Nowa strefa luzu"),
-            "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Nowe podsumowanie taktyki"),
-            "potencjal_meltdownu": types.Schema(type=types.Type.STRING, description="Nowy potencjal meltdownu"),
-            "strategie_meltdown": types.Schema(type=types.Type.STRING, description="Nowe strategie meltdown"),
-            "opis": types.Schema(type=types.Type.STRING, description="Nowy opis"),
+            "id_wycieczki": types.Schema(type=types.Type.STRING),
+            "krok_wycieczki": types.Schema(type=types.Type.STRING),
+            "nazwa": types.Schema(type=types.Type.STRING),
+            "okienko_zwiedzania": types.Schema(type=types.Type.STRING),
+            "godzina_ewakuacji": types.Schema(type=types.Type.STRING),
+            "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING),
+            "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING),
+            "podsumowanie_taktyki": types.Schema(type=types.Type.STRING),
+            "potencjal_meltdownu": types.Schema(type=types.Type.STRING),
+            "strategie_meltdown": types.Schema(type=types.Type.STRING),
+            "opis": types.Schema(type=types.Type.STRING),
         },
         required=["id_wycieczki", "krok_wycieczki"]
     ),
 )
-
 usun_krok_tool = types.FunctionDeclaration(
     name="usun_krok_z_wycieczki",
-    description="Usuwa wskazany krok z wycieczki na podstawie ID wycieczki oraz numeru/nazwy kroku.",
+    description="Usuwa krok wycieczki.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-            "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku do usunięcia"),
+            "id_wycieczki": types.Schema(type=types.Type.STRING),
+            "krok_wycieczki": types.Schema(type=types.Type.STRING),
         },
         required=["id_wycieczki", "krok_wycieczki"]
     ),
 )
-
 dodaj_checklist_tool = types.FunctionDeclaration(
     name="dodaj_element_checklisty",
-    description="Dodaje nowy element do checklisty (np. sprzęt lub jedzenie) dla wskazanej wycieczki.",
+    description="Dodaje element do checklisty.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki, np. '1'"),
-            "typ": types.Schema(type=types.Type.STRING, description="Typ checklisty, np. 'sprzęt' lub 'jedzenie'"),
-            "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa przedmiotu"),
-            "ilosc": types.Schema(type=types.Type.STRING, description="Ilość, domyślnie '1'"),
+            "id_wycieczki": types.Schema(type=types.Type.STRING),
+            "typ": types.Schema(type=types.Type.STRING),
+            "nazwa": types.Schema(type=types.Type.STRING),
+            "ilosc": types.Schema(type=types.Type.STRING),
         },
         required=["id_wycieczki", "typ", "nazwa"]
     ),
 )
-
 edytuj_checklist_tool = types.FunctionDeclaration(
     name="edytuj_element_checklisty",
-    description="Edytuje istniejący element w checkliście wycieczki.",
+    description="Edytuje element checklisty.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-            "typ": types.Schema(type=types.Type.STRING, description="Typ checklisty ('sprzęt' lub 'jedzenie')"),
-            "stara_nazwa": types.Schema(type=types.Type.STRING, description="Aktualna nazwa elementu"),
-            "nowa_nazwa": types.Schema(type=types.Type.STRING, description="Nowa nazwa elementu"),
-            "nowa_ilosc": types.Schema(type=types.Type.STRING, description="Nowa ilość"),
+            "id_wycieczki": types.Schema(type=types.Type.STRING),
+            "typ": types.Schema(type=types.Type.STRING),
+            "stara_nazwa": types.Schema(type=types.Type.STRING),
+            "nowa_nazwa": types.Schema(type=types.Type.STRING),
+            "nowa_ilosc": types.Schema(type=types.Type.STRING),
         },
         required=["id_wycieczki", "typ", "stara_nazwa"]
     ),
 )
-
 usun_checklist_tool = types.FunctionDeclaration(
     name="usun_element_checklisty",
-    description="Usuwa element z checklisty wycieczki.",
+    description="Usuwa element z checklisty.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-            "typ": types.Schema(type=types.Type.STRING, description="Typ checklisty ('sprzęt' lub 'jedzenie')"),
-            "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa elementu do usunięcia"),
+            "id_wycieczki": types.Schema(type=types.Type.STRING),
+            "typ": types.Schema(type=types.Type.STRING),
+            "nazwa": types.Schema(type=types.Type.STRING),
         },
         required=["id_wycieczki", "typ", "nazwa"]
     ),
 )
 
 odyssai_tools = types.Tool(function_declarations=[
-    aktualizuj_tool, 
-    usun_miejsce_tool,
-    utworz_nowa_wycieczke_tool, 
-    edytuj_wycieczke_tool, 
-    usun_wycieczke_tool, 
-    dodaj_krok_tool, 
-    edytuj_krok_tool, 
-    usun_krok_tool, 
-    dodaj_checklist_tool, 
-    edytuj_checklist_tool, 
-    usun_checklist_tool
+    aktualizuj_tool, usun_miejsce_tool, utworz_nowa_wycieczke_tool, edytuj_wycieczke_tool, 
+    usun_wycieczke_tool, dodaj_krok_tool, edytuj_krok_tool, usun_krok_tool, 
+    dodaj_checklist_tool, edytuj_checklist_tool, usun_checklist_tool
 ])
 
 def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
@@ -1029,17 +959,15 @@ def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
     st.markdown("### 💬 Asystent AI OdyssAi")
     
     if not gemini_api_key:
-        st.info("👈 Wprowadź swój klucz API Google Gemini w menu bocznym, aby uruchomić czat i zarządzać wycieczkami w bazie.")
+        st.info("👈 Wprowadź klucz API Google Gemini w menu bocznym, aby uruchomić czat.")
         return
 
     client = genai.Client(api_key=gemini_api_key)
     zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
     
-    system_prompt = f"""Jesteś inteligentnym, empatycznym asystentem podróży OdyssAi na Kretę.
+    system_prompt = f"""Jesteś inteligentnym asystentem podróży OdyssAi na Kretę.
 {zewnetrzny_kontekst}
-- Masz pełny wgląd w całą bazę danych SQLite.
-- Miejsca z flagą Base = true są bezwzględnie chronione przed modyfikacją lub usunięciem.
-- Nigdy nie modyfikuj bazy samowolnie – tylko na wyraźne polecenie użytkownika."""
+- Masz wgląd w bazę danych. Chronisz miejsca z flagą Base = true."""
 
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -1059,7 +987,7 @@ def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
         st.session_state.chat_history = []
         st.rerun()
 
-    prompt = st.chat_input("Rozmawiaj o wycieczkach, kminie plany...", key=f"chat_input_{klucz_unikalny_sufiks}")
+    prompt = st.chat_input("Zapytaj o plany, zmień trasę...", key=f"chat_input_{klucz_unikalny_sufiks}")
     if prompt:
         user_content = types.Content(role="user", parts=[types.Part.from_text(text=prompt)])
         st.session_state.chat_history.append({"role": "user", "content": prompt, "raw_content": user_content})
@@ -1122,45 +1050,30 @@ def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
                         elif call_name == "usun_element_checklisty":
                             wynik_bazy = usun_element_checklisty(**args)
                         else:
-                            wynik_bazy = "Wykonano operację."
+                            wynik_bazy = "Wykonano."
                         
-                        with st.spinner("Zapisuję zmiany w bazie SQLite..."):
-                            follow_up = client.models.generate_content(
-                                model=wybrany_model,
-                                contents=contents + [
-                                    model_content,
-                                    types.Content(role="user", parts=[types.Part.from_function_response(name=call_name, response={"result": wynik_bazy})])
-                                ],
-                                config=types.GenerateContentConfig(tools=[odyssai_tools])
-                            )
-                        
+                        follow_up = client.models.generate_content(
+                            model=wybrany_model,
+                            contents=contents + [
+                                model_content,
+                                types.Content(role="user", parts=[types.Part.from_function_response(name=call_name, response={"result": wynik_bazy})])
+                            ],
+                            config=types.GenerateContentConfig(tools=[odyssai_tools])
+                        )
                         fu_cand = follow_up.candidates[0] if follow_up.candidates else None
                         if fu_cand and fu_cand.content and fu_cand.content.parts:
                             text_parts = [p.text for p in fu_cand.content.parts if hasattr(p, "text") and p.text]
-                            assistant_reply = "".join(text_parts) if text_parts else "Operacja została zakończona pomyślnie."
-                            st.session_state.chat_history.append({
-                                "role": "assistant", 
-                                "content": assistant_reply, 
-                                "raw_content": fu_cand.content
-                            })
+                            assistant_reply = "".join(text_parts) if text_parts else "Operacja zakończona."
+                            st.session_state.chat_history.append({"role": "assistant", "content": assistant_reply, "raw_content": fu_cand.content})
                         else:
-                            assistant_reply = "Operacja została zaktualizowana w bazie."
+                            assistant_reply = "Zaktualizowano bazę."
                 else:
                     text_parts = [p.text for p in candidate.content.parts if hasattr(p, "text") and p.text] if candidate and candidate.content and candidate.content.parts else []
                     assistant_reply = "".join(text_parts) if text_parts else (response.text if hasattr(response, "text") else "Brak odpowiedzi.")
-                    
-                    st.session_state.chat_history.append({
-                        "role": "assistant", 
-                        "content": assistant_reply, 
-                        "raw_content": candidate.content if candidate else types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)])
-                    })
+                    st.session_state.chat_history.append({"role": "assistant", "content": assistant_reply, "raw_content": candidate.content if candidate else types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)])})
             except Exception as e:
-                assistant_reply = f"Wystąpił błąd podczas komunikacji z AI: {e}"
-                st.session_state.chat_history.append({
-                    "role": "assistant", 
-                    "content": assistant_reply, 
-                    "raw_content": types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)])
-                })
+                assistant_reply = f"Błąd: {e}"
+                st.session_state.chat_history.append({"role": "assistant", "content": assistant_reply, "raw_content": types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)])})
 
             st.markdown(assistant_reply)
             st.rerun()
@@ -1177,18 +1090,15 @@ if "place" in st.query_params:
 if "active_place_id" not in st.session_state:
     st.session_state.active_place_id = None
 
-if "jump_to_step" not in st.session_state:
-    st.session_state.jump_to_step = None
-
 COLORS = {
-    'must have': '#E83E8C',
-    'nice to have': '#FD7E14',
-    'others': '#007BFF',
-    'activity': '#FFC107',
-    'shop': '#28A745',
-    'plaża': '#00BFFF'
+    'must have': '#f43f5e',
+    'nice to have': '#fb923c',
+    'others': '#38bdf8',
+    'activity': '#facc15',
+    'shop': '#4ade80',
+    'plaża': '#22d3ee'
 }
-DEFAULT_COLOR = '#DC3545'
+DEFAULT_COLOR = '#ef4444'
 
 df_miejsca = pobierz_wszystkie_miejsca()
 wycieczki_options = pobierz_skrocone_opcje_wycieczek()
@@ -1211,7 +1121,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
         tytul_w = str(w_gen['tytul_wycieczki'])
         
         st.markdown(f"""
-        <div style="background-color:#e6ded1; padding:12px; border:2px solid #b89b82; border-radius:8px; text-align:center; font-size:13pt; font-weight:900; text-transform:uppercase; margin-bottom:12px; color:#663223;">
+        <div style="background-color:#111e38; padding:10px 12px; border:1px solid #1e293b; border-radius:10px; text-align:center; font-size:11pt; font-weight:800; text-transform:uppercase; margin-bottom:8px; color:#38bdf8;">
             {tytul_w}
         </div>
         """, unsafe_allow_html=True)
@@ -1231,28 +1141,27 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
                         surowe_wspolrzedne.append((lat, lon))
                     except:
                         pass
-
             surowe_wspolrzedne.append((DOMEK_LAT, DOMEK_LON))
 
             if len(punkty_trasy) > 1:
                 srodek_lat = sum([p[0] for p in punkty_trasy]) / len(punkty_trasy)
                 srodek_lon = sum([p[1] for p in punkty_trasy]) / len(punkty_trasy)
                 
-                m_trasa = folium.Map(location=[srodek_lat, srodek_lon], zoom_start=10, tiles="CartoDB positron")
+                m_trasa = folium.Map(location=[srodek_lat, srodek_lon], zoom_start=10, tiles="CartoDB dark_matter")
                 dodaj_marker_domku(m_trasa)
                 
                 for p in punkty_trasy:
                     if len(p) == 4:
                         lat, lon, krok, nazwa = p
-                        icon_html = f'<div style="background-color:#663223;color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-family:Arial;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.4);">{krok}</div>'
+                        icon_html = f'<div style="background-color:#38bdf8;color:#0b1329;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">{krok}</div>'
                         icon = folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))
                         folium.Marker([lat, lon], icon=icon, tooltip=f"Krok {krok}: {nazwa}").add_to(m_trasa)
                     
                 trasa_po_drogach = pobierz_trase_osrm(surowe_wspolrzedne)
                 if trasa_po_drogach:
-                    folium.PolyLine(trasa_po_drogach, color="#8b4513", weight=4, opacity=0.8).add_to(m_trasa)
+                    folium.PolyLine(trasa_po_drogach, color="#38bdf8", weight=4, opacity=0.8).add_to(m_trasa)
                     
-                st_folium(m_trasa, width="100%", height=280, returned_objects=[])
+                st_folium(m_trasa, width="100%", height=240, returned_objects=[])
 
             st.markdown("---")
 
@@ -1262,11 +1171,11 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
         czas_trwania = f"{w_gen['calkowity_czas_wycieczki_godziny']} godz."
 
         st.markdown(f"""
-        <div style="background-color:#e6ded1; border:2px solid #b89b82; border-radius:12px; padding:12px; margin-bottom:15px;">
-            <div style="font-size:11pt; font-weight:bold; color:#663223; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+        <div style="background-color:#111e38; border:1px solid #1e293b; border-radius:10px; padding:10px; margin-bottom:10px;">
+            <div style="font-size:9.5pt; font-weight:700; color:#38bdf8; margin-bottom:6px; display:flex; align-items:center; gap:6px;">
                 <span>🧭</span> LOGISTYKA DNIA
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
                 <div class="logistics-card">
                     <div class="logistics-title">⏰ Pobudka</div>
                     <div class="logistics-value">{pobudka_val}</div>
@@ -1280,7 +1189,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
                     <div class="logistics-value">{powrot_val}</div>
                 </div>
                 <div class="logistics-card">
-                    <div class="logistics-title">⏱️ Całkowity czas</div>
+                    <div class="logistics-title">⏱️ Czas trwania</div>
                     <div class="logistics-value">{czas_trwania}</div>
                 </div>
             </div>
@@ -1289,35 +1198,24 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
 
         if pd.notna(w_gen['calosciowy_opis_wycieczki']) and str(w_gen['calosciowy_opis_wycieczki']).strip() != "":
             st.markdown(f"""
-            <div style="background-color:#e6ded1; border:2px solid #b89b82; border-radius:12px; padding:12px; margin-bottom:15px;">
-                <div style="font-size:11pt; font-weight:bold; color:#663223; margin-bottom:6px;">
-                    📝 Opis i cel wycieczki
-                </div>
-                <div style="color:#3b2f2f; font-size:10.5pt;">
-                    {w_gen['calosciowy_opis_wycieczki']}
-                </div>
+            <div style="background-color:#111e38; border:1px solid #1e293b; border-radius:10px; padding:10px; margin-bottom:10px;">
+                <div style="font-size:9.5pt; font-weight:700; color:#38bdf8; margin-bottom:4px;">📝 Cel wycieczki</div>
+                <div style="color:#cbd5e1; font-size:10pt;">{w_gen['calosciowy_opis_wycieczki']}</div>
             </div>
             """, unsafe_allow_html=True)
 
         if pd.notna(w_gen['calosciowa_taktyka_dnia']) and str(w_gen['calosciowa_taktyka_dnia']).strip() != "":
             st.markdown(f"""
-            <div style="background-color:#e6ded1; padding:14px; border:2px solid #b89b82; border-radius:8px; margin-bottom:15px;">
-                <span style="font-size:12pt; font-weight:bold; color:#663223;">🧠 TAKTYKA DNIA:</span><br>
-                <span style="color:#3b2f2f;">{w_gen['calosciowa_taktyka_dnia']}</span>
+            <div style="background-color:#111e38; padding:10px; border:1px solid #1e293b; border-radius:10px; margin-bottom:10px;">
+                <span style="font-size:9.5pt; font-weight:700; color:#38bdf8;">🧠 TAKTYKA DNIA:</span><br>
+                <span style="color:#cbd5e1; font-size:10pt;">{w_gen['calosciowa_taktyka_dnia']}</span>
             </div>
             """, unsafe_allow_html=True)
 
-        if st.button("🎒 Sprawdź checklistę wycieczki", use_container_width=True):
+        if st.button("🎒 Sprawdź checklistę", use_container_width=True):
             pokaz_checklistu_popup(wycieczka_id)
 
-        st.markdown(
-            """
-            <div style="margin-top: -10px; margin-bottom: -10px;">
-                <h3>Szczegółowy plan</h3>
-            </div>
-            """, 
-            unsafe_allow_html=True
-        )
+        st.markdown("<h3>Szczegółowy plan</h3>", unsafe_allow_html=True)
         
         for _, k in kroki_df.iterrows():
             krok_num = str(k['krok_wycieczki'])
@@ -1333,33 +1231,30 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
             sklep_maps_url = f"https://www.google.com/maps/search/supermarket/@{coords_clean},15z"
             resto_maps_url = f"https://www.google.com/maps/search/restaurant/@{coords_clean},15z"
 
-            warn_html = f'<div class="net-box-warn" style="margin-top: 10px; margin-bottom: 0;"><div class="net-title-warn">⚠️ Ostrzeżenie</div><div class="net-text" style="color:#721c24; font-weight:bold;">{k["czerwona_strefa_ostrzezenie"]}</div></div>' if pd.notna(k.get('czerwona_strefa_ostrzezenie')) and str(k['czerwona_strefa_ostrzezenie']).strip() != "" else ""
-            desc_html = f'<div style="margin-top: 10px; background-color:#fcf8f2; border:1px solid #b89b82; border-radius:8px; padding:10px; font-size:10pt; color:#3b2f2f; font-style:italic;">{k["opis"]}</div>' if pd.notna(k.get('opis')) and str(k.get('opis')).strip() != "" else ""
+            warn_html = f'<div class="net-box-warn"><div class="net-title-warn">⚠️ Ostrzeżenie</div><div class="net-text" style="color:#fbbf24; font-weight:600;">{k["czerwona_strefa_ostrzezenie"]}</div></div>' if pd.notna(k.get('czerwona_strefa_ostrzezenie')) and str(k['czerwona_strefa_ostrzezenie']).strip() != "" else ""
+            desc_html = f'<div style="margin-top: 6px; background-color:rgba(255,255,255,0.03); border:1px solid #1e293b; border-radius:8px; padding:8px; font-size:9.5pt; color:#cbd5e1;">{k["opis"]}</div>' if pd.notna(k.get('opis')) and str(k.get('opis')).strip() != "" else ""
 
             tytul_expandera = f"🕒 {okienko}  |  📌 {krok_nazwa}" if okienko else f"📌 {krok_nazwa}"
 
             with st.expander(tytul_expandera):
-                card_html = f'''<div style="background-color:#e6ded1; border:2px solid #b89b82; border-radius:14px; padding:16px; margin-bottom:10px; box-shadow:0 2px 5px rgba(0,0,0,0.08); position:relative;"><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><div style="background-color:#e83e8c; color:white; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:11pt; border:2px solid white; box-shadow:0 1px 3px rgba(0,0,0,0.3);">{krok_num}</div><span style="font-size:13pt; font-weight:900; color:#663223; text-decoration:underline;">{krok_nazwa}</span></div>{desc_html}<div style="display: flex; gap: 6px; margin-top: 12px; margin-bottom: 12px;"><a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="GPS">📍</a><a href="{google_search_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Google">🔍</a><a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Sklep">🛒</a><a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Restauracja">🍽️</a><a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Opis">📝</a></div><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;"><div class="net-box" style="margin-bottom:0;"><div class="net-title">⏱️ Harmonogram</div><div class="net-value" style="font-size:11pt; font-weight:bold; color:#3b2f2f;">{k["okienko_zwiedzania"]}</div></div><div class="net-box-evac" style="margin-bottom:0;"><div class="net-title-evac">🚨 Ewakuacja</div><div style="font-size:11pt; font-weight:bold; color:#a71d2a;">{k.get("godzina_ewakuacji", "Brak")}</div></div></div><div class="net-box"><div class="net-title">🎯 Taktyka</div><div class="net-text">{k["podsumowanie_taktyki"]}</div></div><div class="net-box-regen" style="margin-bottom: 0;"><div class="net-title-regen">🌿 Strefa luzu i regeneracji</div><div class="net-text" style="color:#155724;">{k["strefa_luzu_i_regeneracji"]}</div></div>{warn_html}</div>'''
+                card_html = f'''<div style="background-color:#111e38; padding:4px;"><div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;"><div style="background-color:#f43f5e; color:white; border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:9.5pt;">{krok_num}</div><span style="font-size:11pt; font-weight:800; color:#38bdf8;">{krok_nazwa}</span></div>{desc_html}<div style="display: flex; gap: 6px; margin-top: 8px; margin-bottom: 8px;"><a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:15px;" title="GPS">📍</a><a href="{google_search_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:15px;" title="Google">🔍</a><a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:15px;" title="Sklep">🛒</a><a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:15px;" title="Restauracja">🍽️</a><a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" style="padding:4px 0; font-size:15px;" title="Opis">📝</a></div><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;"><div class="net-box" style="margin-bottom:0;"><div class="net-title">⏱️ Harmonogram</div><div style="font-size:10.5pt; font-weight:700; color:#f8fafc;">{k["okienko_zwiedzania"]}</div></div><div class="net-box-evac" style="margin-bottom:0;"><div class="net-title-evac">🚨 Ewakuacja</div><div style="font-size:10.5pt; font-weight:700; color:#f87171;">{k.get("godzina_ewakuacji", "Brak")}</div></div></div><div class="net-box"><div class="net-title">🎯 Taktyka</div><div class="net-text">{k["podsumowanie_taktyki"]}</div></div><div class="net-box-regen" style="margin-bottom:0;"><div class="net-title-regen">🌿 Regeneracja</div><div class="net-text" style="color:#4ade80;">{k["strefa_luzu_i_regeneracji"]}</div></div>{warn_html}</div>'''
                 st.markdown(card_html, unsafe_allow_html=True)
 
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
-            if st.button(f"🎯 Ustaw jako aktualną", key=f"btn_akt_{wycieczka_id}", use_container_width=True):
+            if st.button(f"🎯 Ustaw aktywną", key=f"btn_akt_{wycieczka_id}", use_container_width=True):
                 ustaw_aktywna_wycieczke_id(wycieczka_id)
-                st.success(f"Ustawiono wycieczkę #{wycieczka_id} jako aktualną!")
+                st.success("Ustawiono!")
                 st.rerun()
         with col_btn2:
             is_odbyta = int(w_gen.get('odbyta', 0)) == 1
             if is_odbyta:
-                st.markdown('<div style="background-color:#d4edda; color:#155724; padding:8px; border-radius:6px; text-align:center; font-weight:bold; border:1px solid #c3e6cb;">✨ Wycieczka przebyta</div>', unsafe_allow_html=True)
+                st.markdown('<div style="background-color:rgba(34,197,94,0.1); color:#4ade80; padding:6px; border-radius:8px; text-align:center; font-weight:bold; border:1px solid rgba(34,197,94,0.3); font-size:9.5pt;">✨ Przebyta</div>', unsafe_allow_html=True)
             else:
-                if st.button(f"✅ Oznacz jako przebytą", key=f"btn_odbyte_{wycieczka_id}", use_container_width=True):
+                if st.button(f"✅ Oznacz przebytą", key=f"btn_odbyte_{wycieczka_id}", use_container_width=True):
                     oznacz_wycieczke_i_miejsca_jako_odbyte(wycieczka_id)
-                    st.success(f"Wycieczka i powiązane miejsca zostały oznaczone jako odbyte!")
+                    st.success("Oznaczono!")
                     st.rerun()
-
-    else:
-        st.warning("Nie znaleziono wybranej wycieczki.")
 
 domek_maps_url = "https://www.google.com/maps/search/?api=1&query=35.5914,24.0918"
 sklep_maps_url = "https://www.google.com/maps/search/?api=1&query=35.586222,24.091861"
@@ -1368,10 +1263,10 @@ active_chat_sidebar = "active" if st.session_state.active_tab == "chat" else ""
 with st.sidebar:
     st.markdown("### 🧭 Szybka Nawigacja")
     st.markdown(f"""
-        <div class="sidebar-nav-bar">
-            <a href="{sklep_maps_url}" target="_blank" class="sidebar-nav-btn" title="Sklep">🛒</a>
-            <a href="{domek_maps_url}" target="_blank" class="sidebar-nav-btn" title="Domek">🏠</a>
-            <a href="?tab=chat" target="_self" class="sidebar-nav-btn {active_chat_sidebar}" title="Asystent AI">💬</a>
+        <div class="custom-nav-bar">
+            <a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" title="Sklep">🛒</a>
+            <a href="{domek_maps_url}" target="_blank" class="custom-nav-btn" title="Domek">🏠</a>
+            <a href="?tab=chat" target="_self" class="custom-nav-btn {active_chat_sidebar}" title="Asystent AI">💬</a>
         </div>
     """, unsafe_allow_html=True)
 
@@ -1400,10 +1295,10 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-st.markdown("<div style='margin-bottom: 60px;'></div>", unsafe_allow_html=True)
+st.markdown("<div style='margin-bottom: 50px;'></div>", unsafe_allow_html=True)
 
 if st.session_state.active_tab == "chat":
-    m_chat = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB positron")
+    m_chat = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB dark_matter")
     dodaj_marker_domku(m_chat)
     
     for _, row in df_miejsca.iterrows():
@@ -1417,20 +1312,36 @@ if st.session_state.active_tab == "chat":
                 num = str(row['numer_miejsca'])
                 typ_raw = str(row.get('typ', '')).strip().lower()
                 is_visited = int(row.get('odwiedzone', 0)) == 1
-                bg_color = '#6c757d' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
-                text_color = "black" if typ_raw == 'activity' else "white"
+                bg_color = '#475569' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
                 
-                icon_html = f'<div style="background-color:{bg_color};color:{text_color};border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-family:Arial;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.4);">{num}</div>'
+                icon_html = f'<div style="background-color:{bg_color};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">{num}</div>'
                 icon = folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))
                 folium.Marker([lat, lon], icon=icon, tooltip=f"{num}. {name}").add_to(m_chat)
             except:
                 pass
-    st_folium(m_chat, width="100%", height=320, returned_objects=[])
-    
+    st_folium(m_chat, width="100%", height=300, returned_objects=[])
     renderuj_sekcje_czatu_ai("tab_chat")
 
 elif st.session_state.active_tab == "zabytek":
-    st.markdown('<div class="antique-header">🏛️ Miejsca & Zabytki</div>', unsafe_allow_html=True)
+    svg_logo = """
+    <svg width="40" height="40" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="100" height="100" rx="20" fill="#0b1329"/>
+        <path d="M30 65C30 50 45 45 50 35C55 45 70 50 70 65" stroke="#38bdf8" stroke-width="6" stroke-linecap="round"/>
+        <circle cx="50" cy="30" r="12" fill="#2dd4bf"/>
+        <path d="M42 45L58 45" stroke="#f43f5e" stroke-width="6" stroke-linecap="round"/>
+    </svg>
+    """
+    svg_base64 = base64.b64encode(svg_logo.encode("utf-8")).decode("utf-8")
+
+    st.markdown(f"""
+        <div class="adventure-header">
+            <img src="data:image/svg+xml;base64,{svg_base64}" style="width:40px;height:40px;border-radius:8px;">
+            <div>
+                <div class="adventure-title-text">OdyssAi • Kreta</div>
+                <div class="adventure-subtitle">Przewodnik wyprawy z duchem przygody</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
     
     list_options_zabytek = ["-- Wybierz miejsce z listy lub mapy --"] + list(df_miejsca['numer_miejsca'].astype(str) + ". " + df_miejsca['nazwa'])
     curr_zabytek_idx = 0
@@ -1439,14 +1350,129 @@ elif st.session_state.active_tab == "zabytek":
         if matching_z:
             curr_zabytek_idx = matching_z[0]
 
-    wybrany_zabytek_main = st.selectbox("", options=list_options_zabytek, index=curr_zabytek_idx, key="main_zabytek_sb", label_visibility="collapsed")
+    wybrany_zabytek_main = st.selectbox("Wybierz miejsce:", options=list_options_zabytek, index=curr_zabytek_idx, key="main_zabytek_sb")
     if wybrany_zabytek_main != "-- Wybierz miejsce z listy lub mapy --":
         chosen_id_m = wybrany_zabytek_main.split(". ")[0]
         if chosen_id_m != st.session_state.active_place_id:
             st.session_state.active_place_id = chosen_id_m
             st.rerun()
 
-    m = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB positron")
+    # --- POPRAWKA UX: Szczegóły miejsca wyświetlane od razu POD selectboxem (z automatu widoczne na telefonie) ---
+    if st.session_state.active_place_id:
+        place_row = df_miejsca[df_miejsca['numer_miejsca'] == str(st.session_state.active_place_id)]
+        
+        if not place_row.empty:
+            p = place_row.iloc[0]
+            numer_m = str(p['numer_miejsca'])
+            tytul_miejsca = f"{numer_m}. {str(p['nazwa']).upper()}"
+            google_search_url = f"https://www.google.com/search?q={p['nazwa']} Kreta"
+            
+            st.markdown(f"""
+            <div id="selected-place-details" style="background-color: #111e38; border: 2px solid #38bdf8; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(56,189,248,0.2);">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                    <span style="font-size: 13pt; font-weight: 800; color: #38bdf8;">{tytul_miejsca}</span>
+                    <a href="{google_search_url}" target="_blank" style="text-decoration: none; font-size: 16px; background-color: #1e293b; border: 1px solid #334155; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; color: #f8fafc;" title="Szukaj w Google">🔍</a>
+                </div>
+            """, unsafe_allow_html=True)
+
+            is_visited = int(p.get('odwiedzone', 0)) == 1
+            if is_visited:
+                st.markdown("""
+                <div style="text-align: center; margin-bottom: 8px;">
+                    <span style="background-color: rgba(34,197,94,0.1); color: #4ade80; padding: 3px 10px; border-radius: 10px; font-weight: bold; border: 1px solid rgba(34,197,94,0.3); font-size: 9.5pt;">
+                        ✨ Odwiedzone
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            for ekst in ['.jpg', '.jpeg', '.png']:
+                sciezka_zdjecia = os.path.join("zdjecia", f"{numer_m}{ekst}")
+                if os.path.exists(sciezka_zdjecia):
+                    st.image(sciezka_zdjecia, caption=f"{p['nazwa']}")
+                    break
+            
+            if pd.notna(p['opis']) and str(p['opis']).strip() != "":
+                st.info(p['opis'])
+
+            coords_clean = str(p['wspolrzedne']).replace(" ", "") if pd.notna(p['wspolrzedne']) else "35.3,24.5"
+            gps_maps_url = f"https://www.google.com/maps/search/?api=1&query={coords_clean}"
+
+            st.markdown(f"""
+                <div style="display: flex; align-items: center; justify-content: space-between; margin: 10px 0 8px 0;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <div style="background-color: #38bdf8; color: #0b1329; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items:center; justify-content:center; font-size: 11px; font-weight: bold;">📍</div>
+                        <span style="font-size: 9pt; font-weight: 700; color: #94a3b8; text-transform: uppercase;">Lokalizacja GPS</span>
+                    </div>
+                    <a href="{gps_maps_url}" target="_blank" style="background-color: #38bdf8; color: #0b1329; padding: 4px 12px; border-radius: 16px; font-size: 9pt; font-weight: 700; text-decoration: none;">NAWIGUJ ➔</a>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                    <div style="background-color: #0b1329; border: 1px solid #1e293b; border-radius: 8px; padding: 8px;">
+                        <div style="font-size: 8pt; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">Dojazd (Stravros)</div>
+                        <div style="font-size: 10pt; font-weight: 700; color: #f8fafc;">{p['czas_dojazdu']}</div>
+                    </div>
+                    <div style="background-color: #0b1329; border: 1px solid #1e293b; border-radius: 8px; padding: 8px;">
+                        <div style="font-size: 8pt; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">Godziny otwarcia</div>
+                        <div style="font-size: 10pt; font-weight: 700; color: #f8fafc;">{p['godziny_otwarcia']}</div>
+                    </div>
+                    <div style="background-color: #0b1329; border: 1px solid #1e293b; border-radius: 8px; padding: 8px;">
+                        <div style="font-size: 8pt; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">Najlepsza pora</div>
+                        <div style="font-size: 9.5pt; font-weight: 700; color: #f8fafc;">{p['najlepsza_pora']}</div>
+                    </div>
+                    <div style="background-color: #0b1329; border: 1px solid #1e293b; border-radius: 8px; padding: 8px;">
+                        <div style="font-size: 8pt; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">Czas zwiedzania</div>
+                        <div style="font-size: 10pt; font-weight: 700; color: #f8fafc;">{p['orientacyjny_czas']}</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            koszt_val = p.get('koszt', '')
+            if pd.notna(koszt_val) and str(koszt_val).strip() != "":
+                st.markdown(f"""
+                <div style="background-color: #111e38; border: 1px solid #1e293b; border-radius: 10px; padding: 10px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 8px;">
+                    <div style="font-size: 16px;">💶👥</div>
+                    <div>
+                        <div style="font-size: 8.5pt; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">Koszt dla rodziny 2+2:</div>
+                        <div style="font-size: 10pt; color: #f8fafc; font-weight: 500;">{koszt_val}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            akcja_val = p.get('konieczna_akcja', '')
+            if pd.notna(akcja_val) and str(akcja_val).strip() != "Brak" and str(akcja_val).strip() != "":
+                st.markdown(f"""
+                <div style="background-color: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 10px; padding: 10px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 8px;">
+                    <div style="font-size: 16px;">⚠️</div>
+                    <div>
+                        <div style="font-size: 8.5pt; font-weight: 600; color: #f87171; text-transform: uppercase; margin-bottom: 2px;">Konieczna akcja</div>
+                        <div style="font-size: 10pt; color: #f8fafc; font-weight: 500;">{akcja_val}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            adhd_val = p.get('trudnosc_adhd', '')
+            meltdown_val = p.get('potencjal_meltdownu', '')
+            strategie_val = p.get('strategie_meltdown', '')
+
+            html_wyzwania = f"""<div style="background-color: #111e38; border: 1px solid #1e293b; border-radius: 10px; padding: 12px; margin-top: 8px; margin-bottom: 8px;"><div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;"><span style="font-size: 16px;">🐂</span><span style="font-size: 10pt; font-weight: 800; color: #38bdf8; text-transform: uppercase;">Wyzwania & Rady ADHD</span></div><div style="margin-bottom: 8px;"><div style="font-size: 8.5pt; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">🧠 Trudności ADHD:</div><div style="font-size: 9.5pt; color: #cbd5e1; line-height: 1.35;">{adhd_val}</div></div><div style="margin-bottom: 8px;"><div style="font-size: 8.5pt; font-weight: 600; color: #f87171; text-transform: uppercase; margin-bottom: 2px;">⚡ Potencjał meltdownu:</div><div style="font-size: 9.5pt; color: #cbd5e1; line-height: 1.35;">{meltdown_val}</div></div><div><div style="font-size: 8.5pt; font-weight: 600; color: #4ade80; text-transform: uppercase; margin-bottom: 2px;">🛡️ Strategie ratunkowe:</div><div style="font-size: 9.5pt; color: #cbd5e1; line-height: 1.35;">{strategie_val}</div></div></div>"""
+            st.markdown(html_wyzwania, unsafe_allow_html=True)
+            
+            if pd.notna(p['zadania_dla_dzieci']) and str(p['zadania_dla_dzieci']).strip() != "":
+                with st.expander("🧒 Zadania dla dzieci w tym miejscu"):
+                    renderuj_zadania_dzieci_expander(p['zadania_dla_dzieci'], p['numer_miejsca'])
+            
+            polaczenie_tekst = str(p['najlepiej_polaczyc'])
+            def zamien_na_link(match):
+                nr_miejsca = match.group(1)
+                return f'<a href="?tab=zabytek&place={nr_miejsca}" target="_self" style="color: #38bdf8; font-weight: bold; text-decoration: underline;">Miejsce {nr_miejsca}</a>'
+            
+            polaczenie_przetworzone = re.sub(r'Miejsce\s+(\d+)', zamien_na_link, polaczenie_tekst, flags=re.IGNORECASE)
+            st.markdown(f"**🔗 Najlepiej połączyć z:** {polaczenie_przetworzone}", unsafe_allow_html=True)
+
+    # Mapa przeniesiona pod karty szczegółów
+    st.markdown("---")
+    st.markdown("### 🗺️ Mapa lokalizacji")
+    m = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB dark_matter")
     dodaj_marker_domku(m)
 
     for _, row in df_miejsca.iterrows():
@@ -1460,17 +1486,15 @@ elif st.session_state.active_tab == "zabytek":
                 num = str(row['numer_miejsca'])
                 typ_raw = str(row.get('typ', '')).strip().lower()
                 is_visited = int(row.get('odwiedzone', 0)) == 1
-                bg_color = '#6c757d' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
-                text_color = "black" if typ_raw == 'activity' else "white"
+                bg_color = '#475569' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
                 
-                icon_html = f'<div style="background-color:{bg_color};color:{text_color};border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-family:Arial;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.4);">{num}</div>'
+                icon_html = f'<div style="background-color:{bg_color};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">{num}</div>'
                 icon = folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))
-                
                 folium.Marker([lat, lon], icon=icon, tooltip=f"{num}. {name}").add_to(m)
             except:
                 pass
 
-    map_data = st_folium(m, width="100%", height=380)
+    map_data = st_folium(m, width="100%", height=300)
 
     if map_data and map_data.get("last_object_clicked_tooltip"):
         clicked_tooltip = map_data["last_object_clicked_tooltip"]
@@ -1480,165 +1504,18 @@ elif st.session_state.active_tab == "zabytek":
                 st.session_state.active_place_id = clicked_id
                 st.rerun()
 
-    st.markdown("---")
-
-    if st.session_state.active_place_id:
-        place_row = df_miejsca[df_miejsca['numer_miejsca'] == str(st.session_state.active_place_id)]
-        
-        if not place_row.empty:
-            p = place_row.iloc[0]
-            
-            numer_m = str(p['numer_miejsca'])
-            tytul_miejsca = f"{numer_m}. {str(p['nazwa']).upper()}"
-            
-            google_search_url = f"https://www.google.com/search?q={p['nazwa']} Kreta"
-            
-            st.markdown(f"""
-            <div style="background-color: #e6ded1; border: 2px solid #b89b82; border-radius: 12px; padding: 14px 16px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.08);">
-                <div style="display: flex; align-items: center; justify-content: space-between;">
-                    <span style="font-family: Georgia, serif; font-size: 16pt; font-weight: 900; color: #663223; letter-spacing: 0.5px;">{tytul_miejsca}</span>
-                    <a href="{google_search_url}" target="_blank" style="text-decoration: none; font-size: 18px; background-color: #fcf8f2; border: 1px solid #b89b82; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1);" title="Szukaj w Google">🔍</a>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            is_visited = int(p.get('odwiedzone', 0)) == 1
-            if is_visited:
-                st.markdown("""
-                <div style="text-align: center; margin-bottom: 10px;">
-                    <span style="background-color: #d4edda; color: #155724; padding: 4px 12px; border-radius: 12px; font-weight: bold; border: 1px solid #c3e6cb; font-size: 11pt;">
-                        ✨ Odwiedzone
-                    </span>
-                </div>
-                """, unsafe_allow_html=True)
-
-            znalazles_zdjecie = False
-            for ekst in ['.jpg', '.jpeg', '.png']:
-                sciezka_zdjecia = os.path.join("zdjecia", f"{numer_m}{ekst}")
-                if os.path.exists(sciezka_zdjecia):
-                    znalazles_zdjecie = True
-                    st.image(sciezka_zdjecia, caption=f"{p['nazwa']}")
-                    break
-            
-            if pd.notna(p['opis']) and str(p['opis']).strip() != "":
-                st.info(p['opis'])
-
-            coords_clean = str(p['wspolrzedne']).replace(" ", "") if pd.notna(p['wspolrzedne']) else "35.3,24.5"
-            gps_maps_url = f"https://www.google.com/maps/search/?api=1&query={coords_clean}"
-
-            st.markdown(f"""
-            <div style="background-color: #e6ded1; border: 2px solid #b89b82; border-radius: 12px; padding: 12px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.08);">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <div style="background-color: #8c6a53; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items:center; justify-content:center; font-size: 13px;">📍</div>
-                        <span style="font-size: 10pt; font-weight: bold; color: #8c6a53; text-transform: uppercase; letter-spacing: 0.5px;">Lokalizacja GPS</span>
-                    </div>
-                    <a href="{gps_maps_url}" target="_blank" style="background-color: #663223; color: white; padding: 6px 14px; border-radius: 20px; font-size: 9.5pt; font-weight: bold; text-decoration: none; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">NAWIGUJ ➔</a>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                    <div style="background-color: #fcf8f2; border: 1.5px solid #b89b82; border-radius: 10px; padding: 10px;">
-                        <div style="font-size: 8.5pt; font-weight: bold; color: #8c6a53; text-transform: uppercase; margin-bottom: 3px;">Czas dojazdu (Stravros)</div>
-                        <div style="font-size: 11pt; font-weight: bold; color: #3b2f2f;">{p['czas_dojazdu']}</div>
-                    </div>
-                    <div style="background-color: #fcf8f2; border: 1.5px solid #b89b82; border-radius: 10px; padding: 10px;">
-                        <div style="font-size: 8.5pt; font-weight: bold; color: #8c6a53; text-transform: uppercase; margin-bottom: 3px;">Godziny otwarcia</div>
-                        <div style="font-size: 11pt; font-weight: bold; color: #3b2f2f;">{p['godziny_otwarcia']}</div>
-                    </div>
-                    <div style="background-color: #fcf8f2; border: 1.5px solid #b89b82; border-radius: 10px; padding: 10px;">
-                        <div style="font-size: 8.5pt; font-weight: bold; color: #8c6a53; text-transform: uppercase; margin-bottom: 3px;">Najlepsza pora</div>
-                        <div style="font-size: 10.5pt; font-weight: bold; color: #3b2f2f;">{p['najlepsza_pora']}</div>
-                    </div>
-                    <div style="background-color: #fcf8f2; border: 1.5px solid #b89b82; border-radius: 10px; padding: 10px;">
-                        <div style="font-size: 8.5pt; font-weight: bold; color: #8c6a53; text-transform: uppercase; margin-bottom: 3px;">Czas zwiedzania</div>
-                        <div style="font-size: 11pt; font-weight: bold; color: #3b2f2f;">{p['orientacyjny_czas']}</div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            koszt_val = p.get('koszt', '')
-            if pd.notna(koszt_val) and str(koszt_val).strip() != "":
-                st.markdown(f"""
-                <div style="background-color: #e6ded1; border: 1.5px solid #b89b82; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: flex; align-items: flex-start; gap: 10px;">
-                    <div style="font-size: 20px; line-height: 1;">💶👥</div>
-                    <div>
-                        <div style="font-size: 9pt; font-weight: bold; color: #8c6a53; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Koszt dla rodziny 2+2:</div>
-                        <div style="font-size: 10.5pt; color: #3b2f2f; font-weight: 500;">{koszt_val}</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            akcja_val = p.get('konieczna_akcja', '')
-            if pd.notna(akcja_val) and str(akcja_val).strip() != "Brak" and str(akcja_val).strip() != "":
-                st.markdown(f"""
-                <div style="background-color: #fdf2f2; border: 1.5px solid #f5c6cb; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: flex; align-items: flex-start; gap: 10px;">
-                    <div style="font-size: 20px; line-height: 1;">⚠️</div>
-                    <div>
-                        <div style="font-size: 9pt; font-weight: bold; color: #a71d2a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Konieczna akcja</div>
-                        <div style="font-size: 10.5pt; color: #3b2f2f; font-weight: 500;">{akcja_val}</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            gastro_val = p.get('zaplecze_gastro', '')
-            if pd.notna(gastro_val) and str(gastro_val).strip() != "":
-                st.markdown(f"""
-                <div style="background-color: #e2e8f0; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: flex; align-items: flex-start; gap: 10px;">
-                    <div style="font-size: 20px; line-height: 1;">🍽️</div>
-                    <div>
-                        <div style="font-size: 9pt; font-weight: bold; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Zaplecze gastronomiczne</div>
-                        <div style="font-size: 10.5pt; color: #3b2f2f; font-weight: 500;">{gastro_val}</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            jedzenie_val = p.get('ile_jedzenia', '')
-            if pd.notna(jedzenie_val) and str(jedzenie_val).strip() != "":
-                st.markdown(f"""
-                <div style="background-color: #e2e8f0; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: flex; align-items: flex-start; gap: 10px;">
-                    <div style="font-size: 20px; line-height: 1;">🥪</div>
-                    <div>
-                        <div style="font-size: 9pt; font-weight: bold; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Ile jedzenia</div>
-                        <div style="font-size: 10.5pt; color: #3b2f2f; font-weight: 500;">{jedzenie_val}</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            slonce_val = p.get('ochrona_slonce', '')
-            if pd.notna(slonce_val) and str(slonce_val).strip() != "":
-                st.markdown(f"""
-                <div style="background-color: #fef3c7; border: 1.5px solid #fde68a; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: flex; align-items: flex-start; gap: 10px;">
-                    <div style="font-size: 20px; line-height: 1;">☀️</div>
-                    <div>
-                        <div style="font-size: 9pt; font-weight: bold; color: #d97706; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Ile słońca</div>
-                        <div style="font-size: 10.5pt; color: #3b2f2f; font-weight: 500;">{slonce_val}</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            adhd_val = p.get('trudnosc_adhd', '')
-            meltdown_val = p.get('potencjal_meltdownu', '')
-            strategie_val = p.get('strategie_meltdown', '')
-
-            html_wyzwania = f"""<div style="background-color: #e6ded1; border: 2px solid #b89b82; border-radius: 12px; padding: 14px 16px; margin-top: 15px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.08);"><div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;"><span style="font-size: 18px;">🐂</span><span style="font-family: Georgia, serif; font-size: 12pt; font-weight: 900; color: #663223; text-transform: uppercase; letter-spacing: 0.5px;">Wyzwania & Rady</span></div><div style="margin-bottom: 10px;"><div style="font-size: 9.5pt; font-weight: bold; color: #8c6a53; text-transform: uppercase; margin-bottom: 3px;">🧠 Trudności ADHD:</div><div style="font-size: 10.5pt; color: #3b2f2f; line-height: 1.4;">{adhd_val}</div></div><div style="margin-bottom: 10px;"><div style="font-size: 9.5pt; font-weight: bold; color: #a71d2a; text-transform: uppercase; margin-bottom: 3px;">⚡ Potencjał meltdownu:</div><div style="font-size: 10.5pt; color: #3b2f2f; line-height: 1.4;">{meltdown_val}</div></div><div><div style="font-size: 9.5pt; font-weight: bold; color: #155724; text-transform: uppercase; margin-bottom: 3px;">🛡️ Strategie na meltdown:</div><div style="font-size: 10.5pt; color: #3b2f2f; line-height: 1.4;">{strategie_val}</div></div></div>"""
-            st.markdown(html_wyzwania, unsafe_allow_html=True)
-            
-            if pd.notna(p['zadania_dla_dzieci']) and str(p['zadania_dla_dzieci']).strip() != "":
-                with st.expander("🧒 Dodatkowe zadania dla dzieci w tym miejscu"):
-                    renderuj_zadania_dzieci_expander(p['zadania_dla_dzieci'], p['numer_miejsca'])
-            
-            polaczenie_tekst = str(p['najlepiej_polaczyc'])
-            def zamien_na_link(match):
-                nr_miejsca = match.group(1)
-                return f'<a href="?tab=zabytek&place={nr_miejsca}" target="_self" style="color: #663223; font-weight: bold; text-decoration: underline;">Miejsce {nr_miejsca}</a>'
-            
-            polaczenie_przetworzone = re.sub(r'Miejsce\s+(\d+)', zamien_na_link, polaczenie_tekst, flags=re.IGNORECASE)
-            st.markdown(f"**🔗 Najlepiej połączyć z:** {polaczenie_przetworzone}", unsafe_allow_html=True)
-
     renderuj_sekcje_czatu_ai("tab_zabytek")
 
 elif st.session_state.active_tab == "map":
-    st.markdown('<div class="antique-header">🗺️ Wycieczki</div>', unsafe_allow_html=True)
+    st.markdown("""
+        <div class="adventure-header">
+            <div style="font-size:24px;">🗺️</div>
+            <div>
+                <div class="adventure-title-text">OdyssAi • Mapa Wypraw</div>
+                <div class="adventure-subtitle">Eksploruj szlaki i punkty strategiczne</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
     
     opcje_wycieczek_lista = ["-- Wybierz wycieczkę lub zobacz mapę wszystkich miejsc --"] + wycieczki_options
     wybrana_mapa_sb = st.selectbox("", options=opcje_wycieczek_lista, key="map_wycieczka_select", label_visibility="collapsed")
@@ -1647,7 +1524,7 @@ elif st.session_state.active_tab == "map":
         st.markdown(st.session_state.last_clicked_place_info)
 
     if wybrana_mapa_sb == "-- Wybierz wycieczkę lub zobacz mapę wszystkich miejsc --":
-        m_all = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB positron")
+        m_all = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB dark_matter")
         dodaj_marker_domku(m_all)
         
         for _, row in df_miejsca.iterrows():
@@ -1661,16 +1538,15 @@ elif st.session_state.active_tab == "map":
                     num = str(row['numer_miejsca'])
                     typ_raw = str(row.get('typ', '')).strip().lower()
                     is_visited = int(row.get('odwiedzone', 0)) == 1
-                    bg_color = '#6c757d' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
-                    text_color = "black" if typ_raw == 'activity' else "white"
+                    bg_color = '#475569' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
                     
-                    icon_html = f'<div style="background-color:{bg_color};color:{text_color};border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-family:Arial;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.4);">{num}</div>'
+                    icon_html = f'<div style="background-color:{bg_color};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">{num}</div>'
                     icon = folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))
                     folium.Marker([lat, lon], icon=icon, tooltip=f"{num}. {name}").add_to(m_all)
                 except:
                     pass
         
-        map_all_data = st_folium(m_all, width="100%", height=400)
+        map_all_data = st_folium(m_all, width="100%", height=340)
         
         if map_all_data and map_all_data.get("last_object_clicked_tooltip"):
             clicked_tooltip = map_all_data["last_object_clicked_tooltip"]
@@ -1688,11 +1564,11 @@ elif st.session_state.active_tab == "map":
                 
                 info_tekst = ""
                 if not powiazane_kroki.empty:
-                    info_tekst = f"📌 Miejsce **{clicked_tooltip}** znajduje się w następujących aktywnych wycieczkach:\n"
+                    info_tekst = f"📌 Miejsce **{clicked_tooltip}** znajduje się w aktywnych wycieczkach:\n"
                     for _, row_w in powiazane_kroki.iterrows():
                         info_tekst += f"- **Wycieczka #{row_w['id_wycieczki']}**: {row_w['tytul_wycieczki']}\n"
                 else:
-                    info_tekst = f"📌 Miejsce **{clicked_tooltip}** nie jest obecnie przypisane jako krok w żadnej aktywnej wycieczce."
+                    info_tekst = f"📌 Miejsce **{clicked_tooltip}** nie jest obecnie przypisane do żadnej aktywnej wycieczki."
                 
                 if st.session_state.get("last_clicked_text") != clicked_tooltip:
                     st.session_state.last_clicked_text = clicked_tooltip
@@ -1711,7 +1587,16 @@ elif st.session_state.active_tab == "map":
     renderuj_sekcje_czatu_ai("tab_map")
 
 elif st.session_state.active_tab == "route":
-    st.markdown('<div class="antique-header">🚗 Aktualna Trasa i Wycieczka</div>', unsafe_allow_html=True)
+    st.markdown("""
+        <div class="adventure-header">
+            <div style="font-size:24px;">🚗</div>
+            <div>
+                <div class="adventure-title-text">OdyssAi • Trasa Dnia</div>
+                <div class="adventure-subtitle">Kontrola misji w czasie rzeczywistym</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    
     aktualne_id = pobierz_aktywna_wycieczke_id()
     
     conn = sqlite3.connect('odyssai.db')
@@ -1719,7 +1604,7 @@ elif st.session_state.active_tab == "route":
     conn.close()
     
     if not curr_w_check.empty and int(curr_w_check.iloc[0]['odbyta']) == 1:
-        st.info("✨ Aktualnie ustawiona wycieczka została już ukończona i przebyta. Wybierz inną wycieczkę z menu wycieczek.")
+        st.info("✨ Aktualnie ustawiona wycieczka została ukończona.")
     else:
         renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False)
 
