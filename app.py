@@ -692,7 +692,7 @@ def wyczysc_historie_czatu_w_db(uzytkownik):
     conn.commit()
     conn.close()
 
-# --- FUNKCJE OBSŁUGI NOTATEK, MIEJSC, KROKÓW I ZAKUPÓW (DODAWANIE, EDYCJA, USUWANIE Z OCHRONĄ BASE=TRUE) ---
+# --- FUNKCJE OBSŁUGI NOTATEK, MIEJSC, WYCIECZEK, KROKÓW I ZAKUPÓW (Z EDYCJĄ I OCHRONĄ BASE=TRUE) ---
 def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=None, tytul=None):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
@@ -890,6 +890,27 @@ def usun_miejsce(numer_miejsca):
     conn.commit()
     conn.close()
     return f"Miejsce nr {numer_miejsca} zostało usunięte."
+
+def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, szacowana_godzina_powrotu=None, pobudka=None, czas_wyjazdu=None, planowana_data=None):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    if tytul_wycieczki:
+        cursor.execute('UPDATE wycieczka SET tytul_wycieczki = ? WHERE id = ?', (tytul_wycieczki, str(id)))
+    if calosciowy_opis_wycieczki:
+        cursor.execute('UPDATE wycieczka SET calosciowy_opis_wycieczki = ? WHERE id = ?', (calosciowy_opis_wycieczki, str(id)))
+    if calosciowa_taktyka_dnia:
+        cursor.execute('UPDATE wycieczka SET calosciowa_taktyka_dnia = ? WHERE id = ?', (calosciowa_taktyka_dnia, str(id)))
+    if szacowana_godzina_powrotu:
+        cursor.execute('UPDATE wycieczka SET szacowana_godzina_powrotu = ? WHERE id = ?', (szacowana_godzina_powrotu, str(id)))
+    if pobudka:
+        cursor.execute('UPDATE wycieczka SET pobudka = ? WHERE id = ?', (pobudka, str(id)))
+    if czas_wyjazdu:
+        cursor.execute('UPDATE wycieczka SET czas_wyjazdu = ? WHERE id = ?', (czas_wyjazdu, str(id)))
+    if planowana_data is not None:
+        cursor.execute('UPDATE wycieczka SET planowana_data = ? WHERE id = ?', (planowana_data, str(id)))
+    conn.commit()
+    conn.close()
+    return f"Wycieczka #{id} została zaktualizowana."
 
 def dodaj_krok_wycieczki(
     id_wycieczki, krok_wycieczki, nazwa, wspolrzedne="35.3,24.5", 
@@ -1167,6 +1188,20 @@ usun_miejsce_tool = types.FunctionDeclaration(
     ),
 )
 
+edytuj_wycieczke_tool = types.FunctionDeclaration(
+    name="edytuj_wycieczke",
+    description="Edytuje parametry wycieczki, w tym planowaną datę (format RRRR-MM-DD).",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "id": types.Schema(type=types.Type.STRING),
+            "tytul_wycieczki": types.Schema(type=types.Type.STRING),
+            "planowana_data": types.Schema(type=types.Type.STRING, description="Planowana data w formacie RRRR-MM-DD"),
+        },
+        required=["id"]
+    ),
+)
+
 dodaj_zakup_tool = types.FunctionDeclaration(
     name="dodaj_produkt_zakupow",
     description="Dodaje nowy produkt do checklisty zakupowej powiązanej z konkretnym krokiem wycieczki.",
@@ -1258,7 +1293,7 @@ usun_krok_wycieczki_tool = types.FunctionDeclaration(
 
 cretai_tools = types.Tool(function_declarations=[
     dodaj_notatke_tool, edytuj_notatke_tool, usun_notatke_tool, 
-    edytuj_miejsce_tool, usun_miejsce_tool, 
+    edytuj_miejsce_tool, usun_miejsce_tool, edytuj_wycieczke_tool, 
     dodaj_zakup_tool, edytuj_zakup_tool, usun_zakup_tool, 
     dodaj_krok_wycieczki_tool, edytuj_krok_wycieczki_tool, usun_krok_wycieczki_tool
 ])
@@ -1274,6 +1309,8 @@ def wykonaj_narzedzie_bazy(call_name, args):
         return edytuj_miejsce(**args)
     elif call_name == "usun_miejsce":
         return usun_miejsce(**args)
+    elif call_name == "edytuj_wycieczke":
+        return edytuj_wycieczke(**args)
     elif call_name == "dodaj_produkt_zakupow":
         return dodaj_produkt_zakupow(**args)
     elif call_name == "edytuj_produkt_zakupow":
@@ -1931,7 +1968,7 @@ if st.session_state.active_tab == "zabytek":
 
             renderuj_karty_meltdown_ux(p)
             
-            if pd.notna(p['zadania_dla_dzieci']) and str(p['zadania_dla_dzieci']).strip() != "":
+            if pd.notna(p['zadania_dla_dzieci']) and str(p['zadania_dlogie_dzieci']).strip() != "" if 'zadania_dlogie_dzieci' in p else pd.notna(p['zadania_dla_dzieci']) and str(p['zadania_dla_dzieci']).strip() != "":
                 with st.expander("🧒 Zadania dla dzieci w tym miejscu"):
                     renderuj_zadania_dzieci_expander(p['zadania_dla_dzieci'], p['numer_miejsca'])
             
