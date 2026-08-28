@@ -1038,7 +1038,7 @@ def wczytaj_kontekst_zewnetrzny():
     try:
         miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, typ, czas_dojazdu, orientacyjny_czas, koszt, konieczna_akcja, odwiedzone, Base FROM miejsca', conn)
         wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, planowana_data, odbyta FROM wycieczka', conn)
-        kroki_df = pd.read_sql('SELECT id_wycieczki, krok_wycieczki, nazwa, okienko_zwiedzania FROM krok_wycieczki', conn)
+        kroki_df = pd.read_sql('SELECT id, id_wycieczki, krok_wycieczki, nazwa, okienko_zwiedzania FROM krok_wycieczki', conn)
         zakupy_df = pd.read_sql('SELECT id, id_kroku, nazwa_produktu, ilosc, kupione FROM zakupy', conn)
         notatki_df = pd.read_sql('SELECT id, id_wycieczki, id_miejsca, tytul, zawartosc, typ_notatki FROM notatki', conn)
     except:
@@ -1059,10 +1059,14 @@ def wczytaj_kontekst_zewnetrzny():
             if int(w.get('odbyta', 0)) == 1:
                 continue
             tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Data: {w.get('planowana_data', 'brak')} | Opis: {w['calosciowy_opis_wycieczki']}\n"
+    if not kroki_df.empty:
+        tekst += "\nMapa Kroków Wycieczek (ID kroku w bazie, ID wycieczki, Nazwa):\n"
+        for _, k in kroki_df.iterrows():
+            tekst += f"- Krok DB_ID: {k['id']} (Wycieczka #{k['id_wycieczki']}, Numer kroku: {k['krok_wycieczki']}): {k['nazwa']}\n"
     if not zakupy_df.empty:
         tekst += "\nZakupy zaplanowane na trasie:\n"
         for _, z in zakupy_df.iterrows():
-            tekst += f"- ID Zakupu {z['id']} (Krok ID {z['id_kroku']}): {z['nazwa_produktu']} (ilość: {z['ilosc']}, kupione: {z['kupione']})\n"
+            tekst += f"- ID Zakupu {z['id']} (Krok DB_ID {z['id_kroku']}): {z['nazwa_produktu']} (ilość: {z['ilosc']}, kupione: {z['kupione']})\n"
     if not notatki_df.empty:
         tekst += "\nNotatki użytkownika:\n"
         for _, n in notatki_df.iterrows():
@@ -1353,6 +1357,7 @@ Dzisiejsza data to: {dzisiaj_str}.
 {zewnetrzny_kontekst}
 - Masz na stałe wgląd w lokalizację domku ({DOMEK_LAT}, {DOMEK_LON}) oraz sklepu obok domku ({SKLEP_LAT}, {SKLEP_LON}).
 - Pamiętaj o żelaznej zasadzie: miejsca z flagą Base=true są bezwzględnie chronione i nie wolno ich usuwać ani modyfikować ich flag bazowych.
+- Zawsze przed edycją lub usunięciem kroku, zapoznaj się z mapą ID kroków w kontekście bazy, aby upewnić się, że operujesz na właściwym kroku.
 - Pamiętaj o pełnej kontroli czasu, ewakuacji przed upałem i redukcji stresu."""
 
         chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
