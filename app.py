@@ -9,17 +9,19 @@ import os
 import urllib.request
 import json
 
-# --- 1. KONFIGURACJA STRONY I STYL PERGAMINU ---
+# --- 1. KONFIGURACJA STRONY I STYL PERGAMINU (MOBILE FIRST / UX ADHD) ---
 st.set_page_config(page_title="Fadyssai - Kreta", layout="centered", page_icon="🧭")
 
 st.markdown("""
     <style>
-    /* Globalne tło pergaminu i czcionka */
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 70px !important;
+    }
     .stApp {
         background-color: #f4ecdf;
         color: #3b2f2f;
     }
-    /* Pasek boczny w klimacie */
     [data-testid="stSidebar"] {
         background-color: #e6ded1;
         color: #3b2f2f !important;
@@ -27,12 +29,46 @@ st.markdown("""
     [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, [data-testid="stSidebar"] label, [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {
         color: #3b2f2f !important;
     }
-    /* Stylizacja nagłówków */
     h3 {
         color: #663223;
         font-family: Georgia, serif;
     }
-    /* Styl dla paska nawigacyjnego i belek przycisków */
+    .bottom-nav-container {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background-color: #e6ded1;
+        border-top: 2px solid #b89b82;
+        padding: 8px 12px;
+        display: flex;
+        justify-content: space-around;
+        gap: 6px;
+        z-index: 99999;
+        box-shadow: 0 -2px 10px rgba(0,0,0,0.15);
+    }
+    .bottom-nav-btn {
+        flex: 1;
+        background-color: #fcf8f2;
+        border: 1px solid #b89b82;
+        color: #663223;
+        padding: 8px 0;
+        text-align: center;
+        border-radius: 8px;
+        font-size: 20px;
+        text-decoration: none;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        cursor: pointer;
+    }
+    .bottom-nav-btn:hover {
+        background-color: #d4c8b8;
+        border-color: #663223;
+    }
+    .bottom-nav-btn.active {
+        background-color: #b89b82;
+        color: white;
+        border-color: #663223;
+    }
     .custom-nav-bar {
         display: flex;
         justify-content: space-between;
@@ -62,7 +98,6 @@ st.markdown("""
         color: white;
         border-color: #663223;
     }
-    /* Mniejsze przyciski nawigacyjne do panelu bocznego */
     .sidebar-nav-bar {
         display: flex;
         justify-content: space-between;
@@ -75,10 +110,10 @@ st.markdown("""
         background-color: #e6ded1;
         border: 1px solid #b89b82;
         color: #663223;
-        padding: 4px 0;
+        padding: 6px 0;
         text-align: center;
         border-radius: 6px;
-        font-size: 14px;
+        font-size: 16px;
         text-decoration: none;
         box-shadow: 0 1px 2px rgba(0,0,0,0.1);
         cursor: pointer;
@@ -92,8 +127,96 @@ st.markdown("""
         color: white;
         border-color: #663223;
     }
-
-    /* Eleganckie belki nagłówkowe w stylu antycznym */
+    .logistics-card {
+        background-color: #fcf8f2;
+        border: 1.5px solid #b89b82;
+        border-radius: 12px;
+        padding: 12px;
+        text-align: left;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        margin-bottom: 8px;
+    }
+    .logistics-title {
+        font-size: 9pt;
+        font-weight: bold;
+        color: #8c6a53;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .logistics-value {
+        font-size: 12pt;
+        font-weight: bold;
+        color: #3b2f2f;
+    }
+    .net-box {
+        background-color: #fcf8f2;
+        border: 1.5px solid #b89b82;
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .net-box-evac {
+        background-color: #fdf2f2;
+        border: 1.5px solid #f5c6cb;
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .net-box-regen {
+        background-color: #f2f9f4;
+        border: 1.5px solid #c3e6cb;
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .net-box-warn {
+        background-color: #fcf0f0;
+        border: 1.5px solid #f8d7da;
+        border-radius: 12px;
+        padding: 12px;
+        margin-bottom: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .net-title {
+        font-size: 9pt;
+        font-weight: bold;
+        color: #8c6a53;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .net-title-evac {
+        font-size: 9pt;
+        font-weight: bold;
+        color: #a71d2a;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .net-title-regen {
+        font-size: 9pt;
+        font-weight: bold;
+        color: #155724;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .net-title-warn {
+        font-size: 9pt;
+        font-weight: bold;
+        color: #721c24;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .net-text {
+        font-size: 10.5pt;
+        color: #3b2f2f;
+    }
     .antique-header {
         background: linear-gradient(to right, #d4c8b8, #e6ded1, #d4c8b8);
         border: 2px solid #b89b82;
@@ -108,8 +231,6 @@ st.markdown("""
         margin-bottom: 10px;
         letter-spacing: 1px;
     }
-    
-    /* Poprawka widoczności napisów w przyciskach Streamlita */
     .stButton > button {
         background-color: #e6ded1 !important;
         color: #5c2c16 !important;
@@ -121,40 +242,14 @@ st.markdown("""
         color: #3b1c0e !important;
         border-color: #5c2c16 !important;
     }
-
-    /* Zmniejszenie marginesu między listą a mapą */
     iframe {
         margin-top: -10px !important;
     }
-    
-    /* --- POPRAWKI KOLORYSTYCZNE: INPUTY, PRZYCISKI, CZAT --- */
     [data-testid="stSidebar"] input {
         background-color: #fcf8f2 !important;
         color: #3b2f2f !important;
         border: 1px solid #b89b82 !important;
     }
-    [data-testid="stSidebar"] button, [data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] {
-        background-color: #e6ded1 !important;
-        color: #3b2f2f !important;
-        border: 1px solid #b89b82 !important;
-    }
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] {
-        background-color: #fcf8f2 !important;
-        border: 1px dashed #b89b82 !important;
-        border-radius: 8px;
-        padding: 10px;
-    }
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] section, 
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] button {
-        background-color: #e6ded1 !important;
-        color: #3b2f2f !important;
-    }
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] small, 
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] span, 
-    [data-testid="stSidebar"] [data-testid="stFileUploader"] div {
-        color: #3b2f2f !important;
-    }
-
     [data-testid="stChatMessage"] {
         background-color: #e6ded1 !important;
         border: 1px solid #b89b82 !important;
@@ -164,7 +259,6 @@ st.markdown("""
     [data-testid="stChatMessage"] p, [data-testid="stChatMessage"] span, [data-testid="stChatMessage"] div {
         color: #3b2f2f !important;
     }
-    
     .stChatInputContainer {
         background-color: #e6ded1 !important;
         border-radius: 12px !important;
@@ -174,22 +268,12 @@ st.markdown("""
         color: #3b2f2f !important;
         background-color: #fcf8f2 !important;
     }
-    [data-testid="stChatInput"] {
-        background-color: #e6ded1 !important;
-        color: #3b2f2f !important;
-    }
-    div[data-testid="stChatInput"] > div {
-        background-color: #e6ded1 !important;
-        border: 1px solid #b89b82 !important;
-    }
     </style>
 """, unsafe_allow_html=True)
 
-# Stałe współrzędne domu
 DOMEK_LAT = 35.5914
 DOMEK_LON = 24.0918
 
-# --- 2. BAZA DANYCH SQLITE & DOMYŚLNE DANE WBUDOWANE ---
 def init_db():
     conn = sqlite3.connect('fadyssai.db')
     cursor = conn.cursor()
@@ -660,7 +744,6 @@ def pobierz_skrocone_opcje_wycieczek():
         opcje.append(f"{wid}. {skrocony}")
     return opcje
 
-# Pomocnicza funkcja ładowania wewnętrznej bazy danych SQLite dla AI (bez dynamicznych plików zewnętrznych)
 def wczytaj_kontekst_zewnetrzny():
     tekst = "Jesteś asystentem podróży Fadyssai na Kretę.\n--- AKTUALNA BAZA DANYCH W SQLITE ---\n"
     conn = sqlite3.connect('fadyssai.db')
@@ -698,7 +781,6 @@ def wczytaj_kontekst_zewnetrzny():
 
     return tekst
 
-# Pomocnicza funkcja pobierająca trasę po drogach z OSRM
 def pobierz_trase_osrm(punkty):
     if len(punkty) < 2:
         return []
@@ -715,16 +797,14 @@ def pobierz_trase_osrm(punkty):
         pass
     return [[p[0], p[1]] for p in punkty]
 
-# Pomocnicza funkcja dodająca marker domku do mapy
 def dodaj_marker_domku(m):
     domek_icon_html = '<div style="background-color:black;color:white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.5);">🏠</div>'
     domek_icon = folium.DivIcon(html=domek_icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=domek_icon, tooltip="Nasz Domek").add_to(m)
 
-# --- 3. NARĘDZIA DLA GEMINI ---
 aktualizuj_tool = types.FunctionDeclaration(
     name="aktualizuj_miejsce",
-    description="Aktualizuje informacje o wybranym miejscu na Krecie na podstawie numeru miejsca. UWAGA: Miejsca z flagą Base=true (pochodzące z CSV) nie mogą być modyfikowane.",
+    description="Aktualizuje informacje o wybranym miejscu na Krecie na podstawie numeru miejsca. UWAGA: Miejsca z flagą Base=true nie mogą być modyfikowane.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
@@ -914,7 +994,6 @@ fadyssai_tools = types.Tool(function_declarations=[
     usun_checklist_tool
 ])
 
-# --- WSPÓLNA FUNKCJA OBSŁUGI CZATU AI ---
 def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
     st.markdown("---")
     st.markdown("### 💬 Asystent AI Fadyssai")
@@ -928,9 +1007,9 @@ def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
     
     system_prompt = f"""Jesteś inteligentnym, empatycznym asystentem podróży Fadyssai na Kretę.
 {zewnetrzny_kontekst}
-- Masz pełny wgląd w całą bazę danych SQLite, obejmującą tabele: `miejsca`, `wycieczka`, `krok_wycieczki` oraz tabele powiązane z checklistami.
-- **BARDZO WAŻNE OGRANICZENIE BEZPIECZEŃSTWA:** Miejsca w tabeli `miejsca`, które mają flagę `Base = true` (zaczytane z pliku CSV przy starcie aplikacji), są **BEZWZGLĘDNIE CHRONIONE**. Nie wolno ich modyfikować, nadpisywać ani usuwać pod żadnym pozorem. Próba ich usunięcia lub zmiany zostanie odrzucona przez system. Możesz dodawać nowe miejsca lub modyfikować jedynie te, które nie mają flagi Base=true.
-- **BARDZO WAŻNE:** Nigdy nie zapisuj, nie modyfikuj ani nie usuwaj niczego w bazie danych samowolnie. Modyfikacje i usuwanie mogą być wywołane **wyłącznie wtedy, gdy użytkownik wyda jednoznaczne, bezpośrednie polecenie**."""
+- Masz pełny wgląd w całą bazę danych SQLite.
+- Miejsca z flagą Base = true są bezwzględnie chronione przed modyfikacją lub usunięciem.
+- Nigdy nie modyfikuj bazy samowolnie – tylko na wyraźne polecenie użytkownika."""
 
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -1056,11 +1135,10 @@ def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
             st.markdown(assistant_reply)
             st.rerun()
 
-# --- 4. STAN APLIKACJI (Domyślnie Miejsca) ---
 if "tab" in st.query_params:
     st.session_state.active_tab = st.query_params["tab"]
 elif "active_tab" not in st.session_state:
-    st.session_state.active_tab = "zabytek"  # Domyślnie wchodzi w Miejsca i Zabytki
+    st.session_state.active_tab = "zabytek"
 
 if "place" in st.query_params:
     st.session_state.active_place_id = st.query_params["place"]
@@ -1085,9 +1163,7 @@ DEFAULT_COLOR = '#DC3545'
 df_miejsca = pobierz_wszystkie_miejsca()
 wycieczki_options = pobierz_skrocone_opcje_wycieczek()
 
-# --- POPUP CHECKLISTY (MODAL) ---
-@st.dialog("🎒 Checklista Wycieczki")
-def pokaz_checklistu_popup(wycieczka_id):
+def renderuj_checklistu_expander(wycieczka_id):
     conn = sqlite3.connect('fadyssai.db')
     checklisty_df = pd.read_sql('SELECT * FROM checklist WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
     items_df = pd.DataFrame()
@@ -1112,19 +1188,15 @@ def pokaz_checklistu_popup(wycieczka_id):
                 for _, itm in powiazane_itemy.iterrows():
                     ilosc_val = itm['ilosc']
                     ilosc_str = f" *({ilosc_val})*" if pd.notna(ilosc_val) and ilosc_val != "1" else ""
-                    st.checkbox(f"{itm['nazwa']}{ilosc_str}", key=f"chk_pop_{itm['id']}")
+                    st.checkbox(f"{itm['nazwa']}{ilosc_str}", key=f"chk_exp_{chl_id}_{itm['id']}")
 
-# --- POPUP ZADANIA DLA DZIECI (MODAL) ---
-@st.dialog("🧒 Dodatkowe zadania dla dzieci")
-def pokaz_zadania_dzieci_popup(tekst_zadan):
-    st.markdown("Wykonajcie wspólnie poniższe zadania podczas zwiedzania:")
+def renderuj_zadania_dzieci_expander(tekst_zadan, unikalny_klucz):
     zadania_lista = [z.strip() for z in str(tekst_zadan).split('.') if z.strip()]
     if not zadania_lista:
         zadania_lista = [str(tekst_zadan)]
     for i, zadanie in enumerate(zadania_lista):
-        st.checkbox(f"{zadanie}", key=f"zad_dziecko_modal_{i}")
+        st.checkbox(f"{zadanie}", key=f"zad_dziecko_exp_{unikalny_klucz}_{i}")
 
-# --- FUNKCJA RENDEROWANIA KARTY WYCIECZKI (PEŁNY OPIS) ---
 def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
     conn = sqlite3.connect('fadyssai.db')
     wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
@@ -1136,7 +1208,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
         tytul_w = str(w_gen['tytul_wycieczki'])
         
         st.markdown(f"""
-        <div style="background-color:#e6ded1; padding:12px; border-top:3px solid #b89b82; border-bottom:3px solid #b89b82; text-align:center; font-size:14pt; font-weight:900; text-transform:uppercase; margin-bottom:15px; color:#663223;">
+        <div style="background-color:#e6ded1; padding:12px; border:2px solid #b89b82; border-radius:8px; text-align:center; font-size:13pt; font-weight:900; text-transform:uppercase; margin-bottom:12px; color:#663223;">
             {tytul_w}
         </div>
         """, unsafe_allow_html=True)
@@ -1177,31 +1249,69 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
                 if trasa_po_drogach:
                     folium.PolyLine(trasa_po_drogach, color="#8b4513", weight=4, opacity=0.8).add_to(m_trasa)
                     
-                st_folium(m_trasa, width="100%", height=320, returned_objects=[])
+                st_folium(m_trasa, width="100%", height=280, returned_objects=[])
 
             st.markdown("---")
-            
-            if pd.notna(w_gen['calosciowy_opis_wycieczki']) and str(w_gen['calosciowy_opis_wycieczki']).strip() != "":
-                st.info(w_gen['calosciowy_opis_wycieczki'])
-                
-            st.markdown("---")
-
-        st.markdown("### 🗺️ Etapy i Miejsca wycieczki")
-        for _, k in kroki_df.iterrows():
-            krok_num = str(k['krok_wycieczki'])
-            krok_nazwa = str(k['nazwa'])
-            st.markdown(f"**{krok_num}.** {krok_nazwa}")
-
-        st.markdown("---")
 
         pobudka_val = w_gen.get('pobudka', '07:00') if pd.notna(w_gen.get('pobudka')) else '07:00'
         wyjazd_val = w_gen.get('czas_wyjazdu', '07:30') if pd.notna(w_gen.get('czas_wyjazdu')) else '07:30'
-        st.markdown(f"**⏰ Pobudka:** {pobudka_val} | **Wyjazd:** {wyjazd_val} | **⏱️ Czas trwania:** {w_gen['calkowity_czas_wycieczki_godziny']}h | Powrót: **{w_gen['szacowana_godzina_powrotu']}**")
+        powrot_val = w_gen.get('szacowana_godzina_powrotu', '17:00')
+        czas_trwania = f"{w_gen['calkowity_czas_wycieczki_godziny']} godz."
 
-        st.markdown("---")
+        st.markdown(f"""
+        <div style="background-color:#e6ded1; border:2px solid #b89b82; border-radius:12px; padding:12px; margin-bottom:15px;">
+            <div style="font-size:11pt; font-weight:bold; color:#663223; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+                <span>🧭</span> LOGISTYKA DNIA
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="logistics-card">
+                    <div class="logistics-title">⏰ Pobudka</div>
+                    <div class="logistics-value">{pobudka_val}</div>
+                </div>
+                <div class="logistics-card">
+                    <div class="logistics-title">🚗 Wyjazd</div>
+                    <div class="logistics-value">{wyjazd_val}</div>
+                </div>
+                <div class="logistics-card">
+                    <div class="logistics-title">🏠 Powrót</div>
+                    <div class="logistics-value">{powrot_val}</div>
+                </div>
+                <div class="logistics-card">
+                    <div class="logistics-title">⏱️ Całkowity czas</div>
+                    <div class="logistics-value">{czas_trwania}</div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        if st.button("🎒 Otwórz checklistę wycieczki (Popup)", key=f"btn_chk_popup_{wycieczka_id}"):
-            pokaz_checklistu_popup(wycieczka_id)
+        if pd.notna(w_gen['calosciowy_opis_wycieczki']) and str(w_gen['calosciowy_opis_wycieczki']).strip() != "":
+            st.markdown(f"""
+            <div style="background-color:#e6ded1; border:2px solid #b89b82; border-radius:12px; padding:12px; margin-bottom:15px;">
+                <div style="font-size:11pt; font-weight:bold; color:#663223; margin-bottom:6px;">
+                    📝 Opis i cel wycieczki
+                </div>
+                <div style="color:#3b2f2f; font-size:10.5pt;">
+                    {w_gen['calosciowy_opis_wycieczki']}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        if not kroki_df.empty:
+            st.markdown("⚡ **Szybki skok do etapu:**")
+            cols_kroki = st.columns(len(kroki_df))
+            for idx, (_, k_item) in enumerate(kroki_df.iterrows()):
+                with cols_kroki[idx]:
+                    krok_id_target = k_item['id']
+                    krok_num_lbl = k_item['krok_wycieczki']
+                    st.markdown(f'''
+                        <a href="#krok_{krok_id_target}" style="display: block; background-color: #e6ded1; border: 1px solid #b89b82; color: #663223; padding: 8px 0; text-align: center; border-radius: 8px; font-size: 16px; font-weight: bold; text-decoration: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                            {krok_num_lbl}
+                        </a>
+                    ''', unsafe_allow_html=True)
+            st.markdown("---")
+
+        with st.expander("🎒 Sprawdź checklistę wycieczki"):
+            renderuj_checklistu_expander(wycieczka_id)
 
         st.markdown("---")
 
@@ -1215,78 +1325,75 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
 
         st.markdown("---")
 
-        st.markdown("### 📍 Szczegółowy plan")
+        st.markdown("### 📍 Szczegółowy plan (Kroki)")
         for _, k in kroki_df.iterrows():
             krok_num = str(k['krok_wycieczki'])
             krok_nazwa = str(k['nazwa'])
             
             pasujące_miejsce = df_miejsca[df_miejsca['numer_miejsca'] == krok_num]
-            if not pasujące_miejsce.empty:
-                miejsce_id_cel = str(pasujące_miejsce.iloc[0]['numer_miejsca'])
-            else:
-                miejsce_id_cel = "1"
+            miejsce_id_cel = str(pasujące_miejsce.iloc[0]['numer_miejsca']) if not pasujące_miejsce.empty else "1"
 
-            is_target_step = (st.session_state.jump_to_step == f"krok_{k['id']}")
-            
-            anchor_html = f'<div id="krok_{k["id"]}"></div>'
-            if is_target_step:
-                anchor_html = f'''
-                    <div id="krok_{k["id"]}"></div>
-                    <script>
-                        setTimeout(function() {{
-                            var el = document.getElementById("krok_{k['id']}");
-                            if(el) {{ el.scrollIntoView({{behavior: "smooth", block: "start"}}); }}
-                        }}, 100);
-                    </script>
-                '''
-                st.session_state.jump_to_step = None
-
-            st.markdown(anchor_html, unsafe_allow_html=True)
-            
-            st.markdown(f'''
-            <div style="background-color:#e6ded1; padding:14px; border-left:6px solid #663223; border-top:1px solid #b89b82; border-bottom:1px solid #b89b82; margin-top:20px; margin-bottom:8px;">
-                <span style="font-size:16pt; font-weight:900; color:#663223; text-transform:uppercase;">🏛️ Krok {krok_num}: {krok_nazwa}</span>
-            </div>
-            ''', unsafe_allow_html=True)
+            st.markdown(f'<div id="krok_{k["id"]}"></div>', unsafe_allow_html=True)
             
             google_search_url = f"https://www.google.com/search?q={krok_nazwa} Kreta"
             gps_maps_url = f"https://www.google.com/maps/search/?api=1&query={k['wspolrzedne']}"
             coords_clean = str(k['wspolrzedne']).replace(" ", "")
             sklep_maps_url = f"https://www.google.com/maps/search/supermarket/@{coords_clean},15z"
             resto_maps_url = f"https://www.google.com/maps/search/restaurant/@{coords_clean},15z"
-            info_url = f"?tab=zabytek"
 
-            st.markdown(f'''
-                <div class="custom-nav-bar" style="margin-bottom: 10px; display: flex; gap: 6px;">
-                    <a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" title="Pineska GPS">📍</a>
-                    <a href="{google_search_url}" target="_blank" class="custom-nav-btn" title="Szukaj w Google">🔍</a>
-                    <a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" title="Najbliższy sklep spożywczy">🛒</a>
-                    <a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" title="Najbliższa restauracja">🍽️</a>
-                    <a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" title="Info o miejscu">📝</a>
+            st.markdown(f"""
+            <div style="background-color:#e6ded1; border:2px solid #b89b82; border-radius:14px; padding:16px; margin-bottom:20px; box-shadow:0 2px 5px rgba(0,0,0,0.08); position:relative;">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                    <div style="background-color:#e83e8c; color:white; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:11pt; border:2px solid white; box-shadow:0 1px 3px rgba(0,0,0,0.3);">
+                        {krok_num}
+                    </div>
+                    <span style="font-size:13pt; font-weight:900; color:#663223; text-decoration:underline;">{krok_nazwa}</span>
                 </div>
-            ''', unsafe_allow_html=True)
+                <div style="display: flex; gap: 6px; margin-bottom: 12px;">
+                    <a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="GPS">📍</a>
+                    <a href="{google_search_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Google">🔍</a>
+                    <a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Sklep">🛒</a>
+                    <a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Restauracja">🍽️</a>
+                    <a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Opis">📝</a>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+                    <div class="net-box" style="margin-bottom:0;">
+                        <div class="net-title">⏱️ Harmonogram</div>
+                        <div class="net-value" style="font-size:11pt; font-weight:bold; color:#3b2f2f;">{k['okienko_zwiedzania']}</div>
+                    </div>
+                    <div class="net-box-evac" style="margin-bottom:0;">
+                        <div class="net-title-evac">🚨 Ewakuacja</div>
+                        <div style="font-size:11pt; font-weight:bold; color:#a71d2a;">{k.get('godzina_ewakuacji', 'Brak')}</div>
+                    </div>
+                </div>
+                <div class="net-box">
+                    <div class="net-title">🎯 Taktyka</div>
+                    <div class="net-text">{k['podsumowanie_taktyki']}</div>
+                </div>
+                <div class="net-box-regen">
+                    <div class="net-title-regen">🌿 Strefa luzu i regeneracji</div>
+                    <div class="net-text" style="color:#155724;">{k['strefa_luzu_i_regeneracji']}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-            if pd.notna(k['opis']) and str(k['opis']).strip() != "":
-                st.write(k['opis'])
-                
-            st.markdown(f"**🕒 Okienko zwiedzania:** {k['okienko_zwiedzania']} (Ewakuacja: {k['godzina_ewakuacji']})")
-            
-            if pd.notna(k['czerwona_strefa_ostrzezenie']) and str(k['czerwona_strefa_ostrzezenie']).strip() != "":
-                st.warning(f"**🚨 Ostrzeżenie / Czerwona Strefa:** {k['czerwona_strefa_ostrzezenie']}")
-                
-            st.markdown("### 🐂 Taktyka & Regeneracja")
-            st.markdown(f"**🧠 Podsumowanie taktyki:** {k['podsumowanie_taktyki']}")
-            st.markdown(f"**🛡️ Strefa luzu i regeneracji:** {k['strefa_luzu_i_regeneracji']}")
-            
-            if pd.notna(k['potencjal_meltdownu']) and str(k['potencjal_meltdownu']).strip() != "":
-                st.markdown(f"**⚡ Prawdopodobieństwo meltdownu:** {k['potencjal_meltdownu']}")
-            if pd.notna(k['strategie_meltdown']) and str(k['strategie_meltdown']).strip() != "":
-                st.markdown(f"**🛡️ Strategia zapobiegania meltdownowi:** {k['strategie_meltdown']}")
+            if pd.notna(k.get('czerwona_strefa_ostrzezenie')) and str(k['czerwona_strefa_ostrzezenie']).strip() != "":
+                st.markdown(f"""
+                <div class="net-box-warn">
+                    <div class="net-title-warn">⚠️ Ostrzeżenie</div>
+                    <div class="net-text" style="color:#721c24; font-weight:bold;">{k['czerwona_strefa_ostrzezenie']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            if pd.notna(k.get('opis')) and str(k.get('opis')).strip() != "":
+                st.markdown(f"""
+                <div style="margin-top:8px; font-size:10pt; color:#3b2f2f; font-style:italic;">
+                    {k['opis']}
+                </div>
+                """, unsafe_allow_html=True)
             
             st.markdown("---")
 
-        # --- UMIESZCZENIE PRZYCISKÓW NA SAMYM KOŃCU KARTY WYCIECZKI (PRZED AGENTEM AI) ---
-        st.markdown("---")
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
             if st.button(f"🎯 Ustaw jako aktualną", key=f"btn_akt_{wycieczka_id}", use_container_width=True):
@@ -1306,14 +1413,9 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
     else:
         st.warning("Nie znaleziono wybranej wycieczki.")
 
-# --- PANEL BOCZNY (PRZYCISKI SKLEPU, DOMKU, CZATU + KLUCZ API) ---
 domek_maps_url = "https://www.google.com/maps/search/?api=1&query=35.5914,24.0918"
 sklep_maps_url = "https://www.google.com/maps/search/?api=1&query=35.586222,24.091861"
-
-active_zabytek = "active" if st.session_state.active_tab == "zabytek" else ""
-active_map = "active" if st.session_state.active_tab == "map" else ""
-active_route = "active" if st.session_state.active_tab == "route" else ""
-active_chat = "active" if st.session_state.active_tab == "chat" else ""
+active_chat_sidebar = "active" if st.session_state.active_tab == "chat" else ""
 
 with st.sidebar:
     st.markdown("### 🧭 Szybka Nawigacja")
@@ -1321,7 +1423,7 @@ with st.sidebar:
         <div class="sidebar-nav-bar">
             <a href="{sklep_maps_url}" target="_blank" class="sidebar-nav-btn" title="Sklep">🛒</a>
             <a href="{domek_maps_url}" target="_blank" class="sidebar-nav-btn" title="Domek">🏠</a>
-            <a href="?tab=chat" target="_self" class="sidebar-nav-btn {active_chat}" title="Czat">💬</a>
+            <a href="?tab=chat" target="_self" class="sidebar-nav-btn {active_chat_sidebar}" title="Asystent AI">💬</a>
         </div>
     """, unsafe_allow_html=True)
 
@@ -1336,19 +1438,22 @@ with st.sidebar:
         "gemini-3.6-flash"
     ]
     wybrany_model = st.selectbox("Wybierz model AI", options=dostepne_modele, index=0)
-    
     st.markdown("---")
 
-# --- GŁÓWNY INTERFEJS: GÓRNY PASEK NAWIGACYJNY (Miejsca, Wycieczki, Trasa) ---
+active_zabytek = "active" if st.session_state.active_tab == "zabytek" else ""
+active_map = "active" if st.session_state.active_tab == "map" else ""
+active_route = "active" if st.session_state.active_tab == "route" else ""
+
 st.markdown(f"""
-    <div class="custom-nav-bar">
-        <a href="?tab=zabytek" target="_self" class="custom-nav-btn {active_zabytek}" title="Miejsca">🏛️</a>
-        <a href="?tab=map" target="_self" class="custom-nav-btn {active_map}" title="Wycieczki">🗺️</a>
-        <a href="?tab=route" target="_self" class="custom-nav-btn {active_route}" title="Trasa">🚗</a>
+    <div class="bottom-nav-container">
+        <a href="?tab=zabytek" target="_self" class="bottom-nav-btn {active_zabytek}">🏛️</a>
+        <a href="?tab=map" target="_self" class="bottom-nav-btn {active_map}">🗺️</a>
+        <a href="?tab=route" target="_self" class="bottom-nav-btn {active_route}">🚗</a>
     </div>
 """, unsafe_allow_html=True)
 
-# --- ZAWARTOŚĆ ZALEŻNA OD WYBRANEJ ZAKŁADKI ---
+st.markdown("<div style='margin-bottom: 60px;'></div>", unsafe_allow_html=True)
+
 if st.session_state.active_tab == "chat":
     m_chat = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB positron")
     dodaj_marker_domku(m_chat)
@@ -1452,12 +1557,10 @@ elif st.session_state.active_tab == "zabytek":
                 """, unsafe_allow_html=True)
 
             numer_m = str(p['numer_miejsca'])
-            zdjecie_wyswietlone = False
             for ekst in ['.jpg', '.jpeg', '.png']:
                 sciezka_zdjecia = os.path.join("zdjecia", f"{numer_m}{ekst}")
                 if os.path.exists(sciezka_zdjecia):
                     st.image(sciezka_zdjecia, caption=f"{p['nazwa']}")
-                    zdjecie_wyswietlone = True
                     break
 
             google_search_url = f"https://www.google.com/search?q={p['nazwa']} Kreta"
@@ -1485,8 +1588,8 @@ elif st.session_state.active_tab == "zabytek":
             st.markdown(f"**🛡️ Strategie na meltdown:** {p['strategie_meltdown']}")
             
             if pd.notna(p['zadania_dla_dzieci']) and str(p['zadania_dla_dzieci']).strip() != "":
-                if st.button("🧒 Dodatkowe zadania dla dzieci", key=f"btn_zad_dzieci_{p['numer_miejsca']}"):
-                    pokaz_zadania_dzieci_popup(p['zadania_dla_dzieci'])
+                with st.expander("🧒 Dodatkowe zadania dla dzieci w tym miejscu"):
+                    renderuj_zadania_dzieci_expander(p['zadania_dla_dzieci'], p['numer_miejsca'])
             
             st.markdown(f"**🔗 Najlepiej połączyć z:** {p['najlepiej_polaczyc']}")
 
@@ -1555,8 +1658,8 @@ elif st.session_state.active_tab == "map":
                     st.rerun()
     else:
         if "last_clicked_place_info" in st.session_state:
-            st.session_state.last_clicked_place_info = None
             st.session_state.last_clicked_text = None
+            st.session_state.last_clicked_place_info = None
             
         if wybrana_mapa_sb:
             wybrana_id = wybrana_mapa_sb.split(". ")[0]
