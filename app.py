@@ -1555,18 +1555,72 @@ elif st.session_state.active_tab == "zabytek":
             </div>
             """, unsafe_allow_html=True)
 
-            if pd.notna(p['konieczna_akcja']) and str(p['konieczna_akcja']).strip() != "Brak" and str(p['konieczna_akcja']).strip() != "":
-                st.warning(f"**! Konieczna akcja:** {p['konieczna_akcja']}")
-                
-            st.markdown(f"**💶 Koszt (rodzina 2+2):** {p['koszt']}")
-            st.markdown(f"**🍽️ Zaplecze gastronomiczne:** {p['zaplecze_gastro']}")
-            st.markdown(f"**🥪 Ile jedzenia:** {p['ile_jedzenia']}")
-            st.markdown(f"**☀️ Ochrona przed słońcem:** {p['ochrona_slonce']}")
+            koszt_val = p.get('koszt', '')
+            if pd.notna(koszt_val) and str(koszt_val).strip() != "":
+                st.markdown(f"""
+                <div style="background-color: #e6ded1; border: 1.5px solid #b89b82; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: flex; align-items: flex-start; gap: 10px;">
+                    <div style="font-size: 20px; line-height: 1;">💶👥</div>
+                    <div>
+                        <div style="font-size: 9pt; font-weight: bold; color: #8c6a53; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Koszt dla rodziny 2+2:</div>
+                        <div style="font-size: 10.5pt; color: #3b2f2f; font-weight: 500;">{koszt_val}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            akcja_val = p.get('konieczna_akcja', '')
+            if pd.notna(akcja_val) and str(akcja_val).strip() != "Brak" and str(akcja_val).strip() != "":
+                st.markdown(f"""
+                <div style="background-color: #fdf2f2; border: 1.5px solid #f5c6cb; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: flex; align-items: flex-start; gap: 10px;">
+                    <div style="font-size: 20px; line-height: 1;">⚠️</div>
+                    <div>
+                        <div style="font-size: 9pt; font-weight: bold; color: #a71d2a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Konieczna akcja</div>
+                        <div style="font-size: 10.5pt; color: #3b2f2f; font-weight: 500;">{akcja_val}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            gastro_val = p.get('zaplecze_gastro', '')
+            if pd.notna(gastro_val) and str(gastro_val).strip() != "":
+                st.markdown(f"""
+                <div style="background-color: #e2e8f0; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: flex; align-items: flex-start; gap: 10px;">
+                    <div style="font-size: 20px; line-height: 1;">🍽️</div>
+                    <div>
+                        <div style="font-size: 9pt; font-weight: bold; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Zaplecze gastronomiczne</div>
+                        <div style="font-size: 10.5pt; color: #3b2f2f; font-weight: 500;">{gastro_val}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            jedzenie_val = p.get('ile_jedzenia', '')
+            if pd.notna(jedzenie_val) and str(jedzenie_val).strip() != "":
+                st.markdown(f"""
+                <div style="background-color: #e2e8f0; border: 1.5px solid #cbd5e1; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: flex; align-items: flex-start; gap: 10px;">
+                    <div style="font-size: 20px; line-height: 1;">🥪</div>
+                    <div>
+                        <div style="font-size: 9pt; font-weight: bold; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Ile jedzenia</div>
+                        <div style="font-size: 10.5pt; color: #3b2f2f; font-weight: 500;">{jedzenie_val}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            slonce_val = p.get('ochrona_slonce', '')
+            if pd.notna(slonce_val) and str(slonce_val).strip() != "":
+                st.markdown(f"""
+                <div style="background-color: #fef3c7; border: 1.5px solid #fde68a; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); display: flex; align-items: flex-start; gap: 10px;">
+                    <div style="font-size: 20px; line-height: 1;">☀️</div>
+                    <div>
+                        <div style="font-size: 9pt; font-weight: bold; color: #d97706; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Ile słońca</div>
+                        <div style="font-size: 10.5pt; color: #3b2f2f; font-weight: 500;">{slonce_val}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
             
-            st.markdown("### 🐂 Wyzwania & Rady")
-            st.markdown(f"**🧠 Trudności ADHD:** {p['trudnosc_adhd']}")
-            st.markdown(f"**⚡ Potencjał meltdownu:** {p['potencjal_meltdownu']}")
-            st.markdown(f"**🛡️ Strategie na meltdown:** {p['strategie_meltdown']}")
+            adhd_val = p.get('trudnosc_adhd', '')
+            meltdown_val = p.get('potencjal_meltdownu', '')
+            strategie_val = p.get('strategie_meltdown', '')
+
+            html_wyzwania = f"""<div style="background-color: #e6ded1; border: 2px solid #b89b82; border-radius: 12px; padding: 14px 16px; margin-top: 15px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.08);"><div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;"><span style="font-size: 18px;">🐂</span><span style="font-family: Georgia, serif; font-size: 12pt; font-weight: 900; color: #663223; text-transform: uppercase; letter-spacing: 0.5px;">Wyzwania & Rady</span></div><div style="margin-bottom: 10px;"><div style="font-size: 9.5pt; font-weight: bold; color: #8c6a53; text-transform: uppercase; margin-bottom: 3px;">🧠 Trudności ADHD:</div><div style="font-size: 10.5pt; color: #3b2f2f; line-height: 1.4;">{adhd_val}</div></div><div style="margin-bottom: 10px;"><div style="font-size: 9.5pt; font-weight: bold; color: #a71d2a; text-transform: uppercase; margin-bottom: 3px;">⚡ Potencjał meltdownu:</div><div style="font-size: 10.5pt; color: #3b2f2f; line-height: 1.4;">{meltdown_val}</div></div><div><div style="font-size: 9.5pt; font-weight: bold; color: #155724; text-transform: uppercase; margin-bottom: 3px;">🛡️ Strategie na meltdown:</div><div style="font-size: 10.5pt; color: #3b2f2f; line-height: 1.4;">{strategie_val}</div></div></div>"""
+            st.markdown(html_wyzwania, unsafe_allow_html=True)
             
             if pd.notna(p['zadania_dla_dzieci']) and str(p['zadania_dla_dzieci']).strip() != "":
                 with st.expander("🧒 Dodatkowe zadania dla dzieci w tym miejscu"):
