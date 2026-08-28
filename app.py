@@ -10,6 +10,7 @@ import urllib.request
 import json
 import re
 import base64
+from datetime import datetime, date
 
 # --- 1. KONFIGURACJA STRONY I DESIGN SYSTEM: DUCH PRZYGODY (DARK + NEONY) ---
 st.set_page_config(page_title="CretAi - Kreta", layout="centered", page_icon="🧭")
@@ -318,6 +319,7 @@ def init_db():
             szacowana_godzina_powrotu TEXT,
             pobudka TEXT,
             czas_wyjazdu TEXT,
+            planowana_data TEXT,
             odbyta INTEGER DEFAULT 0
         )
     ''')
@@ -333,6 +335,16 @@ def init_db():
             data_utworzenia TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (id_wycieczki) REFERENCES wycieczka(id) ON DELETE CASCADE,
             FOREIGN KEY (id_miejsca) REFERENCES miejsca(numer_miejsca) ON DELETE CASCADE
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS czat_historia (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uzytkownik TEXT,
+            rola TEXT,
+            tresc TEXT,
+            data_utworzenia TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
 
@@ -354,6 +366,14 @@ def init_db():
         pass
     try:
         cursor.execute("ALTER TABLE wycieczka ADD COLUMN czas_wyjazdu TEXT")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE wycieczka ADD COLUMN planowana_data TEXT")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE czat_historia ADD COLUMN uzytkownik TEXT")
     except:
         pass
 
@@ -443,9 +463,10 @@ def init_db():
 
     cursor.execute('SELECT COUNT(*) FROM wycieczka')
     if cursor.fetchone()[0] == 0:
+        domyslna_data = date.today().strftime("%Y-%m-%d")
         cursor.execute('''
-            INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, odbyta)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+            INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, planowana_data, odbyta)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ''', (
             "1",
             "Mity i Oceaniczne Głębiny: Pałac w Knossos & Cretaquarium",
@@ -454,7 +475,8 @@ def init_db():
             "12.0",
             "18:30",
             "07:00",
-            "07:30"
+            "07:30",
+            domyslna_data
         ))
 
         kroki_w1 = [
@@ -481,17 +503,18 @@ def init_db():
         ])
 
         cursor.execute('''
-            INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, odbyta)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+            INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, planowana_data, odbyta)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ''', (
             "2",
             "Wyspa Łez i Sekretne Zatoki: Spinalonga & Agios Nikolaos",
-            "Malownicza wyprawa na historyczną wyspę-twierdzę Spinalonga z rejsem statkiem z Eloundy oraz popołudniowym relaksem i kawą nad malowniczym jeziorem Voulismeni w Agios Nikolaos.",
+            "Malownicza wyprawa na historyczną wyspę-twierdzę Spinalonga z rejsem statkiem z Eloundy oraz popołudniowym relaksem i kawą nad malowniczym jeziorem Voulismeni v Agios Nikolaos.",
             "Wczesny wyjazd na parking w Elounda, rejs na Spinalongę przed największym upałem, a po obiedzie spacer wokół jeziora w Agios Nikolaos.",
             "10.5",
             "17:00",
             "07:30",
-            "08:00"
+            "08:00",
+            ""
         ))
 
         kroki_w2 = [
@@ -522,7 +545,167 @@ def init_db():
 
 init_db()
 
-# --- FUNKCJE OBSŁUGI NOTATEK ---
+# --- FUNKCJE POBIERANIA POGODY (wttr.in) ---
+@st.cache_data(ttl=3600)
+def pobierz_prognoze_pogody(lat, lon, data_docelowa):
+    try:
+        url = f"https://wttr.in/{lat},{lon}?format=j1"
+        req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
+        with urllib.request.urlopen(req, timeout=3) as response:
+            data = json.loads(response.read().decode())
+            weather_list = data.get('weather', [])
+            for day in weather_list:
+                if day.get('date') == data_docelowa:
+                    return day
+            if weather_list:
+                return weather_list[0]
+    except:
+        pass
+    return None
+
+def renderuj_pogode_dla_kroku(wspolrzedne, planowana_data, okienko_czasowe):
+    if not planowana_data or not str(planowana_data).strip():
+        return
+    
+    try:
+        parts = wspolrzedne.split(',')
+        lat = float(parts[0].strip())
+        lon = float(parts[1].strip())
+    except:
+        return
+
+    prognoza_dnia = pobierz_prognoze_pogody(lat, lon, str(planowana_data))
+    if not prognoza_dnia:
+        return
+
+    st.markdown(f"""
+        <div style="background-color: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 8px; padding: 8px; margin: 6px 0;">
+            <div style="font-size: 8pt; font-weight: 700; color: #38bdf8; text-transform: uppercase; margin-bottom: 4px;">
+                🌤️ Prognoza pogody ({planowana_data})
+            </div>
+    """, unsafe_allow_html=True)
+
+    hourly_list = prognoza_dnia.get('hourly', [])
+    
+    target_hour = 12
+    if okienko_czasowe and "-" in okienko_czasowe:
+        try:
+            start_str = okienko_czasowe.split("-")[0].strip()
+            target_hour = int(start_str.split(":")[0])
+        except:
+            pass
+
+    dopasowana_godzina = None
+    min_diff = 999
+    for h in hourly_list:
+        try:
+            time_val = int(h.get('time', '0')) // 100
+            diff = abs(time_val - target_hour)
+            if diff < min_diff:
+                min_diff = diff
+                dopasowana_godzina = h
+        except:
+            pass
+
+    if dopasowana_godzina:
+        temp = dopasowana_godzina.get('tempC', '—')
+        feel = dopasowana_godzina.get('FeelsLikeC', '—')
+        desc = dopasowana_godzina.get('weatherDesc', [{}])[0].get('value', 'Brak opisu')
+        wind = dopasowana_godzina.get('windspeedKmph', '—')
+        uv = dopasowana_godzina.get('uvIndex', '—')
+        
+        st.markdown(f"""
+            <div style="font-size: 9.5pt; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center;">
+                <span><b>{temp}°C</b> (odczuwalna {feel}°C), {desc}</span>
+                <span>💨 {wind} km/h | ☀️ UV {uv}</span>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
+    if not planowana_data or not str(planowana_data).strip() or kroki_df.empty:
+        return
+
+    ostrzezenia = []
+    max_temp = -99
+    min_temp = 99
+    opis_pogody_zbiorczy = set()
+
+    for _, k in kroki_df.iterrows():
+        coords = str(k['wspolrzedne'])
+        if ',' in coords:
+            try:
+                parts = coords.split(',')
+                lat = float(parts[0].strip())
+                lon = float(parts[1].strip())
+                prognoza = pobierz_prognoze_pogody(lat, lon, str(planowana_data))
+                if prognoza and 'hourly' in prognoza:
+                    for h in prognoza['hourly']:
+                        t = int(h.get('tempC', 20))
+                        if t > max_temp: max_temp = t
+                        if t < min_temp: min_temp = t
+                        desc = h.get('weatherDesc', [{}])[0].get('value', '').lower()
+                        opis_pogody_zbiorczy.add(desc)
+            except:
+                pass
+
+    for desc in opis_pogody_zbiorczy:
+        if 'rain' in desc or 'deszcz' in desc or 'shower' in desc:
+            ostrzezenia.append("🌧️ Prognozowane opady deszczu na trasie!")
+        if 'storm' in desc or 'thunder' in desc or 'burza' in desc:
+            ostrzezenia.append("⚡ Ryzyko burz na trasie wycieczki!")
+
+    if max_temp >= 32:
+        ostrzezenia.append(f"🔥 Ekstremalny upał! Maksymalna temperatura sięgnie {max_temp}°C. Bezwzględnie zadbaj o nawodnienie i ochronę przed słońcem.")
+
+    st.markdown(f"""
+        <div style="background-color: #111e38; border: 1.5px solid {'#ef4444' if ostrzezenia else '#38bdf8'}; border-radius: 10px; padding: 12px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">
+            <div style="font-size: 9.5pt; font-weight: 800; color: {'#f87171' if ostrzezenia else '#38bdf8'}; margin-bottom: 6px; text-transform: uppercase;">
+                📊 Podsumowanie pogody dla całej wycieczki ({planowana_data})
+            </div>
+            <div style="font-size: 9.5pt; color: #cbd5e1; margin-bottom: 6px;">
+                Temperatury w przedziale: <b>{min_temp}°C do {max_temp}°C</b>
+            </div>
+    """, unsafe_allow_html=True)
+
+    if ostrzezenia:
+        for ost in ostrzezenia:
+            st.markdown(f'<div style="color: #f87171; font-weight: 700; font-size: 9.5pt; margin-top: 4px;">{ost}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div style="color: #4ade80; font-weight: 600; font-size: 9.5pt;">✨ Brak ekstremów pogodowych. Warunki sprzyjające wyprawie!</div>', unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# --- FUNKCJE OBSŁUGI BAZY CZATU Z PODZIAŁEM NA UŻYTKOWNIKÓW ---
+def pobierz_historie_czatu_z_db(uzytkownik):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT rola, tresc FROM czat_historia WHERE uzytkownik = ? ORDER BY id ASC', (uzytkownik,))
+    rows = cursor.fetchall()
+    conn.close()
+    
+    history = []
+    for rola, tresc in rows:
+        raw_content = types.Content(role=rola, parts=[types.Part.from_text(text=tresc)])
+        history.append({"role": rola, "content": tresc, "raw_content": raw_content})
+    return history
+
+def zapisz_wiadomosc_w_db(uzytkownik, rola, tresc):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO czat_historia (uzytkownik, rola, tresc) VALUES (?, ?, ?)', (uzytkownik, rola, tresc))
+    conn.commit()
+    conn.close()
+
+def wyczysc_historie_czatu_w_db(uzytkownik):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM czat_historia WHERE uzytkownik = ?', (uzytkownik,))
+    conn.commit()
+    conn.close()
+
+# --- FUNKCJE OBSŁUGI NOTATEK I MIEJSC (DOSTĘPNE DLA LLM) ---
 def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=None, tytul=None):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
@@ -533,6 +716,39 @@ def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=N
     conn.commit()
     conn.close()
     return "Dodano nową notatkę!"
+
+def dodaj_miejsce(
+    numer_miejsca, nazwa, nazwa_angielska="", opis="", wspolrzedne="35.3,24.5", 
+    typ="others", czas_dojazdu="30 min", godziny_otwarcia="08:00 - 20:00", 
+    najlepsza_pora="Rano", orientacyjny_czas="1.5 godz.", koszt="Brak", 
+    konieczna_akcja="Brak", zaplecze_gastro="Dostępne", ile_jedzenia="Woda", 
+    trudnosc_adhd="Niski", potencjal_meltdownu="Niski", strategie_meltdown="Spokojne tempo", 
+    ochrona_slonce="Czapka", najlepiej_polaczyc="Brak", zadania_dla_dzieci="Obserwacja"
+):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT numer_miejsca FROM miejsca WHERE numer_miejsca = ?', (str(numer_miejsca),))
+    if cursor.fetchone():
+        conn.close()
+        return f"OSTRZEŻENIE: Miejsce o numerze {numer_miejsca} już istnieje w bazie!"
+
+    cursor.execute('''
+        INSERT INTO miejsca (
+            numer_miejsca, nazwa, nazwa_angielska, opis, wspolrzedne, typ,
+            czas_dojazdu, godziny_otwarcia, najlepsza_pora, orientacyjny_czas,
+            koszt, konieczna_akcja, zaplecze_gastro, ile_jedzenia, trudnosc_adhd,
+            potencjal_meltdownu, strategie_meltdown, ochrona_slonce, najlepiej_polaczyc, zadania_dla_dzieci, odwiedzone, Base
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'false')
+    ''', (
+        str(numer_miejsca), str(nazwa), str(nazwa_angielska), str(opis), str(wspolrzedne), str(typ),
+        str(czas_dojazdu), str(godziny_otwarcia), str(najlepsza_pora), str(orientacyjny_czas),
+        str(koszt), str(konieczna_akcja), str(zaplecze_gastro), str(ile_jedzenia), str(trudnosc_adhd),
+        str(potencjal_meltdownu), str(strategie_meltdown), str(ochrona_slonce), str(najlepiej_polaczyc), str(zadania_dla_dzieci)
+    ))
+    conn.commit()
+    conn.close()
+    return f"Pomyślnie dodano nowe miejsce nr {numer_miejsca} ({nazwa}) do bazy!"
 
 def edytuj_notatke(notatka_id, zawartosc=None, tytul=None, typ_notatki=None):
     conn = sqlite3.connect('cretai.db')
@@ -700,18 +916,18 @@ def usun_miejsce(numer_miejsca):
     conn.close()
     return f"Miejsce nr {numer_miejsca} zostało usunięte."
 
-def utworz_nowa_wycieczke(id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu):
+def utworz_nowa_wycieczke(id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, planowana_data=""):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT OR REPLACE INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, odbyta)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-    ''', (str(id), tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, str(calkowity_czas_wycieczki_godziny), szacowana_godzina_powrotu, pobudka, czas_wyjazdu))
+        INSERT OR REPLACE INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, planowana_data, odbyta)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+    ''', (str(id), tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, str(calkowity_czas_wycieczki_godziny), szacowana_godzina_powrotu, pobudka, czas_wyjazdu, planowana_data))
     conn.commit()
     conn.close()
     return f"Nowa wycieczka '{tytul_wycieczki}' (ID: {id}) została utworzona!"
 
-def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, szacowana_godzina_powrotu=None, pobudka=None, czas_wyjazdu=None):
+def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, szacowana_godzina_powrotu=None, pobudka=None, czas_wyjazdu=None, planowana_data=None):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     if tytul_wycieczki:
@@ -726,6 +942,8 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, c
         cursor.execute('UPDATE wycieczka SET pobudka = ? WHERE id = ?', (pobudka, str(id)))
     if czas_wyjazdu:
         cursor.execute('UPDATE wycieczka SET czas_wyjazdu = ? WHERE id = ?', (czas_wyjazdu, str(id)))
+    if planowana_data is not None:
+        cursor.execute('UPDATE wycieczka SET planowana_data = ? WHERE id = ?', (planowana_data, str(id)))
     conn.commit()
     conn.close()
     return f"Wycieczka #{id} została zaktualizowana."
@@ -892,7 +1110,7 @@ def wczytaj_kontekst_zewnetrzny():
     conn = sqlite3.connect('cretai.db')
     try:
         miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, typ, czas_dojazdu, orientacyjny_czas, koszt, konieczna_akcja, odwiedzone, Base FROM miejsca', conn)
-        wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, odbyta FROM wycieczka', conn)
+        wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, planowana_data, odbyta FROM wycieczka', conn)
         kroki_df = pd.read_sql('SELECT id_wycieczki, krok_wycieczki, nazwa, okienko_zwiedzania FROM krok_wycieczki', conn)
         checklisty_df = pd.read_sql('SELECT c.id_wycieczki, c.typ, i.nazwa, i.ilosc FROM checklist c JOIN checklist_item i ON c.id = i.id_checklisty', conn)
         notatki_df = pd.read_sql('SELECT id, id_wycieczki, id_miejsca, tytul, zawartosc, typ_notatki FROM notatki', conn)
@@ -913,7 +1131,7 @@ def wczytaj_kontekst_zewnetrzny():
         for _, w in wycieczki_df.iterrows():
             if int(w.get('odbyta', 0)) == 1:
                 continue
-            tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Opis: {w['calosciowy_opis_wycieczki']}\n"
+            tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Data: {w.get('planowana_data', 'brak')} | Opis: {w['calosciowy_opis_wycieczki']}\n"
     if not notatki_df.empty:
         tekst += "\nNotatki użytkownika (Własne wskazówki i linki):\n"
         for _, n in notatki_df.iterrows():
@@ -976,7 +1194,73 @@ def pokaz_checklistu_popup(wycieczka_id):
                     ilosc_str = f" *({ilosc_val})*" if pd.notna(ilosc_val) and ilosc_val != "1" else ""
                     st.checkbox(f"{itm['nazwa']}{ilosc_str}", key=f"chk_pop_{itm['id']}")
 
-# Narzędzia AI
+# --- NARZĘDZIA AI (FUNCTIONS) ---
+dodaj_notatke_tool = types.FunctionDeclaration(
+    name="dodaj_notatke",
+    description="Dodaje nową notatkę, link lub listę do wycieczki lub miejsca.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "zawartosc": types.Schema(type=types.Type.STRING, description="Treść notatki, URL lub elementy listy"),
+            "typ_notatki": types.Schema(type=types.Type.STRING, description="Typ: 'text', 'link' lub 'list'"),
+            "id_wycieczki": types.Schema(type=types.Type.STRING, description="Opcjonalne ID wycieczki"),
+            "id_miejsca": types.Schema(type=types.Type.STRING, description="Opcjonalny numer miejsca"),
+            "tytul": types.Schema(type=types.Type.STRING, description="Tytuł notatki"),
+        },
+        required=["zawartosc"]
+    ),
+)
+
+dodaj_miejsce_tool = types.FunctionDeclaration(
+    name="dodaj_miejsce",
+    description="Dodaje nowe miejsce do bazy danych miejsc na Krecie.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "numer_miejsca": types.Schema(type=types.Type.STRING, description="Unikalny numer/id miejsca (np. '15')"),
+            "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca po polsku"),
+            "nazwa_angielska": types.Schema(type=types.Type.STRING, description="Nazwa po angielsku"),
+            "opis": types.Schema(type=types.Type.STRING, description="Opis miejsca"),
+            "wspolrzedne": types.Schema(type=types.Type.STRING, description="Współrzędne GPS np. '35.2980, 25.1631'"),
+            "typ": types.Schema(type=types.Type.STRING, description="Typ miejsca"),
+            "czas_dojazdu": types.Schema(type=types.Type.STRING, description="Czas dojazdu ze Stavros"),
+            "godziny_otwarcia": types.Schema(type=types.Type.STRING, description="Godziny otwarcia"),
+            "najlepsza_pora": types.Schema(type=types.Type.STRING, description="Najlepsza pora zwiedzania"),
+            "orientacyjny_czas": types.Schema(type=types.Type.STRING, description="Szacowany czas wizyty"),
+            "koszt": types.Schema(type=types.Type.STRING, description="Koszt dla rodziny 2+2"),
+            "konieczna_akcja": types.Schema(type=types.Type.STRING, description="Wymagane działania"),
+            "zaplecze_gastro": types.Schema(type=types.Type.STRING, description="Zaplecze gastronomiczne"),
+            "ile_jedzenia": types.Schema(type=types.Type.STRING, description="Zalecane zapasy jedzenia"),
+            "trudnosc_adhd": types.Schema(type=types.Type.STRING, description="Poziom trudności ADHD"),
+            "potencjal_meltdownu": types.Schema(type=types.Type.STRING, description="Potencjał meltdownu"),
+            "strategie_meltdown": types.Schema(type=types.Type.STRING, description="Strategie radzenia sobie z meltdownem"),
+            "ochrona_slonce": types.Schema(type=types.Type.STRING, description="Ochrona przed słońcem"),
+            "najlepiej_polaczyc": types.Schema(type=types.Type.STRING, description="Z czym połączyć wizytę"),
+            "zadania_dla_dzieci": types.Schema(type=types.Type.STRING, description="Zadania aktywizujące dla dzieci"),
+        },
+        required=["numer_miejsca", "nazwa"]
+    ),
+)
+
+edytuj_wycieczke_tool = types.FunctionDeclaration(
+    name="edytuj_wycieczke",
+    description="Edytuje parametry wycieczki, w tym planowaną datę (format RRRR-MM-DD, nie może być przeszła względem dzisiejszego dnia).",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "id": types.Schema(type=types.Type.STRING),
+            "tytul_wycieczki": types.Schema(type=types.Type.STRING),
+            "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING),
+            "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING),
+            "szacowana_godzina_powrotu": types.Schema(type=types.Type.STRING),
+            "pobudka": types.Schema(type=types.Type.STRING),
+            "czas_wyjazdu": types.Schema(type=types.Type.STRING),
+            "planowana_data": types.Schema(type=types.Type.STRING, description="Planowana data wycieczki w formacie RRRR-MM-DD"),
+        },
+        required=["id"]
+    ),
+)
+
 aktualizuj_tool = types.FunctionDeclaration(
     name="aktualizuj_miejsce",
     description="Aktualizuje informacje o miejscu na Krecie.",
@@ -1013,25 +1297,9 @@ utworz_nowa_wycieczke_tool = types.FunctionDeclaration(
             "szacowana_godzina_powrotu": types.Schema(type=types.Type.STRING),
             "pobudka": types.Schema(type=types.Type.STRING),
             "czas_wyjazdu": types.Schema(type=types.Type.STRING),
+            "planowana_data": types.Schema(type=types.Type.STRING),
         },
         required=["id", "tytul_wycieczki", "calosciowy_opis_wycieczki", "calosciowa_taktyka_dnia"]
-    ),
-)
-edytuj_wycieczke_tool = types.FunctionDeclaration(
-    name="edytuj_wycieczke",
-    description="Edytuje parametry wycieczki.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "id": types.Schema(type=types.Type.STRING),
-            "tytul_wycieczki": types.Schema(type=types.Type.STRING),
-            "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING),
-            "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING),
-            "szacowana_godzina_powrotu": types.Schema(type=types.Type.STRING),
-            "pobudka": types.Schema(type=types.Type.STRING),
-            "czas_wyjazdu": types.Schema(type=types.Type.STRING),
-        },
-        required=["id"]
     ),
 )
 usun_wycieczke_tool = types.FunctionDeclaration(
@@ -1142,25 +1410,55 @@ usun_checklist_tool = types.FunctionDeclaration(
 )
 
 cretai_tools = types.Tool(function_declarations=[
-    aktualizuj_tool, usun_miejsce_tool, utworz_nowa_wycieczke_tool, edytuj_wycieczke_tool, 
-    usun_wycieczke_tool, dodaj_krok_tool, edytuj_krok_tool, usun_krok_tool, 
-    dodaj_checklist_tool, edytuj_checklist_tool, usun_checklist_tool
+    dodaj_notatke_tool, dodaj_miejsce_tool, edytuj_wycieczke_tool, aktualizuj_tool, usun_miejsce_tool, 
+    utworz_nowa_wycieczke_tool, usun_wycieczke_tool, 
+    dodaj_krok_tool, edytuj_krok_tool, usun_krok_tool, dodaj_checklist_tool, 
+    edytuj_checklist_tool, usun_checklist_tool
 ])
 
-# --- GLOBALNY, PŁYWAJĄCY ASYSTENT AI Z TRWAŁĄ SESJĄ ---
-def renderuj_globalny_czat_ai():
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
+# --- W PANELU BOCZNYM: WYBÓR UŻYTKOWNIKA (IZOLACJA HISTORII CZATU) ---
+with st.sidebar:
+    st.markdown("### 👤 Profil Użytkownika")
+    dostepni_uzytkownicy = ["Rodzic 1", "Rodzic 2", "Rodzic 3", "Rodzic 4"]
+    aktualny_uzytkownik = st.selectbox("Wybierz swój profil", options=dostepni_uzytkownicy, index=0)
+    st.markdown("---")
+    
+    st.markdown("### 🧭 Szybka Nawigacja")
+    st.markdown(f"""
+        <div class="custom-nav-bar">
+            <a href="https://www.google.com/maps/search/?api=1&query=35.586222,24.091861" target="_blank" class="custom-nav-btn" title="Sklep"><span>🛒</span><span>Sklep</span></a>
+            <a href="https://www.google.com/maps/search/?api=1&query=35.5914,24.0918" target="_blank" class="custom-nav-btn" title="Domek"><span>🏠</span><span>Domek</span></a>
+        </div>
+    """, unsafe_allow_html=True)
 
+    st.markdown("---")
+    st.header("⚙️ Ustawienia Asystenta")
+    
+    if "api_key_input" not in st.session_state:
+        st.session_state.api_key_input = "AQ.Ab8RN6JvgXsJSd38hgosyhFJJrGwMvHQqX72bb0MlpYQTKRMzg"
+
+    gemini_api_key = st.text_input("Klucz API Google Gemini", type="password", key="api_key_input")
+    
+    dostepne_modele = [
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash-lite",
+        "gemini-3.5-flash",
+        "gemini-3.6-flash"
+    ]
+    wybrany_model = st.selectbox("Wybierz model AI", options=dostepne_modele, index=0)
+    st.markdown("---")
+
+# --- GLOBALNY, PŁYWAJĄCY ASYSTENT AI Z IZOLOWANĄ HISTORIĄ DLA UŻYTKOWNIKA ---
+def renderuj_globalny_czat_ai(uzytkownik):
     st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
     
-    with st.expander("💬 Asystent AI CretAi (Dotknij, aby rozwinąć)", expanded=False):
+    with st.expander(f"💬 Asystent AI ({uzytkownik})", expanded=False):
         col_h1, col_h2 = st.columns([4, 1])
         with col_h1:
-            st.markdown("<span style='font-size: 9pt; color: #38bdf8; font-weight: 700;'>🧠 TRYB OPERACYJNY ADHD</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='font-size: 9pt; color: #38bdf8; font-weight: 700;'>🧠 TRYB ADHD • {uzytkownik}</span>", unsafe_allow_html=True)
         with col_h2:
-            if st.button("🔄 Nowy", key="btn_global_new_chat", use_container_width=True, help="Rozpocznij nowy czat"):
-                st.session_state.chat_history = []
+            if st.button("🔄 Nowy", key=f"btn_new_chat_{uzytkownik}", use_container_width=True, help="Wyczyść historię"):
+                wyczysc_historie_czatu_w_db(uzytkownik)
                 st.rerun()
 
         if not gemini_api_key:
@@ -1170,16 +1468,21 @@ def renderuj_globalny_czat_ai():
 
         client = genai.Client(api_key=gemini_api_key)
         zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
+        dzisiaj_str = date.today().strftime("%Y-%m-%d")
         
         system_prompt = f"""Jesteś inteligentnym asystentem podróży CretAi na Kretę, pomagającym rodzicom dzieci z ADHD.
+Dzisiejsza data to: {dzisiaj_str}.
 {zewnetrzny_kontekst}
 - Masz wgląd w bazę danych oraz w notatki i wskazówki wpisane przez użytkownika.
 - Pamiętaj o pełnej kontroli czasu, ewakuacji przed upałem i redukcji stresu.
-- Chronisz miejsca z flagą Base = true."""
+- Chronisz miejsca z flagą Base = true.
+- Możesz dodawać nowe miejsca, notatki oraz ustawiać planowaną datę wycieczki (pamiętaj, że data nie może być wcześniejsza niż dzisiejsza {dzisiaj_str})."""
+
+        chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
 
         chat_container = st.container(height=240)
         with chat_container:
-            for message in st.session_state.chat_history:
+            for message in chat_historia_z_db:
                 role = message["role"]
                 content = message["content"]
                 with st.chat_message(role):
@@ -1190,10 +1493,9 @@ def renderuj_globalny_czat_ai():
                             if hasattr(p, "text") and p.text:
                                 st.markdown(p.text)
 
-        prompt = st.chat_input("Szybkie pytanie do AI...", key="global_chat_input")
+        prompt = st.chat_input(f"Pytanie do AI ({uzytkownik})...", key=f"chat_input_{uzytkownik}")
         if prompt:
-            user_content = types.Content(role="user", parts=[types.Part.from_text(text=prompt)])
-            st.session_state.chat_history.append({"role": "user", "content": prompt, "raw_content": user_content})
+            zapisz_wiadomosc_w_db(uzytkownik, "user", prompt)
             
             with chat_container:
                 with st.chat_message("user"):
@@ -1201,7 +1503,8 @@ def renderuj_globalny_czat_ai():
 
                 with st.chat_message("assistant"):
                     try:
-                        contents = [item["raw_content"] for item in st.session_state.chat_history if "raw_content" in item]
+                        aktualna_historia_db = pobierz_historie_czatu_z_db(uzytkownik)
+                        contents = [item["raw_content"] for item in aktualna_historia_db if "raw_content" in item]
                         if not contents:
                             contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
 
@@ -1230,14 +1533,30 @@ def renderuj_globalny_czat_ai():
                             for call in calls:
                                 args = call.args
                                 call_name = call.name
-                                if call_name == "aktualizuj_miejsce":
+                                
+                                # Dynamiczna walidacja daty przez AI
+                                if call_name == "edytuj_wycieczke" and "planowana_data" in args:
+                                    p_data = args["planowana_data"]
+                                    try:
+                                        d_obj = datetime.strptime(p_data, "%Y-%m-%d").date()
+                                        if d_obj < date.today():
+                                            wynik_bazy = f"BŁĄD: Planowana data nie może być z przeszłości (dzisiaj jest {date.today()})!"
+                                            continue
+                                    except:
+                                        pass
+
+                                if call_name == "dodaj_notatke":
+                                    wynik_bazy = dodaj_notatke(**args)
+                                elif call_name == "dodaj_miejsce":
+                                    wynik_bazy = dodaj_miejsce(**args)
+                                elif call_name == "edytuj_wycieczke":
+                                    wynik_bazy = edytuj_wycieczke(**args)
+                                elif call_name == "aktualizuj_miejsce":
                                     wynik_bazy = aktualizuj_miejsce(**args)
                                 elif call_name == "usun_miejsce":
                                     wynik_bazy = usun_miejsce(**args)
                                 elif call_name == "utworz_nowa_wycieczke":
                                     wynik_bazy = utworz_nowa_wycieczke(**args)
-                                elif call_name == "edytuj_wycieczke":
-                                    wynik_bazy = edytuj_wycieczke(**args)
                                 elif call_name == "usun_wycieczke":
                                     wynik_bazy = usun_wycieczke(**args)
                                 elif call_name == "dodaj_krok_do_wycieczki":
@@ -1267,16 +1586,16 @@ def renderuj_globalny_czat_ai():
                                 if fu_cand and fu_cand.content and fu_cand.content.parts:
                                     text_parts = [p.text for p in fu_cand.content.parts if hasattr(p, "text") and p.text]
                                     assistant_reply = "".join(text_parts) if text_parts else "Operacja zakończona."
-                                    st.session_state.chat_history.append({"role": "assistant", "content": assistant_reply, "raw_content": fu_cand.content})
                                 else:
                                     assistant_reply = "Zaktualizowano bazę."
                         else:
                             text_parts = [p.text for p in candidate.content.parts if hasattr(p, "text") and p.text] if candidate and candidate.content and candidate.content.parts else []
                             assistant_reply = "".join(text_parts) if text_parts else (response.text if hasattr(response, "text") else "Brak odpowiedzi.")
-                            st.session_state.chat_history.append({"role": "assistant", "content": assistant_reply, "raw_content": candidate.content if candidate else types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)])})
+
+                        zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
                     except Exception as e:
                         assistant_reply = f"Błąd: {e}"
-                        st.session_state.chat_history.append({"role": "assistant", "content": assistant_reply, "raw_content": types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)])})
+                        zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
 
                     st.markdown(assistant_reply)
                     st.rerun()
@@ -1315,7 +1634,7 @@ def renderuj_zadania_dzieci_expander(tekst_zadan, unikalny_klucz):
     for i, zadanie in enumerate(zadania_lista):
         st.checkbox(f"{zadanie}", key=f"zad_dziecko_exp_{unikalny_klucz}_{i}")
 
-def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
+def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
     conn = sqlite3.connect('cretai.db')
     wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
     kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
@@ -1324,12 +1643,44 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
     if not wycieczka_row.empty:
         w_gen = wycieczka_row.iloc[0]
         tytul_w = str(w_gen['tytul_wycieczki'])
+        planowana_data_val = w_gen.get('planowana_data', '')
+        if not pd.notna(planowana_data_val):
+            planowana_data_val = ""
         
         st.markdown(f"""
         <div style="background-color:#111e38; padding:10px 12px; border:1px solid #1e293b; border-radius:10px; text-align:center; font-size:11pt; font-weight:800; text-transform:uppercase; margin-bottom:8px; color:#38bdf8;">
             {tytul_w}
         </div>
         """, unsafe_allow_html=True)
+
+        # Edytowalne pole planowanej daty z dynamiczną walidacją minimalną (dzisiaj)
+        with st.form(key=f"form_plan_data_{wycieczka_id}"):
+            st.markdown(f'<div style="font-size: 8.5pt; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">📅 Planowana data wycieczki</div>', unsafe_allow_html=True)
+            
+            dzisiaj = date.today()
+            try:
+                parsed_date = datetime.strptime(planowana_data_val, "%Y-%m-%d").date() if planowana_data_val else dzisiaj
+                if parsed_date < dzisiaj:
+                    parsed_date = dzisiaj
+            except:
+                parsed_date = dzisiaj
+
+            col_input, col_btn = st.columns([2, 1])
+            with col_input:
+                nowa_data_input = st.date_input("Planowana data", value=parsed_date, min_value=dzisiaj, key=f"date_input_{wycieczka_id}", label_visibility="collapsed")
+            with col_btn:
+                if st.form_submit_button("💾 Zapisz", use_container_width=True):
+                    if nowa_data_input < dzisiaj:
+                        st.error("Nie można wybrać daty z przeszłości!")
+                    else:
+                        str_data = nowa_data_input.strftime("%Y-%m-%d")
+                        edytuj_wycieczke(wycieczka_id, planowana_data=str_data)
+                        st.success("Zapisano!")
+                        st.rerun()
+
+        # Jeśli jesteśmy w widoku aktualnej wycieczki, wyświetlamy podsumowanie pogody pod datą
+        if pokaz_pogode:
+            renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data_val)
 
         if pokaz_mape:
             punkty_trasy = [(DOMEK_LAT, DOMEK_LON)]
@@ -1442,6 +1793,9 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
             tytul_expandera = f"🕒 {okienko}  |  📌 {krok_nazwa}" if okienko else f"📌 {krok_nazwa}"
 
             with st.expander(tytul_expandera):
+                if pokaz_pogode and planowana_data_val:
+                    renderuj_pogode_dla_kroku(k['wspolrzedne'], planowana_data_val, okienko)
+
                 card_html = f'''<div style="background-color:#111e38; padding:4px;"><div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;"><div style="background-color:#f43f5e; color:white; border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:9.5pt;">{krok_num}</div><span style="font-size:11pt; font-weight:800; color:#38bdf8;">{krok_nazwa}</span></div>{desc_html}<div style="display: flex; gap: 4px; margin-top: 8px; margin-bottom: 8px;"><a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0;" title="GPS"><span>📍</span><span>GPS</span></a><a href="{google_search_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0;" title="Google"><span>🔍</span><span>Google</span></a><a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0;" title="Sklep"><span>🛒</span><span>Sklep</span></a><a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0;" title="Restauracja"><span>🍽️</span><span>Resto</span></a><a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" style="padding:4px 0;" title="Opis"><span>📝</span><span>Opis</span></a></div><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;"><div class="net-box" style="margin-bottom:0;"><div class="net-title">⏱️ Harmonogram</div><div style="font-size:10.5pt; font-weight:700; color:#f8fafc;">{k["okienko_zwiedzania"]}</div></div><div class="net-box-evac" style="margin-bottom:0;"><div class="net-title-evac">🚨 Ewakuacja</div><div style="font-size:10.5pt; font-weight:700; color:#f87171;">{k.get("godzina_ewakuacji", "Brak")}</div></div></div><div class="net-box"><div class="net-title">🎯 Taktyka</div><div class="net-text">{k["podsumowanie_taktyki"]}</div></div><div class="net-box-regen" style="margin-bottom:0;"><div class="net-title-regen">🌿 Regeneracja</div><div class="net-text" style="color:#4ade80;">{k["strefa_luzu_i_regeneracji"]}</div></div>{warn_html}</div>'''
                 st.markdown(card_html, unsafe_allow_html=True)
 
@@ -1462,35 +1816,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
                     st.rerun()
 
         renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
-
-domek_maps_url = "https://www.google.com/maps/search/?api=1&query=35.5914,24.0918"
-sklep_maps_url = "https://www.google.com/maps/search/?api=1&query=35.586222,24.091861"
-
-with st.sidebar:
-    st.markdown("### 🧭 Szybka Nawigacja")
-    st.markdown(f"""
-        <div class="custom-nav-bar">
-            <a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" title="Sklep"><span>🛒</span><span>Sklep</span></a>
-            <a href="{domek_maps_url}" target="_blank" class="custom-nav-btn" title="Domek"><span>🏠</span><span>Domek</span></a>
-        </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("---")
-    st.header("⚙️ Ustawienia Asystenta")
-    
-    if "api_key_input" not in st.session_state:
-        st.session_state.api_key_input = "AQ.Ab8RN6JvgXsJSd38hgosyhFJJrGwMvHQqX72bb0MlpYQTKRMzg"
-
-    gemini_api_key = st.text_input("Klucz API Google Gemini", type="password", key="api_key_input")
-    
-    dostepne_modele = [
-        "gemini-3.1-flash-lite",
-        "gemini-3.5-flash-lite",
-        "gemini-3.5-flash",
-        "gemini-3.6-flash"
-    ]
-    wybrany_model = st.selectbox("Wybierz model AI", options=dostepne_modele, index=0)
-    st.markdown("---")
 
 active_zabytek = "active" if st.session_state.active_tab == "zabytek" else ""
 active_map = "active" if st.session_state.active_tab == "map" else ""
@@ -1695,7 +2020,6 @@ elif st.session_state.active_tab == "map":
             <div style="font-size:24px;">🗺️</div>
             <div>
                 <div class="adventure-title-text">CretAi • Wycieczki i Trasy</div>
-                <div class="adventure-subtitle">Wybierz wycieczkę lub przeglądaj miejsca</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -1765,7 +2089,7 @@ elif st.session_state.active_tab == "map":
         if wybrana_mapa_sb:
             wybrana_id = wybrana_mapa_sb.split(". ")[0]
             st.markdown("---")
-            renderuj_karte_wycieczki(wybrana_id, pokaz_mape=True)
+            renderuj_karte_wycieczki(wybrana_id, pokaz_mape=True, pokaz_pogode=False)
 
 elif st.session_state.active_tab == "route":
     st.markdown("""
@@ -1773,7 +2097,6 @@ elif st.session_state.active_tab == "route":
             <div style="font-size:24px;">🚗</div>
             <div>
                 <div class="adventure-title-text">CretAi • Trasa Dnia</div>
-                <div class="adventure-subtitle">Kontrola misji w czasie rzeczywistym</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -1787,7 +2110,7 @@ elif st.session_state.active_tab == "route":
     if not curr_w_check.empty and int(curr_w_check.iloc[0]['odbyta']) == 1:
         st.info("✨ Aktualnie ustawiona wycieczka została ukończona.")
     else:
-        renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False)
+        renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False, pokaz_pogode=True)
 
-# Globalny asystent AI renderowany stale na dole nad paskiem nawigacji
-renderuj_globalny_czat_ai()
+# Globalny asystent AI z uwzględnieniem wybranego użytkownika
+renderuj_globalny_czat_ai(aktualny_uzytkownik)
