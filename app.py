@@ -12,13 +12,13 @@ import re
 import base64
 
 # --- 1. KONFIGURACJA STRONY I DESIGN SYSTEM: DUCH PRZYGODY (DARK + NEONY) ---
-st.set_page_config(page_title="OdyssAi - Kreta", layout="centered", page_icon="🧭")
+st.set_page_config(page_title="CretAi - Kreta", layout="centered", page_icon="🧭")
 
 st.markdown("""
     <style>
     .block-container {
         padding-top: 0.5rem !important;
-        padding-bottom: 90px !important;
+        padding-bottom: 150px !important;
         max-width: 600px;
     }
     .stApp {
@@ -110,6 +110,17 @@ st.markdown("""
         box-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
     }
 
+    /* Pływający kontener globalnego AI nad dolnym paskiem nawigacji */
+    .floating-ai-container {
+        position: fixed;
+        bottom: 60px;
+        left: 8px;
+        right: 8px;
+        max-width: 580px;
+        margin: 0 auto;
+        z-index: 999998;
+    }
+
     .custom-nav-bar {
         display: flex;
         justify-content: space-between;
@@ -125,7 +136,7 @@ st.markdown("""
         padding: 6px 4px;
         text-align: center;
         border-radius: 8px;
-        font-size: 11px;
+        font-size: 10px;
         font-weight: 600;
         text-decoration: none;
         display: flex;
@@ -247,7 +258,6 @@ st.markdown("""
         margin-bottom: 6px !important;
     }
     
-    /* Elegancka, zunifikowana karta notatki w ramce */
     .note-card {
         background-color: #111e38;
         border: 1px solid #1e293b;
@@ -268,7 +278,7 @@ DOMEK_LAT = 35.5914
 DOMEK_LON = 24.0918
 
 def init_db():
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -514,7 +524,7 @@ init_db()
 
 # --- FUNKCJE OBSŁUGI NOTATEK ---
 def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=None, tytul=None):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO notatki (id_wycieczki, id_miejsca, tytul, zawartosc, typ_notatki)
@@ -525,7 +535,7 @@ def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=N
     return "Dodano nową notatkę!"
 
 def edytuj_notatke(notatka_id, zawartosc=None, tytul=None, typ_notatki=None):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     if zawartosc:
         cursor.execute('UPDATE notatki SET zawartosc = ? WHERE id = ?', (zawartosc, notatka_id))
@@ -538,7 +548,7 @@ def edytuj_notatke(notatka_id, zawartosc=None, tytul=None, typ_notatki=None):
     return f"Zaktualizowano notatkę nr {notatka_id}."
 
 def usun_notatke(notatka_id):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('DELETE FROM notatki WHERE id = ?', (notatka_id,))
     conn.commit()
@@ -546,7 +556,7 @@ def usun_notatke(notatka_id):
     return f"Usunięto notatkę nr {notatka_id}."
 
 def pobierz_notatki(id_wycieczki=None, id_miejsca=None):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     if id_wycieczki:
         df = pd.read_sql('SELECT * FROM notatki WHERE id_wycieczki = ?', conn, params=(str(id_wycieczki),))
     elif id_miejsca:
@@ -644,7 +654,7 @@ def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
         st.markdown('</div>', unsafe_allow_html=True)
 
 def oznacz_wycieczke_i_miejsca_jako_odbyte(id_wycieczki):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('UPDATE wycieczka SET odbyta = 1 WHERE id = ?', (str(id_wycieczki),))
     
@@ -660,7 +670,7 @@ def oznacz_wycieczke_i_miejsca_jako_odbyte(id_wycieczki):
     return f"Wycieczka #{id_wycieczki} oraz powiązane z nią miejsca zostały oznaczone jako odbyte!"
 
 def aktualizuj_miejsce(numer_miejsca, opis=None, konieczna_akcja=None):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('SELECT Base FROM miejsca WHERE numer_miejsca = ?', (str(numer_miejsca),))
     res = cursor.fetchone()
@@ -677,7 +687,7 @@ def aktualizuj_miejsce(numer_miejsca, opis=None, konieczna_akcja=None):
     return f"Miejsce nr {numer_miejsca} zostało zaktualizowane!"
 
 def usun_miejsce(numer_miejsca):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('SELECT Base FROM miejsca WHERE numer_miejsca = ?', (str(numer_miejsca),))
     res = cursor.fetchone()
@@ -691,7 +701,7 @@ def usun_miejsce(numer_miejsca):
     return f"Miejsce nr {numer_miejsca} zostało usunięte."
 
 def utworz_nowa_wycieczke(id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('''
         INSERT OR REPLACE INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, odbyta)
@@ -702,7 +712,7 @@ def utworz_nowa_wycieczke(id, tytul_wycieczki, calosciowy_opis_wycieczki, calosc
     return f"Nowa wycieczka '{tytul_wycieczki}' (ID: {id}) została utworzona!"
 
 def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, szacowana_godzina_powrotu=None, pobudka=None, czas_wyjazdu=None):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     if tytul_wycieczki:
         cursor.execute('UPDATE wycieczka SET tytul_wycieczki = ? WHERE id = ?', (tytul_wycieczki, str(id)))
@@ -721,7 +731,7 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, c
     return f"Wycieczka #{id} została zaktualizowana."
 
 def usun_wycieczke(id_wycieczki):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('DELETE FROM wycieczka WHERE id = ?', (str(id_wycieczki),))
     cursor.execute('DELETE FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
@@ -735,7 +745,7 @@ def usun_wycieczke(id_wycieczki):
     return f"Wycieczka #{id_wycieczki} została usunięta."
 
 def dodaj_krok_do_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO krok_wycieczki (
@@ -750,7 +760,7 @@ def dodaj_krok_do_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, ok
     return f"Dodano krok nr {krok_wycieczki} ({nazwa}) do wycieczki #{id_wycieczki}!"
 
 def edytuj_krok_w_wycieczce(id_wycieczki, krok_wycieczki, nazwa=None, okienko_zwiedzania=None, godzina_ewakuacji=None, czerwona_strefa_ostrzezenie=None, strefa_luzu_i_regeneracji=None, podsumowanie_taktyki=None, potencjal_meltdownu=None, strategie_meltdown=None, opis=None):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? AND (krok_wycieczki = ? OR nazwa LIKE ?)', (str(id_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%"))
     res = cursor.fetchone()
@@ -781,7 +791,7 @@ def edytuj_krok_w_wycieczce(id_wycieczki, krok_wycieczki, nazwa=None, okienko_zw
     return f"Krok {krok_wycieczki} zaktualizowany."
 
 def usun_krok_z_wycieczki(id_wycieczki, krok_wycieczki):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('DELETE FROM krok_wycieczki WHERE id_wycieczki = ? AND (krok_wycieczki = ? OR nazwa LIKE ?)', (str(id_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%"))
     conn.commit()
@@ -789,7 +799,7 @@ def usun_krok_z_wycieczki(id_wycieczki, krok_wycieczki):
     return f"Usunięto krok."
 
 def dodaj_element_checklisty(id_wycieczki, typ, nazwa, ilosc="1"):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('SELECT id FROM checklist WHERE id_wycieczki = ? AND typ = ?', (str(id_wycieczki), typ))
     res = cursor.fetchone()
@@ -804,7 +814,7 @@ def dodaj_element_checklisty(id_wycieczki, typ, nazwa, ilosc="1"):
     return f"Dodano do checklisty."
 
 def edytuj_element_checklisty(id_wycieczki, typ, stara_nazwa, nowa_nazwa=None, nowa_ilosc=None):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('SELECT id FROM checklist WHERE id_wycieczki = ? AND typ = ?', (str(id_wycieczki), typ))
     res = cursor.fetchone()
@@ -827,7 +837,7 @@ def edytuj_element_checklisty(id_wycieczki, typ, stara_nazwa, nowa_nazwa=None, n
     return f"Zaktualizowano element."
 
 def usun_element_checklisty(id_wycieczki, typ, nazwa):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('SELECT id FROM checklist WHERE id_wycieczki = ? AND typ = ?', (str(id_wycieczki), typ))
     res = cursor.fetchone()
@@ -841,13 +851,13 @@ def usun_element_checklisty(id_wycieczki, typ, nazwa):
     return f"Usunięto element."
 
 def pobierz_wszystkie_miejsca():
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     df = pd.read_sql('SELECT * FROM miejsca', conn)
     conn.close()
     return df
 
 def pobierz_aktywna_wycieczke_id():
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('SELECT aktualne_id_wycieczki FROM aktywna_wycieczka WHERE id = 1')
     res = cursor.fetchone()
@@ -855,14 +865,14 @@ def pobierz_aktywna_wycieczke_id():
     return str(res[0]) if res else "1"
 
 def ustaw_aktywna_wycieczke_id(wycieczka_id):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('UPDATE aktywna_wycieczka SET aktualne_id_wycieczki = ? WHERE id = 1', (str(wycieczka_id),))
     conn.commit()
     conn.close()
 
 def pobierz_skrocone_opcje_wycieczek():
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     df_w = pd.read_sql('SELECT id, tytul_wycieczki FROM wycieczka WHERE odbyta = 0', conn)
     conn.close()
     if df_w.empty:
@@ -878,8 +888,8 @@ def pobierz_skrocone_opcje_wycieczek():
     return opcje
 
 def wczytaj_kontekst_zewnetrzny():
-    tekst = "Jesteś asystentem podróży OdyssAi na Kretę.\n--- BAZA DANYCH SQLITE ---\n"
-    conn = sqlite3.connect('odyssai.db')
+    tekst = "Jesteś asystentem podróży CretAi na Kretę.\n--- BAZA DANYCH SQLITE ---\n"
+    conn = sqlite3.connect('cretai.db')
     try:
         miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, typ, czas_dojazdu, orientacyjny_czas, koszt, konieczna_akcja, odwiedzone, Base FROM miejsca', conn)
         wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, odbyta FROM wycieczka', conn)
@@ -923,7 +933,7 @@ def pobierz_trase_osrm(punkty):
     wsp_str = ";".join([f"{p[1]},{p[0]}" for p in punkty])
     url = f"http://router.project-osrm.org/route/v1/driving/{wsp_str}?overview=full&geometries=geojson"
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'OdyssAiApp/1.0'})
+        req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
         with urllib.request.urlopen(req, timeout=2) as response:
             data = json.loads(response.read().decode())
             if 'routes' in data and len(data['routes']) > 0:
@@ -940,7 +950,7 @@ def dodaj_marker_domku(m):
 
 @st.dialog("🎒 Checklista Wycieczki")
 def pokaz_checklistu_popup(wycieczka_id):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     checklisty_df = pd.read_sql('SELECT * FROM checklist WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
     items_df = pd.DataFrame()
     if not checklisty_df.empty:
@@ -1131,137 +1141,147 @@ usun_checklist_tool = types.FunctionDeclaration(
     ),
 )
 
-odyssai_tools = types.Tool(function_declarations=[
+cretai_tools = types.Tool(function_declarations=[
     aktualizuj_tool, usun_miejsce_tool, utworz_nowa_wycieczke_tool, edytuj_wycieczke_tool, 
     usun_wycieczke_tool, dodaj_krok_tool, edytuj_krok_tool, usun_krok_tool, 
     dodaj_checklist_tool, edytuj_checklist_tool, usun_checklist_tool
 ])
 
-def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
-    st.markdown("---")
-    st.markdown("### 💬 Asystent AI OdyssAi")
-    
-    if not gemini_api_key:
-        st.info("👈 Wprowadź klucz API Google Gemini w menu bocznym, aby uruchomić czat.")
-        return
-
-    client = genai.Client(api_key=gemini_api_key)
-    zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
-    
-    system_prompt = f"""Jesteś inteligentnym asystentem podróży OdyssAi na Kretę.
-{zewnetrzny_kontekst}
-- Masz wgląd w bazę danych oraz w notatki i wskazówki wpisane przez użytkownika. Korzystaj z nich jako rzetelnego źródła wiedzy. 
-- ŻELAZNA ZASADA: Zawsze bezwzględnie upewnij się, że wypełniasz wszystkie wymagane pola (required) bazy danych przed dodaniem lub modyfikacją jakichkolwiek danych.
-- Chronisz miejsca z flagą Base = true."""
-
+# --- GLOBALNY, PŁYWAJĄCY ASYSTENT AI Z TRWAŁĄ SESJĄ ---
+def renderuj_globalny_czat_ai():
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
-    for message in st.session_state.chat_history:
-        role = message["role"]
-        content = message["content"]
-        with st.chat_message(role):
-            if isinstance(content, str):
-                st.markdown(content)
-            elif hasattr(content, "parts"):
-                for p in content.parts:
-                    if hasattr(p, "text") and p.text:
-                        st.markdown(p.text)
+    st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
+    
+    with st.expander("💬 Asystent AI CretAi (Dotknij, aby rozwinąć)", expanded=False):
+        col_h1, col_h2 = st.columns([4, 1])
+        with col_h1:
+            st.markdown("<span style='font-size: 9pt; color: #38bdf8; font-weight: 700;'>🧠 TRYB OPERACYJNY ADHD</span>", unsafe_allow_html=True)
+        with col_h2:
+            if st.button("🔄 Nowy", key="btn_global_new_chat", use_container_width=True, help="Rozpocznij nowy czat"):
+                st.session_state.chat_history = []
+                st.rerun()
 
-    if st.button("🗑️ Nowy czat", key=f"btn_new_chat_{klucz_unikalny_sufiks}", use_container_width=True):
-        st.session_state.chat_history = []
-        st.rerun()
+        if not gemini_api_key:
+            st.warning("Wprowadź klucz API w menu bocznym.")
+            st.markdown('</div>', unsafe_allow_html=True)
+            return
 
-    prompt = st.chat_input("Zapytaj o plany, zmień trasę...", key=f"chat_input_{klucz_unikalny_sufiks}")
-    if prompt:
-        user_content = types.Content(role="user", parts=[types.Part.from_text(text=prompt)])
-        st.session_state.chat_history.append({"role": "user", "content": prompt, "raw_content": user_content})
+        client = genai.Client(api_key=gemini_api_key)
+        zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
         
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        system_prompt = f"""Jesteś inteligentnym asystentem podróży CretAi na Kretę, pomagającym rodzicom dzieci z ADHD.
+{zewnetrzny_kontekst}
+- Masz wgląd w bazę danych oraz w notatki i wskazówki wpisane przez użytkownika.
+- Pamiętaj o pełnej kontroli czasu, ewakuacji przed upałem i redukcji stresu.
+- Chronisz miejsca z flagą Base = true."""
 
-        with st.chat_message("assistant"):
-            try:
-                contents = [item["raw_content"] for item in st.session_state.chat_history if "raw_content" in item]
-                if not contents:
-                    contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
+        chat_container = st.container(height=240)
+        with chat_container:
+            for message in st.session_state.chat_history:
+                role = message["role"]
+                content = message["content"]
+                with st.chat_message(role):
+                    if isinstance(content, str):
+                        st.markdown(content)
+                    elif hasattr(content, "parts"):
+                        for p in content.parts:
+                            if hasattr(p, "text") and p.text:
+                                st.markdown(p.text)
 
-                with st.spinner(f"Analizuję plan (model: {wybrany_model})..."):
-                    response = client.models.generate_content(
-                        model=wybrany_model,
-                        contents=contents,
-                        config=types.GenerateContentConfig(
-                            tools=[odyssai_tools],
-                            system_instruction=system_prompt
-                        )
-                    )
+        prompt = st.chat_input("Szybkie pytanie do AI...", key="global_chat_input")
+        if prompt:
+            user_content = types.Content(role="user", parts=[types.Part.from_text(text=prompt)])
+            st.session_state.chat_history.append({"role": "user", "content": prompt, "raw_content": user_content})
+            
+            with chat_container:
+                with st.chat_message("user"):
+                    st.markdown(prompt)
 
-                assistant_reply = ""
-                candidate = response.candidates[0] if response.candidates else None
-                has_fc = False
-                if candidate and candidate.content and candidate.content.parts:
-                    for p in candidate.content.parts:
-                        if p.function_call:
-                            has_fc = True
-                            break
+                with st.chat_message("assistant"):
+                    try:
+                        contents = [item["raw_content"] for item in st.session_state.chat_history if "raw_content" in item]
+                        if not contents:
+                            contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
 
-                if has_fc or response.function_calls:
-                    model_content = candidate.content
-                    calls = response.function_calls if response.function_calls else [p.function_call for p in model_content.parts if p.function_call]
-                    
-                    for call in calls:
-                        args = call.args
-                        call_name = call.name
-                        if call_name == "aktualizuj_miejsce":
-                            wynik_bazy = aktualizuj_miejsce(**args)
-                        elif call_name == "usun_miejsce":
-                            wynik_bazy = usun_miejsce(**args)
-                        elif call_name == "utworz_nowa_wycieczke":
-                            wynik_bazy = utworz_nowa_wycieczke(**args)
-                        elif call_name == "edytuj_wycieczke":
-                            wynik_bazy = edytuj_wycieczke(**args)
-                        elif call_name == "usun_wycieczke":
-                            wynik_bazy = usun_wycieczke(**args)
-                        elif call_name == "dodaj_krok_do_wycieczki":
-                            wynik_bazy = dodaj_krok_do_wycieczki(**args)
-                        elif call_name == "edytuj_krok_w_wycieczce":
-                            wynik_bazy = edytuj_krok_w_wycieczce(**args)
-                        elif call_name == "usun_krok_z_wycieczki":
-                            wynik_bazy = usun_krok_z_wycieczki(**args)
-                        elif call_name == "dodaj_element_checklisty":
-                            wynik_bazy = dodaj_element_checklisty(**args)
-                        elif call_name == "edytuj_element_checklisty":
-                            wynik_bazy = edytuj_element_checklisty(**args)
-                        elif call_name == "usun_element_checklisty":
-                            wynik_bazy = usun_element_checklisty(**args)
-                        else:
-                            wynik_bazy = "Wykonano."
-                        
-                        follow_up = client.models.generate_content(
+                        response = client.models.generate_content(
                             model=wybrany_model,
-                            contents=contents + [
-                                model_content,
-                                types.Content(role="user", parts=[types.Part.from_function_response(name=call_name, response={"result": wynik_bazy})])
-                            ],
-                            config=types.GenerateContentConfig(tools=[odyssai_tools])
+                            contents=contents,
+                            config=types.GenerateContentConfig(
+                                tools=[cretai_tools],
+                                system_instruction=system_prompt
+                            )
                         )
-                        fu_cand = follow_up.candidates[0] if follow_up.candidates else None
-                        if fu_cand and fu_cand.content and fu_cand.content.parts:
-                            text_parts = [p.text for p in fu_cand.content.parts if hasattr(p, "text") and p.text]
-                            assistant_reply = "".join(text_parts) if text_parts else "Operacja zakończona."
-                            st.session_state.chat_history.append({"role": "assistant", "content": assistant_reply, "raw_content": fu_cand.content})
-                        else:
-                            assistant_reply = "Zaktualizowano bazę."
-                else:
-                    text_parts = [p.text for p in candidate.content.parts if hasattr(p, "text") and p.text] if candidate and candidate.content and candidate.content.parts else []
-                    assistant_reply = "".join(text_parts) if text_parts else (response.text if hasattr(response, "text") else "Brak odpowiedzi.")
-                    st.session_state.chat_history.append({"role": "assistant", "content": assistant_reply, "raw_content": candidate.content if candidate else types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)])})
-            except Exception as e:
-                assistant_reply = f"Błąd: {e}"
-                st.session_state.chat_history.append({"role": "assistant", "content": assistant_reply, "raw_content": types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)])})
 
-            st.markdown(assistant_reply)
-            st.rerun()
+                        assistant_reply = ""
+                        candidate = response.candidates[0] if response.candidates else None
+                        has_fc = False
+                        if candidate and candidate.content and candidate.content.parts:
+                            for p in candidate.content.parts:
+                                if p.function_call:
+                                    has_fc = True
+                                    break
+
+                        if has_fc or response.function_calls:
+                            model_content = candidate.content
+                            calls = response.function_calls if response.function_calls else [p.function_call for p in model_content.parts if p.function_call]
+                            
+                            for call in calls:
+                                args = call.args
+                                call_name = call.name
+                                if call_name == "aktualizuj_miejsce":
+                                    wynik_bazy = aktualizuj_miejsce(**args)
+                                elif call_name == "usun_miejsce":
+                                    wynik_bazy = usun_miejsce(**args)
+                                elif call_name == "utworz_nowa_wycieczke":
+                                    wynik_bazy = utworz_nowa_wycieczke(**args)
+                                elif call_name == "edytuj_wycieczke":
+                                    wynik_bazy = edytuj_wycieczke(**args)
+                                elif call_name == "usun_wycieczke":
+                                    wynik_bazy = usun_wycieczke(**args)
+                                elif call_name == "dodaj_krok_do_wycieczki":
+                                    wynik_bazy = dodaj_krok_do_wycieczki(**args)
+                                elif call_name == "edytuj_krok_w_wycieczce":
+                                    wynik_bazy = edytuj_krok_w_wycieczce(**args)
+                                elif call_name == "usun_krok_z_wycieczki":
+                                    wynik_bazy = usun_krok_z_wycieczki(**args)
+                                elif call_name == "dodaj_element_checklisty":
+                                    wynik_bazy = dodaj_element_checklisty(**args)
+                                elif call_name == "edytuj_element_checklisty":
+                                    wynik_bazy = edytuj_element_checklisty(**args)
+                                elif call_name == "usun_element_checklisty":
+                                    wynik_bazy = usun_element_checklisty(**args)
+                                else:
+                                    wynik_bazy = "Wykonano."
+                                
+                                follow_up = client.models.generate_content(
+                                    model=wybrany_model,
+                                    contents=contents + [
+                                        model_content,
+                                        types.Content(role="user", parts=[types.Part.from_function_response(name=call_name, response={"result": wynik_bazy})])
+                                    ],
+                                    config=types.GenerateContentConfig(tools=[cretai_tools])
+                                )
+                                fu_cand = follow_up.candidates[0] if follow_up.candidates else None
+                                if fu_cand and fu_cand.content and fu_cand.content.parts:
+                                    text_parts = [p.text for p in fu_cand.content.parts if hasattr(p, "text") and p.text]
+                                    assistant_reply = "".join(text_parts) if text_parts else "Operacja zakończona."
+                                    st.session_state.chat_history.append({"role": "assistant", "content": assistant_reply, "raw_content": fu_cand.content})
+                                else:
+                                    assistant_reply = "Zaktualizowano bazę."
+                        else:
+                            text_parts = [p.text for p in candidate.content.parts if hasattr(p, "text") and p.text] if candidate and candidate.content and candidate.content.parts else []
+                            assistant_reply = "".join(text_parts) if text_parts else (response.text if hasattr(response, "text") else "Brak odpowiedzi.")
+                            st.session_state.chat_history.append({"role": "assistant", "content": assistant_reply, "raw_content": candidate.content if candidate else types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)])})
+                    except Exception as e:
+                        assistant_reply = f"Błąd: {e}"
+                        st.session_state.chat_history.append({"role": "assistant", "content": assistant_reply, "raw_content": types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)])})
+
+                    st.markdown(assistant_reply)
+                    st.rerun()
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 if "tab" in st.query_params:
     st.session_state.active_tab = st.query_params["tab"]
@@ -1296,7 +1316,7 @@ def renderuj_zadania_dzieci_expander(tekst_zadan, unikalny_klucz):
         st.checkbox(f"{zadanie}", key=f"zad_dziecko_exp_{unikalny_klucz}_{i}")
 
 def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
     kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
     conn.close()
@@ -1422,7 +1442,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
             tytul_expandera = f"🕒 {okienko}  |  📌 {krok_nazwa}" if okienko else f"📌 {krok_nazwa}"
 
             with st.expander(tytul_expandera):
-                card_html = f'''<div style="background-color:#111e38; padding:4px;"><div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;"><div style="background-color:#f43f5e; color:white; border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:9.5pt;">{krok_num}</div><span style="font-size:11pt; font-weight:800; color:#38bdf8;">{krok_nazwa}</span></div>{desc_html}<div style="display: flex; gap: 6px; margin-top: 8px; margin-bottom: 8px;"><a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:15px;" title="GPS">📍</a><a href="{google_search_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:15px;" title="Google">🔍</a><a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:15px;" title="Sklep">🛒</a><a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:15px;" title="Restauracja">🍽️</a><a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" style="padding:4px 0; font-size:15px;" title="Opis">📝</a></div><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;"><div class="net-box" style="margin-bottom:0;"><div class="net-title">⏱️ Harmonogram</div><div style="font-size:10.5pt; font-weight:700; color:#f8fafc;">{k["okienko_zwiedzania"]}</div></div><div class="net-box-evac" style="margin-bottom:0;"><div class="net-title-evac">🚨 Ewakuacja</div><div style="font-size:10.5pt; font-weight:700; color:#f87171;">{k.get("godzina_ewakuacji", "Brak")}</div></div></div><div class="net-box"><div class="net-title">🎯 Taktyka</div><div class="net-text">{k["podsumowanie_taktyki"]}</div></div><div class="net-box-regen" style="margin-bottom:0;"><div class="net-title-regen">🌿 Regeneracja</div><div class="net-text" style="color:#4ade80;">{k["strefa_luzu_i_regeneracji"]}</div></div>{warn_html}</div>'''
+                card_html = f'''<div style="background-color:#111e38; padding:4px;"><div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;"><div style="background-color:#f43f5e; color:white; border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:9.5pt;">{krok_num}</div><span style="font-size:11pt; font-weight:800; color:#38bdf8;">{krok_nazwa}</span></div>{desc_html}<div style="display: flex; gap: 4px; margin-top: 8px; margin-bottom: 8px;"><a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0;" title="GPS"><span>📍</span><span>GPS</span></a><a href="{google_search_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0;" title="Google"><span>🔍</span><span>Google</span></a><a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0;" title="Sklep"><span>🛒</span><span>Sklep</span></a><a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0;" title="Restauracja"><span>🍽️</span><span>Resto</span></a><a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" style="padding:4px 0;" title="Opis"><span>📝</span><span>Opis</span></a></div><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;"><div class="net-box" style="margin-bottom:0;"><div class="net-title">⏱️ Harmonogram</div><div style="font-size:10.5pt; font-weight:700; color:#f8fafc;">{k["okienko_zwiedzania"]}</div></div><div class="net-box-evac" style="margin-bottom:0;"><div class="net-title-evac">🚨 Ewakuacja</div><div style="font-size:10.5pt; font-weight:700; color:#f87171;">{k.get("godzina_ewakuacji", "Brak")}</div></div></div><div class="net-box"><div class="net-title">🎯 Taktyka</div><div class="net-text">{k["podsumowanie_taktyki"]}</div></div><div class="net-box-regen" style="margin-bottom:0;"><div class="net-title-regen">🌿 Regeneracja</div><div class="net-text" style="color:#4ade80;">{k["strefa_luzu_i_regeneracji"]}</div></div>{warn_html}</div>'''
                 st.markdown(card_html, unsafe_allow_html=True)
 
         col_btn1, col_btn2 = st.columns(2)
@@ -1445,7 +1465,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
 
 domek_maps_url = "https://www.google.com/maps/search/?api=1&query=35.5914,24.0918"
 sklep_maps_url = "https://www.google.com/maps/search/?api=1&query=35.586222,24.091861"
-active_chat_sidebar = "active" if st.session_state.active_tab == "chat" else ""
 
 with st.sidebar:
     st.markdown("### 🧭 Szybka Nawigacja")
@@ -1453,7 +1472,6 @@ with st.sidebar:
         <div class="custom-nav-bar">
             <a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" title="Sklep"><span>🛒</span><span>Sklep</span></a>
             <a href="{domek_maps_url}" target="_blank" class="custom-nav-btn" title="Domek"><span>🏠</span><span>Domek</span></a>
-            <a href="?tab=chat" target="_self" class="custom-nav-btn {active_chat_sidebar}" title="Asystent AI"><span>💬</span><span>Asystent</span></a>
         </div>
     """, unsafe_allow_html=True)
 
@@ -1486,34 +1504,8 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-st.markdown("<div style='margin-bottom: 50px;'></div>", unsafe_allow_html=True)
-
-if st.session_state.active_tab == "chat":
-    m_chat = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB dark_matter")
-    dodaj_marker_domku(m_chat)
-    
-    for _, row in df_miejsca.iterrows():
-        coords = str(row['wspolrzedne'])
-        if ',' in coords:
-            try:
-                parts = coords.split(',')
-                lat = float(parts[0].strip())
-                lon = float(parts[1].strip())
-                name = row['nazwa']
-                num = str(row['numer_miejsca'])
-                typ_raw = str(row.get('typ', '')).strip().lower()
-                is_visited = int(row.get('odwiedzone', 0)) == 1
-                bg_color = '#475569' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
-                
-                icon_html = f'<div style="background-color:{bg_color};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">{num}</div>'
-                icon = folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))
-                folium.Marker([lat, lon], icon=icon, tooltip=f"{num}. {name}").add_to(m_chat)
-            except:
-                pass
-    st_folium(m_chat, width="100%", height=300, returned_objects=[])
-    renderuj_sekcje_czatu_ai("tab_chat")
-
-elif st.session_state.active_tab == "zabytek":
+# Renderowanie zawartości w zależności od aktywnej zakładki
+if st.session_state.active_tab == "zabytek":
     logo_b64 = ""
     if os.path.exists("logo.png"):
         with open("logo.png", "rb") as f:
@@ -1525,7 +1517,7 @@ elif st.session_state.active_tab == "zabytek":
         <div class="adventure-header">
             {logo_img_tag}
             <div>
-                <div class="adventure-title-text">OdyssAi • Kreta</div>
+                <div class="adventure-title-text">CretAi • Kreta</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -1555,7 +1547,6 @@ elif st.session_state.active_tab == "zabytek":
 
     map_data = st_folium(m, width="100%", height=300)
 
-    # Działająca lista wyboru miejsc pod mapą z natychmiastowym callbackiem
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("##### 📍 Szybki wybór miejsca z listy:")
     
@@ -1698,14 +1689,12 @@ elif st.session_state.active_tab == "zabytek":
 
             renderuj_sekcje_notatek(id_miejsca=numer_m)
 
-    renderuj_sekcje_czatu_ai("tab_zabytek")
-
 elif st.session_state.active_tab == "map":
     st.markdown("""
         <div class="adventure-header">
             <div style="font-size:24px;">🗺️</div>
             <div>
-                <div class="adventure-title-text">OdyssAi • Wycieczki i Trasy</div>
+                <div class="adventure-title-text">CretAi • Wycieczki i Trasy</div>
                 <div class="adventure-subtitle">Wybierz wycieczkę lub przeglądaj miejsca</div>
             </div>
         </div>
@@ -1747,7 +1736,7 @@ elif st.session_state.active_tab == "map":
             if "." in clicked_tooltip:
                 klikniety_numer_miejsca = clicked_tooltip.split(".")[0].strip()
                 
-                conn = sqlite3.connect('odyssai.db')
+                conn = sqlite3.connect('cretai.db')
                 powiazane_kroki = pd.read_sql('''
                     SELECT DISTINCT k.id_wycieczki, w.tytul_wycieczki 
                     FROM krok_wycieczki k 
@@ -1778,14 +1767,12 @@ elif st.session_state.active_tab == "map":
             st.markdown("---")
             renderuj_karte_wycieczki(wybrana_id, pokaz_mape=True)
 
-    renderuj_sekcje_czatu_ai("tab_map")
-
 elif st.session_state.active_tab == "route":
     st.markdown("""
         <div class="adventure-header">
             <div style="font-size:24px;">🚗</div>
             <div>
-                <div class="adventure-title-text">OdyssAi • Trasa Dnia</div>
+                <div class="adventure-title-text">CretAi • Trasa Dnia</div>
                 <div class="adventure-subtitle">Kontrola misji w czasie rzeczywistym</div>
             </div>
         </div>
@@ -1793,7 +1780,7 @@ elif st.session_state.active_tab == "route":
     
     aktualne_id = pobierz_aktywna_wycieczke_id()
     
-    conn = sqlite3.connect('odyssai.db')
+    conn = sqlite3.connect('cretai.db')
     curr_w_check = pd.read_sql('SELECT odbyta FROM wycieczka WHERE id = ?', conn, params=(str(aktualne_id),))
     conn.close()
     
@@ -1802,4 +1789,5 @@ elif st.session_state.active_tab == "route":
     else:
         renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False)
 
-    renderuj_sekcje_czatu_ai("tab_route")
+# Globalny asystent AI renderowany stale na dole nad paskiem nawigacji
+renderuj_globalny_czat_ai()
