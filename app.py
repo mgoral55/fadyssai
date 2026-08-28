@@ -802,6 +802,35 @@ def dodaj_marker_domku(m):
     domek_icon = folium.DivIcon(html=domek_icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=domek_icon, tooltip="Nasz Domek").add_to(m)
 
+# --- POPUP CHECKLISTY (MODAL) ---
+@st.dialog("🎒 Checklista Wycieczki")
+def pokaz_checklistu_popup(wycieczka_id):
+    conn = sqlite3.connect('fadyssai.db')
+    checklisty_df = pd.read_sql('SELECT * FROM checklist WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
+    items_df = pd.DataFrame()
+    if not checklisty_df.empty:
+        ids_chl = tuple(checklisty_df['id'].tolist())
+        if len(ids_chl) == 1:
+            items_df = pd.read_sql('SELECT * FROM checklist_item WHERE id_checklisty = ?', conn, params=(ids_chl[0],))
+        else:
+            placeholders = ','.join(['?'] * len(ids_chl))
+            items_df = pd.read_sql(f'SELECT * FROM checklist_item WHERE id_checklisty IN ({placeholders})', conn, params=ids_chl)
+    conn.close()
+
+    if checklisty_df.empty or items_df.empty:
+        st.info("Brak zdefiniowanej checklisty dla tej wycieczki.")
+    else:
+        for _, chl in checklisty_df.iterrows():
+            typ_chl = chl['typ'].capitalize()
+            chl_id = chl['id']
+            powiazane_itemy = items_df[items_df['id_checklisty'] == chl_id]
+            if not powiazane_itemy.empty:
+                st.markdown(f"**📌 {typ_chl}:**")
+                for _, itm in powiazane_itemy.iterrows():
+                    ilosc_val = itm['ilosc']
+                    ilosc_str = f" *({ilosc_val})*" if pd.notna(ilosc_val) and ilosc_val != "1" else ""
+                    st.checkbox(f"{itm['nazwa']}{ilosc_str}", key=f"chk_pop_{itm['id']}")
+
 aktualizuj_tool = types.FunctionDeclaration(
     name="aktualizuj_miejsce",
     description="Aktualizuje informacje o wybranym miejscu na Krecie na podstawie numeru miejsca. UWAGA: Miejsca z flagą Base=true nie mogą być modyfikowane.",
@@ -1163,33 +1192,6 @@ DEFAULT_COLOR = '#DC3545'
 df_miejsca = pobierz_wszystkie_miejsca()
 wycieczki_options = pobierz_skrocone_opcje_wycieczek()
 
-def renderuj_checklistu_expander(wycieczka_id):
-    conn = sqlite3.connect('fadyssai.db')
-    checklisty_df = pd.read_sql('SELECT * FROM checklist WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
-    items_df = pd.DataFrame()
-    if not checklisty_df.empty:
-        ids_chl = tuple(checklisty_df['id'].tolist())
-        if len(ids_chl) == 1:
-            items_df = pd.read_sql('SELECT * FROM checklist_item WHERE id_checklisty = ?', conn, params=(ids_chl[0],))
-        else:
-            placeholders = ','.join(['?'] * len(ids_chl))
-            items_df = pd.read_sql(f'SELECT * FROM checklist_item WHERE id_checklisty IN ({placeholders})', conn, params=ids_chl)
-    conn.close()
-
-    if checklisty_df.empty or items_df.empty:
-        st.info("Brak zdefiniowanej checklisty dla tej wycieczki.")
-    else:
-        for _, chl in checklisty_df.iterrows():
-            typ_chl = chl['typ'].capitalize()
-            chl_id = chl['id']
-            powiazane_itemy = items_df[items_df['id_checklisty'] == chl_id]
-            if not powiazane_itemy.empty:
-                st.markdown(f"**📌 {typ_chl}:**")
-                for _, itm in powiazane_itemy.iterrows():
-                    ilosc_val = itm['ilosc']
-                    ilosc_str = f" *({ilosc_val})*" if pd.notna(ilosc_val) and ilosc_val != "1" else ""
-                    st.checkbox(f"{itm['nazwa']}{ilosc_str}", key=f"chk_exp_{chl_id}_{itm['id']}")
-
 def renderuj_zadania_dzieci_expander(tekst_zadan, unikalny_klucz):
     zadania_lista = [z.strip() for z in str(tekst_zadan).split('.') if z.strip()]
     if not zadania_lista:
@@ -1296,44 +1298,29 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
             </div>
             """, unsafe_allow_html=True)
 
-        if not kroki_df.empty:
-            st.markdown("⚡ **Szybki skok do etapu:**")
-            cols_kroki = st.columns(len(kroki_df))
-            for idx, (_, k_item) in enumerate(kroki_df.iterrows()):
-                with cols_kroki[idx]:
-                    krok_id_target = k_item['id']
-                    krok_num_lbl = k_item['krok_wycieczki']
-                    st.markdown(f'''
-                        <a href="#krok_{krok_id_target}" style="display: block; background-color: #e6ded1; border: 1px solid #b89b82; color: #663223; padding: 8px 0; text-align: center; border-radius: 8px; font-size: 16px; font-weight: bold; text-decoration: none; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                            {krok_num_lbl}
-                        </a>
-                    ''', unsafe_allow_html=True)
-            st.markdown("---")
-
-        with st.expander("🎒 Sprawdź checklistę wycieczki"):
-            renderuj_checklistu_expander(wycieczka_id)
-
-        st.markdown("---")
-
+        # Przeniesienie ramki "Taktyka dnia" bezpośrednio pod ramkę opisu wycieczki
         if pd.notna(w_gen['calosciowa_taktyka_dnia']) and str(w_gen['calosciowa_taktyka_dnia']).strip() != "":
             st.markdown(f"""
-            <div style="background-color:#e6ded1; padding:14px; border:2px solid #b89b82; border-radius:8px; margin-bottom:20px;">
+            <div style="background-color:#e6ded1; padding:14px; border:2px solid #b89b82; border-radius:8px; margin-bottom:15px;">
                 <span style="font-size:12pt; font-weight:bold; color:#663223;">🧠 TAKTYKA DNIA:</span><br>
                 <span style="color:#3b2f2f;">{w_gen['calosciowa_taktyka_dnia']}</span>
             </div>
             """, unsafe_allow_html=True)
 
+        # Przycisk checklisty uruchamiający modal (popup)
+        if st.button("🎒 Sprawdź checklistę wycieczki", use_container_width=True):
+            pokaz_checklistu_popup(wycieczka_id)
+
         st.markdown("---")
 
-        st.markdown("### 📍 Szczegółowy plan (Kroki)")
+        st.markdown("### 📍 Szczegółowy plan (Kroki wycieczki)")
+        
         for _, k in kroki_df.iterrows():
             krok_num = str(k['krok_wycieczki'])
             krok_nazwa = str(k['nazwa'])
             
             pasujące_miejsce = df_miejsca[df_miejsca['numer_miejsca'] == krok_num]
             miejsce_id_cel = str(pasujące_miejsce.iloc[0]['numer_miejsca']) if not pasujące_miejsce.empty else "1"
-
-            st.markdown(f'<div id="krok_{k["id"]}"></div>', unsafe_allow_html=True)
             
             google_search_url = f"https://www.google.com/search?q={krok_nazwa} Kreta"
             gps_maps_url = f"https://www.google.com/maps/search/?api=1&query={k['wspolrzedne']}"
@@ -1344,10 +1331,12 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
             warn_html = f'<div class="net-box-warn" style="margin-top: 10px; margin-bottom: 0;"><div class="net-title-warn">⚠️ Ostrzeżenie</div><div class="net-text" style="color:#721c24; font-weight:bold;">{k["czerwona_strefa_ostrzezenie"]}</div></div>' if pd.notna(k.get('czerwona_strefa_ostrzezenie')) and str(k['czerwona_strefa_ostrzezenie']).strip() != "" else ""
             desc_html = f'<div style="margin-top: 10px; background-color:#fcf8f2; border:1px solid #b89b82; border-radius:8px; padding:10px; font-size:10pt; color:#3b2f2f; font-style:italic;">{k["opis"]}</div>' if pd.notna(k.get('opis')) and str(k.get('opis')).strip() != "" else ""
 
-            card_html = f'''<div style="background-color:#e6ded1; border:2px solid #b89b82; border-radius:14px; padding:16px; margin-bottom:20px; box-shadow:0 2px 5px rgba(0,0,0,0.08); position:relative;"><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><div style="background-color:#e83e8c; color:white; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:11pt; border:2px solid white; box-shadow:0 1px 3px rgba(0,0,0,0.3);">{krok_num}</div><span style="font-size:13pt; font-weight:900; color:#663223; text-decoration:underline;">{krok_nazwa}</span></div>{desc_html}<div style="display: flex; gap: 6px; margin-top: 12px; margin-bottom: 12px;"><a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="GPS">📍</a><a href="{google_search_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Google">🔍</a><a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Sklep">🛒</a><a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Restauracja">🍽️</a><a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Opis">📝</a></div><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;"><div class="net-box" style="margin-bottom:0;"><div class="net-title">⏱️ Harmonogram</div><div class="net-value" style="font-size:11pt; font-weight:bold; color:#3b2f2f;">{k["okienko_zwiedzania"]}</div></div><div class="net-box-evac" style="margin-bottom:0;"><div class="net-title-evac">🚨 Ewakuacja</div><div style="font-size:11pt; font-weight:bold; color:#a71d2a;">{k.get("godzina_ewakuacji", "Brak")}</div></div></div><div class="net-box"><div class="net-title">🎯 Taktyka</div><div class="net-text">{k["podsumowanie_taktyki"]}</div></div><div class="net-box-regen" style="margin-bottom: 0;"><div class="net-title-regen">🌿 Strefa luzu i regeneracji</div><div class="net-text" style="color:#155724;">{k["strefa_luzu_i_regeneracji"]}</div></div>{warn_html}</div>'''
-            
-            st.markdown(card_html, unsafe_allow_html=True)
-            st.markdown("---")
+            # Rozwijane menu kroku (expander) z przywróconym tytułem na kafelek
+            with st.expander(f"Krok {krok_num}: {krok_nazwa}"):
+                card_html = f'''<div style="background-color:#e6ded1; border:2px solid #b89b82; border-radius:14px; padding:16px; margin-bottom:10px; box-shadow:0 2px 5px rgba(0,0,0,0.08); position:relative;"><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><div style="background-color:#e83e8c; color:white; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:11pt; border:2px solid white; box-shadow:0 1px 3px rgba(0,0,0,0.3);">{krok_num}</div><span style="font-size:13pt; font-weight:900; color:#663223; text-decoration:underline;">{krok_nazwa}</span></div>{desc_html}<div style="display: flex; gap: 6px; margin-top: 12px; margin-bottom: 12px;"><a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="GPS">📍</a><a href="{google_search_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Google">🔍</a><a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Sklep">🛒</a><a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Restauracja">🍽️</a><a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Opis">📝</a></div><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;"><div class="net-box" style="margin-bottom:0;"><div class="net-title">⏱️ Harmonogram</div><div class="net-value" style="font-size:11pt; font-weight:bold; color:#3b2f2f;">{k["okienko_zwiedzania"]}</div></div><div class="net-box-evac" style="margin-bottom:0;"><div class="net-title-evac">🚨 Ewakuacja</div><div style="font-size:11pt; font-weight:bold; color:#a71d2a;">{k.get("godzina_ewakuacji", "Brak")}</div></div></div><div class="net-box"><div class="net-title">🎯 Taktyka</div><div class="net-text">{k["podsumowanie_taktyki"]}</div></div><div class="net-box-regen" style="margin-bottom: 0;"><div class="net-title-regen">🌿 Strefa luzu i regeneracji</div><div class="net-text" style="color:#155724;">{k["strefa_luzu_i_regeneracji"]}</div></div>{warn_html}</div>'''
+                st.markdown(card_html, unsafe_allow_html=True)
+
+        st.markdown("---")
 
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
