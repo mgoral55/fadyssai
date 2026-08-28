@@ -231,6 +231,21 @@ st.markdown("""
         background-color: #111e38 !important;
         margin-bottom: 6px !important;
     }
+    
+    /* Elegancka, zunifikowana karta notatki w ramce */
+    .note-card {
+        background-color: #111e38;
+        border: 1px solid #1e293b;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    }
+    .note-title {
+        font-size: 11pt;
+        font-weight: 700;
+        color: #38bdf8;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -279,6 +294,20 @@ def init_db():
             pobudka TEXT,
             czas_wyjazdu TEXT,
             odbyta INTEGER DEFAULT 0
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS notatki (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_wycieczki TEXT,
+            id_miejsca TEXT,
+            tytul TEXT,
+            zawartosc TEXT NOT NULL,
+            typ_notatki TEXT CHECK(typ_notatki IN ('text', 'link', 'list')) DEFAULT 'text',
+            data_utworzenia TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (id_wycieczki) REFERENCES wycieczka(id) ON DELETE CASCADE,
+            FOREIGN KEY (id_miejsca) REFERENCES miejsca(numer_miejsca) ON DELETE CASCADE
         )
     ''')
 
@@ -467,6 +496,137 @@ def init_db():
     conn.close()
 
 init_db()
+
+# --- FUNKCJE OBSŁUGI NOTATEK ---
+def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=None, tytul=None):
+    conn = sqlite3.connect('odyssai.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO notatki (id_wycieczki, id_miejsca, tytul, zawartosc, typ_notatki)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (str(id_wycieczki) if id_wycieczki else None, str(id_miejsca) if id_miejsca else None, tytul, zawartosc, typ_notatki))
+    conn.commit()
+    conn.close()
+    return "Dodano nową notatkę!"
+
+def edytuj_notatke(notatka_id, zawartosc=None, tytul=None, typ_notatki=None):
+    conn = sqlite3.connect('odyssai.db')
+    cursor = conn.cursor()
+    if zawartosc:
+        cursor.execute('UPDATE notatki SET zawartosc = ? WHERE id = ?', (zawartosc, notatka_id))
+    if tytul is not None:
+        cursor.execute('UPDATE notatki SET tytul = ? WHERE id = ?', (tytul, notatka_id))
+    if typ_notatki:
+        cursor.execute('UPDATE notatki SET typ_notatki = ? WHERE id = ?', (typ_notatki, notatka_id))
+    conn.commit()
+    conn.close()
+    return f"Zaktualizowano notatkę nr {notatka_id}."
+
+def usun_notatke(notatka_id):
+    conn = sqlite3.connect('odyssai.db')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM notatki WHERE id = ?', (notatka_id,))
+    conn.commit()
+    conn.close()
+    return f"Usunięto notatkę nr {notatka_id}."
+
+def pobierz_notatki(id_wycieczki=None, id_miejsca=None):
+    conn = sqlite3.connect('odyssai.db')
+    if id_wycieczki:
+        df = pd.read_sql('SELECT * FROM notatki WHERE id_wycieczki = ?', conn, params=(str(id_wycieczki),))
+    elif id_miejsca:
+        df = pd.read_sql('SELECT * FROM notatki WHERE id_miejsca = ?', conn, params=(str(id_miejsca),))
+    else:
+        df = pd.DataFrame()
+    conn.close()
+    return df
+
+def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
+    st.markdown("---")
+    st.markdown("### 📌 Notatki i Linki")
+    
+    df_notatki = pobierz_notatki(id_wycieczki=id_wycieczki, id_miejsca=id_miejsca)
+    
+    with st.expander("➕ Dodaj nową notatkę"):
+        with st.form(key=f"form_add_note_{id_wycieczki}_{id_miejsca}", clear_on_submit=True):
+            nt_tytul = st.text_input("Tytuł notatki (opcjonalnie)")
+            nt_typ = st.selectbox(
+                "Typ notatki", 
+                options=["text", "link", "list"], 
+                format_func=lambda x: {"text": "📝 Zwykły tekst", "link": "🔗 Link / URL", "list": "📋 Punkty listy"}[x]
+            )
+            nt_zawartosc = st.text_area("Treść / URL / Elementy (każdy w nowej linii)")
+            submitted = st.form_submit_button("💾 Zapisz nową notatkę", use_container_width=True)
+            if submitted and nt_zawartosc:
+                dodaj_notatke(zawartosc=nt_zawartosc, typ_notatki=nt_typ, id_wycieczki=id_wycieczki, id_miejsca=id_miejsca, tytul=nt_tytul)
+                st.success("Dodano pomyślnie!")
+                st.rerun()
+
+    if df_notatki.empty:
+        st.markdown("<p style='color: #94a3b8; font-size: 9.5pt; font-style: italic;'>Brak notatek. Dodaj pierwszą powyżej, aby zapisać ważne wskazówki.</p>", unsafe_allow_html=True)
+        return
+
+    if "editing_note_id" not in st.session_state:
+        st.session_state.editing_note_id = None
+
+    for _, note in df_notatki.iterrows():
+        note_id = note['id']
+        tytul = note['tytul']
+        zawartosc = note['zawartosc']
+        typ = note['typ_notatki']
+        
+        is_editing_this = (st.session_state.editing_note_id == note_id)
+        
+        st.markdown(f'<div class="note-card">', unsafe_allow_html=True)
+        
+        col_t1, col_t2 = st.columns([5, 1])
+        with col_t1:
+            if tytul and str(tytul).strip():
+                st.markdown(f'<div style="font-size: 10.5pt; font-weight: 700; color: #38bdf8; margin-bottom: 4px;">📌 {tytul}</div>', unsafe_allow_html=True)
+        with col_t2:
+            edit_icon = "❌" if is_editing_this else "✏️"
+            subcol1, subcol2 = st.columns(2)
+            with subcol1:
+                if st.button(edit_icon, key=f"btn_toggle_edit_{note_id}", help="Edytuj"):
+                    st.session_state.editing_note_id = None if is_editing_this else note_id
+                    st.rerun()
+            with subcol2:
+                if st.button("🗑️", key=f"btn_del_{note_id}", help="Usuń"):
+                    usun_notatke(note_id)
+                    if st.session_state.editing_note_id == note_id:
+                        st.session_state.editing_note_id = None
+                    st.success("Usunięto!")
+                    st.rerun()
+
+        if tytul and str(tytul).strip():
+            st.markdown("<hr style='border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 6px 0 8px 0;'>", unsafe_allow_html=True)
+
+        if not is_editing_this:
+            if typ == 'text':
+                st.markdown(f"<div style='color: #cbd5e1; font-size: 9.5pt; line-height: 1.4; word-break: break-word;'>{zawartosc}</div>", unsafe_allow_html=True)
+            elif typ == 'link':
+                st.markdown(f'<a href="{zawartosc}" target="_blank" style="color: #38bdf8; text-decoration: underline; font-weight: 600; word-break: break-all; font-size: 9.5pt;">🔗 {zawartosc}</a>', unsafe_allow_html=True)
+            elif typ == 'list':
+                punkty = [p.strip() for p in zawartosc.split('\n') if p.strip()]
+                for idx_p, punkt in enumerate(punkty):
+                    st.checkbox(punkt, key=f"note_item_{note_id}_{idx_p}")
+        else:
+            with st.form(key=f"form_edit_note_{note_id}"):
+                nowy_tytul_ed = st.text_input("Tytuł", value=tytul if tytul else "")
+                nowa_tresc_ed = st.text_area("Treść", value=zawartosc)
+                col_save, col_cancel = st.columns(2)
+                with col_save:
+                    if st.form_submit_button("💾 Zapisz", use_container_width=True):
+                        edytuj_notatke(note_id, zawartosc=nowa_tresc_ed, tytul=nowy_tytul_ed)
+                        st.session_state.editing_note_id = None
+                        st.success("Zaktualizowano!")
+                        st.rerun()
+                with col_cancel:
+                    if st.form_submit_button("Anuluj", use_container_width=True):
+                        st.session_state.editing_note_id = None
+                        st.rerun()
+
+        st.markdown('</div>', unsafe_allow_html=True)
 
 def oznacz_wycieczke_i_miejsca_jako_odbyte(id_wycieczki):
     conn = sqlite3.connect('odyssai.db')
@@ -710,11 +870,13 @@ def wczytaj_kontekst_zewnetrzny():
         wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, odbyta FROM wycieczka', conn)
         kroki_df = pd.read_sql('SELECT id_wycieczki, krok_wycieczki, nazwa, okienko_zwiedzania FROM krok_wycieczki', conn)
         checklisty_df = pd.read_sql('SELECT c.id_wycieczki, c.typ, i.nazwa, i.ilosc FROM checklist c JOIN checklist_item i ON c.id = i.id_checklisty', conn)
+        notatki_df = pd.read_sql('SELECT id, id_wycieczki, id_miejsca, tytul, zawartosc, typ_notatki FROM notatki', conn)
     except:
         miejsca_df = pd.DataFrame()
         wycieczki_df = pd.DataFrame()
         kroki_df = pd.DataFrame()
         checklisty_df = pd.DataFrame()
+        notatki_df = pd.DataFrame()
     conn.close()
 
     if not miejsca_df.empty:
@@ -727,6 +889,17 @@ def wczytaj_kontekst_zewnetrzny():
             if int(w.get('odbyta', 0)) == 1:
                 continue
             tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Opis: {w['calosciowy_opis_wycieczki']}\n"
+    if not notatki_df.empty:
+        tekst += "\nNotatki użytkownika (Własne wskazówki i linki):\n"
+        for _, n in notatki_df.iterrows():
+            t_tytul = f"[{n['tytul']}] " if pd.notna(n['tytul']) and str(n['tytul']).strip() != "" else ""
+            kontekst_powiazania = ""
+            if pd.notna(n['id_wycieczki']):
+                kontekst_powiazania = f" (dot. wycieczki #{n['id_wycieczki']})"
+            elif pd.notna(n['id_miejsca']):
+                kontekst_powiazania = f" (dot. miejsca nr {n['id_miejsca']})"
+            tekst += f"- {t_tytul}{n['zawartosc']}{kontekst_powiazania}\n"
+
     return tekst
 
 def pobierz_trase_osrm(punkty):
@@ -962,7 +1135,7 @@ def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
     
     system_prompt = f"""Jesteś inteligentnym asystentem podróży OdyssAi na Kretę.
 {zewnetrzny_kontekst}
-- Masz wgląd w bazę danych. Chronisz miejsca z flagą Base = true."""
+- Masz wgląd w bazę danych oraz w notatki i wskazówki wpisane przez użytkownika. Korzystaj z nich jako rzetelnego źródła wiedzy. Chronisz miejsca z flagą Base = true."""
 
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -1251,6 +1424,8 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
                     st.success("Oznaczono!")
                     st.rerun()
 
+        renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
+
 domek_maps_url = "https://www.google.com/maps/search/?api=1&query=35.5914,24.0918"
 sklep_maps_url = "https://www.google.com/maps/search/?api=1&query=35.586222,24.091861"
 active_chat_sidebar = "active" if st.session_state.active_tab == "chat" else ""
@@ -1318,7 +1493,6 @@ if st.session_state.active_tab == "chat":
     renderuj_sekcje_czatu_ai("tab_chat")
 
 elif st.session_state.active_tab == "zabytek":
-    # Wczytanie logo.png z dysku i zakodowanie do Base64
     logo_b64 = ""
     if os.path.exists("logo.png"):
         with open("logo.png", "rb") as f:
@@ -1326,7 +1500,6 @@ elif st.session_state.active_tab == "zabytek":
 
     logo_img_tag = f'<img src="data:image/png;base64,{logo_b64}" style="width:40px;height:40px;border-radius:8px;object-fit:cover;">' if logo_b64 else '<div style="font-size:24px;">🧭</div>'
 
-    # Nagłówek bez podtytułu
     st.markdown(f"""
         <div class="adventure-header">
             {logo_img_tag}
@@ -1336,7 +1509,6 @@ elif st.session_state.active_tab == "zabytek":
         </div>
     """, unsafe_allow_html=True)
     
-    # --- MAPA NA SAMYM GÓRZE ---
     st.markdown("### 🗺️ Mapa lokalizacji")
     m = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB dark_matter")
     dodaj_marker_domku(m)
@@ -1372,7 +1544,6 @@ elif st.session_state.active_tab == "zabytek":
 
     st.markdown("---")
 
-    # --- NAGŁÓWEK Z NAZWĄ MIEJSCA BEZPOŚREDNIO POD MAPĄ ORAZ JEGO SZCZEGÓŁY ---
     if st.session_state.active_place_id:
         place_row = df_miejsca[df_miejsca['numer_miejsca'] == str(st.session_state.active_place_id)]
         
@@ -1483,6 +1654,8 @@ elif st.session_state.active_tab == "zabytek":
             
             polaczenie_przetworzone = re.sub(r'Miejsce\s+(\d+)', zamien_na_link, polaczenie_tekst, flags=re.IGNORECASE)
             st.markdown(f"**🔗 Najlepiej połączyć z:** {polaczenie_przetworzone}", unsafe_allow_html=True)
+
+            renderuj_sekcje_notatek(id_miejsca=numer_m)
 
     renderuj_sekcje_czatu_ai("tab_zabytek")
 
