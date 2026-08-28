@@ -440,8 +440,6 @@ def oznacz_wycieczke_i_miejsca_jako_odbyte(id_wycieczki):
 def aktualizuj_miejsce(numer_miejsca, opis=None, konieczna_akcja=None):
     conn = sqlite3.connect('fadyssai.db')
     cursor = conn.cursor()
-    
-    # Sprawdzamy, czy miejsce ma Base == 'true'
     cursor.execute('SELECT Base FROM miejsca WHERE numer_miejsca = ?', (str(numer_miejsca),))
     res = cursor.fetchone()
     if res and str(res[0]).lower() == 'true':
@@ -1260,11 +1258,11 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
 
             st.markdown(f'''
                 <div class="custom-nav-bar" style="margin-bottom: 10px; display: flex; gap: 6px;">
-                    <a href="{google_search_url}" target="_blank" class="custom-nav-btn" title="Szukaj w Google">🔍</a>
                     <a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" title="Pineska GPS">📍</a>
-                    <a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" title="Najbliższy sklep spożywczy w pobliżu kroku">🛒</a>
-                    <a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" title="Najbliższa restauracja w pobliżu kroku">🍽️</a>
-                    <a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" title="Info o miejscu">Info</a>
+                    <a href="{google_search_url}" target="_blank" class="custom-nav-btn" title="Szukaj w Google">🔍</a>
+                    <a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" title="Najbliższy sklep spożywczy">🛒</a>
+                    <a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" title="Najbliższa restauracja">🍽️</a>
+                    <a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" title="Info o miejscu">📝</a>
                 </div>
             ''', unsafe_allow_html=True)
 
@@ -1321,9 +1319,9 @@ with st.sidebar:
     st.markdown("### 🧭 Szybka Nawigacja")
     st.markdown(f"""
         <div class="sidebar-nav-bar">
-            <a href="{sklep_maps_url}" target="_blank" class="sidebar-nav-btn" title="Nawiguj do Sklepu">🛒 Sklep</a>
-            <a href="{domek_maps_url}" target="_blank" class="sidebar-nav-btn" title="Nawiguj do Domku">🏠 Domek</a>
-            <a href="?tab=chat" target="_self" class="sidebar-nav-btn {active_chat}" title="Czat AI">💬 Czat</a>
+            <a href="{sklep_maps_url}" target="_blank" class="sidebar-nav-btn" title="Sklep">🛒</a>
+            <a href="{domek_maps_url}" target="_blank" class="sidebar-nav-btn" title="Domek">🏠</a>
+            <a href="?tab=chat" target="_self" class="sidebar-nav-btn {active_chat}" title="Czat">💬</a>
         </div>
     """, unsafe_allow_html=True)
 
@@ -1340,15 +1338,13 @@ with st.sidebar:
     wybrany_model = st.selectbox("Wybierz model AI", options=dostepne_modele, index=0)
     
     st.markdown("---")
-    
-
 
 # --- GŁÓWNY INTERFEJS: GÓRNY PASEK NAWIGACYJNY (Miejsca, Wycieczki, Trasa) ---
 st.markdown(f"""
     <div class="custom-nav-bar">
-        <a href="?tab=zabytek" target="_self" class="custom-nav-btn {active_zabytek}" title="Miejsca">🏛️ Miejsca</a>
-        <a href="?tab=map" target="_self" class="custom-nav-btn {active_map}" title="Wycieczki">🗺️ Wycieczki</a>
-        <a href="?tab=route" target="_self" class="custom-nav-btn {active_route}" title="Trasa i Wycieczka">🚗 Trasa</a>
+        <a href="?tab=zabytek" target="_self" class="custom-nav-btn {active_zabytek}" title="Miejsca">🏛️</a>
+        <a href="?tab=map" target="_self" class="custom-nav-btn {active_map}" title="Wycieczki">🗺️</a>
+        <a href="?tab=route" target="_self" class="custom-nav-btn {active_route}" title="Trasa">🚗</a>
     </div>
 """, unsafe_allow_html=True)
 
