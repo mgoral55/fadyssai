@@ -12,7 +12,7 @@ import re
 import base64
 from datetime import datetime, date
 
-# --- 1. KONFIGURACJA STRONY I DESIGN SYSTEM: DUCH PRZYGODY (DARK + NEONY) ---
+# --- 1. KONFIGURACJA STRONY I DESIGN SYSTEM: DUCH PRZYGODY (DARK + NEONY + SOLAR READABILITY) ---
 st.set_page_config(page_title="CretAi - Kreta", layout="centered", page_icon="🧭")
 
 st.markdown("""
@@ -23,12 +23,12 @@ st.markdown("""
         max-width: 600px;
     }
     .stApp {
-        background-color: #0b1329;
-        color: #f8fafc;
+        background-color: #050b18 !important;
+        color: #ffffff !important;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
     [data-testid="stSidebar"] {
-        background-color: #111e38;
+        background-color: #0b1329;
         color: #f8fafc !important;
         border-right: 1px solid #1e293b;
     }
@@ -37,28 +37,28 @@ st.markdown("""
     }
     h3 {
         color: #38bdf8;
-        font-size: 1.15rem;
-        font-weight: 700;
-        margin-top: 0.5rem;
-        margin-bottom: 0.25rem;
+        font-size: 1.25rem;
+        font-weight: 800;
+        margin-top: 0.75rem;
+        margin-bottom: 0.35rem;
     }
     
     /* Belka tytułowa z logiem z pliku */
     .adventure-header {
         background: linear-gradient(135deg, #111e38 0%, #1e293b 100%);
-        border: 1.5px solid #38bdf8;
+        border: 2px solid #38bdf8;
         border-radius: 12px;
-        padding: 8px 12px;
+        padding: 10px 14px;
         display: flex;
         align-items: center;
         gap: 10px;
-        margin-bottom: 8px;
-        box-shadow: 0 4px 15px rgba(56, 189, 248, 0.15);
+        margin-bottom: 10px;
+        box-shadow: 0 4px 15px rgba(56, 189, 248, 0.25);
     }
     .adventure-title-text {
-        font-size: 1.1rem;
-        font-weight: 800;
-        color: #f8fafc;
+        font-size: 1.2rem;
+        font-weight: 900;
+        color: #ffffff;
         letter-spacing: 0.03em;
         text-transform: uppercase;
     }
@@ -69,27 +69,27 @@ st.markdown("""
         bottom: 0;
         left: 0;
         right: 0;
-        background-color: rgba(17, 30, 56, 0.95);
+        background-color: rgba(11, 19, 41, 0.98);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
-        border-top: 1px solid rgba(56, 189, 248, 0.2);
-        padding: 8px 12px;
+        border-top: 2px solid rgba(56, 189, 248, 0.3);
+        padding: 10px 12px;
         display: flex;
         justify-content: space-around;
         gap: 6px;
         z-index: 99999;
-        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.6);
     }
     .bottom-nav-btn {
         flex: 1;
-        background-color: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        color: #94a3b8;
-        padding: 6px 0;
+        background-color: rgba(255, 255, 255, 0.08);
+        border: 1.5px solid rgba(255, 255, 255, 0.15);
+        color: #cbd5e1;
+        padding: 8px 0;
         text-align: center;
         border-radius: 10px;
-        font-size: 11px;
-        font-weight: 600;
+        font-size: 12px;
+        font-weight: 700;
         text-decoration: none;
         cursor: pointer;
         transition: all 0.2s ease;
@@ -99,22 +99,22 @@ st.markdown("""
         gap: 2px;
     }
     .bottom-nav-btn:hover {
-        background-color: rgba(56, 189, 248, 0.15);
+        background-color: rgba(56, 189, 248, 0.2);
         color: #38bdf8;
-        border-color: rgba(56, 189, 248, 0.4);
+        border-color: rgba(56, 189, 248, 0.6);
     }
     .bottom-nav-btn.active {
         background-color: #38bdf8;
-        color: #0b1329;
+        color: #050b18;
         border-color: #38bdf8;
-        font-weight: bold;
-        box-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
+        font-weight: 900;
+        box-shadow: 0 0 15px rgba(56, 189, 248, 0.7);
     }
 
     /* Pływający kontener globalnego AI nad dolnym paskiem nawigacji */
     .floating-ai-container {
         position: fixed;
-        bottom: 60px;
+        bottom: 65px;
         left: 8px;
         right: 8px;
         max-width: 580px;
@@ -132,13 +132,13 @@ st.markdown("""
     .custom-nav-btn {
         flex: 1;
         background-color: #111e38;
-        border: 1px solid #334155;
-        color: #f8fafc;
-        padding: 6px 4px;
+        border: 1.5px solid #334155;
+        color: #ffffff;
+        padding: 8px 4px;
         text-align: center;
         border-radius: 8px;
-        font-size: 10px;
-        font-weight: 600;
+        font-size: 11px;
+        font-weight: 700;
         text-decoration: none;
         display: flex;
         flex-direction: column;
@@ -152,108 +152,111 @@ st.markdown("""
     }
     .custom-nav-btn.active {
         background-color: #38bdf8;
-        color: #0b1329;
+        color: #050b18;
         border-color: #38bdf8;
     }
 
     .logistics-card {
         background-color: #111e38;
-        border: 1px solid #1e293b;
+        border: 1.5px solid #1e293b;
         border-radius: 10px;
         padding: 10px;
         text-align: left;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         margin-bottom: 4px;
     }
     .logistics-title {
-        font-size: 8.5pt;
-        font-weight: 700;
+        font-size: 9.5pt;
+        font-weight: 800;
         color: #94a3b8;
         margin-bottom: 2px;
         text-transform: uppercase;
     }
     .logistics-value {
-        font-size: 11pt;
-        font-weight: 800;
-        color: #f8fafc;
+        font-size: 12pt;
+        font-weight: 900;
+        color: #38bdf8;
     }
 
     .net-box {
         background-color: #111e38;
-        border: 1px solid #1e293b;
+        border: 1.5px solid #1e293b;
         border-radius: 10px;
         padding: 10px;
         margin-bottom: 6px;
     }
     .net-box-evac {
-        background-color: rgba(239, 68, 68, 0.1);
-        border: 1px solid rgba(239, 68, 68, 0.3);
+        background-color: rgba(239, 68, 68, 0.15);
+        border: 1.5px solid rgba(239, 68, 68, 0.5);
         border-radius: 10px;
         padding: 10px;
         margin-bottom: 6px;
     }
     .net-box-regen {
-        background-color: rgba(34, 197, 94, 0.1);
-        border: 1px solid rgba(34, 197, 94, 0.3);
+        background-color: rgba(34, 197, 94, 0.15);
+        border: 1.5px solid rgba(34, 197, 94, 0.5);
         border-radius: 10px;
         padding: 10px;
         margin-bottom: 6px;
     }
     .net-box-warn {
-        background-color: rgba(245, 158, 11, 0.1);
-        border: 1px solid rgba(245, 158, 11, 0.3);
+        background-color: rgba(245, 158, 11, 0.15);
+        border: 1.5px solid rgba(245, 158, 11, 0.5);
         border-radius: 10px;
         padding: 10px;
         margin-bottom: 6px;
     }
     .net-title {
-        font-size: 8.5pt;
-        font-weight: 700;
+        font-size: 9.5pt;
+        font-weight: 800;
         color: #94a3b8;
         margin-bottom: 2px;
         text-transform: uppercase;
     }
     .net-title-evac {
-        font-size: 8.5pt;
-        font-weight: 700;
+        font-size: 9.5pt;
+        font-weight: 800;
         color: #f87171;
         margin-bottom: 2px;
         text-transform: uppercase;
     }
     .net-title-regen {
-        font-size: 8.5pt;
-        font-weight: 700;
+        font-size: 9.5pt;
+        font-weight: 800;
         color: #4ade80;
         margin-bottom: 2px;
         text-transform: uppercase;
     }
     .net-title-warn {
-        font-size: 8.5pt;
-        font-weight: 700;
+        font-size: 9.5pt;
+        font-weight: 800;
         color: #fbbf24;
         margin-bottom: 2px;
         text-transform: uppercase;
     }
     .net-text {
-        font-size: 10pt;
-        color: #cbd5e1;
-        line-height: 1.35;
+        font-size: 11pt;
+        color: #ffffff;
+        font-weight: 600;
+        line-height: 1.4;
     }
     .stButton > button {
         background-color: #111e38 !important;
-        color: #f8fafc !important;
-        border: 1.5px solid #334155 !important;
-        font-weight: 700 !important;
-        border-radius: 8px !important;
-        padding: 0.4rem 0.8rem !important;
+        color: #ffffff !important;
+        border: 2px solid #334155 !important;
+        font-weight: 800 !important;
+        border-radius: 10px !important;
+        padding: 0.5rem 1rem !important;
+        min-height: 48px !important;
+        font-size: 11pt !important;
     }
     .stButton > button:hover {
         background-color: #38bdf8 !important;
-        color: #0b1329 !important;
+        color: #050b18 !important;
         border-color: #38bdf8 !important;
     }
     [data-testid="stExpander"] {
-        border: 1px solid #1e293b !important;
+        border: 1.5px solid #1e293b !important;
         border-radius: 10px !important;
         background-color: #111e38 !important;
         margin-bottom: 6px !important;
@@ -261,15 +264,15 @@ st.markdown("""
     
     .note-card {
         background-color: #111e38;
-        border: 1px solid #1e293b;
+        border: 1.5px solid #1e293b;
         border-radius: 12px;
         padding: 16px;
         margin-bottom: 12px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     }
     .note-title {
-        font-size: 11pt;
-        font-weight: 700;
+        font-size: 12pt;
+        font-weight: 800;
         color: #38bdf8;
     }
     </style>
@@ -607,8 +610,8 @@ def renderuj_pogode_dla_kroku(wspolrzedne, planowana_data, okienko_czasowe):
         return
 
     st.markdown(f"""
-        <div style="background-color: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 8px; padding: 8px; margin: 6px 0;">
-            <div style="font-size: 8pt; font-weight: 700; color: #38bdf8; text-transform: uppercase; margin-bottom: 4px;">
+        <div style="background-color: rgba(56, 189, 248, 0.12); border: 1.5px solid rgba(56, 189, 248, 0.4); border-radius: 8px; padding: 10px; margin: 6px 0;">
+            <div style="font-size: 9pt; font-weight: 800; color: #38bdf8; text-transform: uppercase; margin-bottom: 4px;">
                 🌤️ Prognoza pogody ({planowana_data})
             </div>
     """, unsafe_allow_html=True)
@@ -643,7 +646,7 @@ def renderuj_pogode_dla_kroku(wspolrzedne, planowana_data, okienko_czasowe):
         uv = dopasowana_godzina.get('uvIndex', '—')
         
         st.markdown(f"""
-            <div style="font-size: 9.5pt; color: #cbd5e1; display: flex; justify-content: space-between; align-items: center;">
+            <div style="font-size: 10.5pt; color: #ffffff; font-weight: 700; display: flex; justify-content: space-between; align-items: center;">
                 <span><b>{temp}°C</b> (odczuwalna {feel}°C), {desc}</span>
                 <span>💨 {wind} km/h | ☀️ UV {uv}</span>
             </div>
@@ -688,20 +691,20 @@ def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
         ostrzezenia.append(f"🔥 Ekstremalny upał! Maksymalna temperatura sięgnie {max_temp}°C. Bezwzględnie zadbaj o nawodnienie i ochronę przed słońcem.")
 
     st.markdown(f"""
-        <div style="background-color: #111e38; border: 1.5px solid {'#ef4444' if ostrzezenia else '#38bdf8'}; border-radius: 10px; padding: 12px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">
-            <div style="font-size: 9.5pt; font-weight: 800; color: {'#f87171' if ostrzezenia else '#38bdf8'}; margin-bottom: 6px; text-transform: uppercase;">
+        <div style="background-color: #111e38; border: 2px solid {'#ef4444' if ostrzezenia else '#38bdf8'}; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.4);">
+            <div style="font-size: 10.5pt; font-weight: 900; color: {'#f87171' if ostrzezenia else '#38bdf8'}; margin-bottom: 6px; text-transform: uppercase;">
                 📊 Podsumowanie pogody dla całej wycieczki ({planowana_data})
             </div>
-            <div style="font-size: 9.5pt; color: #cbd5e1; margin-bottom: 6px;">
+            <div style="font-size: 10.5pt; color: #ffffff; font-weight: 700; margin-bottom: 6px;">
                 Temperatury w przedziale: <b>{min_temp}°C do {max_temp}°C</b>
             </div>
     """, unsafe_allow_html=True)
 
     if ostrzezenia:
         for ost in ostrzezenia:
-            st.markdown(f'<div style="color: #f87171; font-weight: 700; font-size: 9.5pt; margin-top: 4px;">{ost}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="color: #f87171; font-weight: 800; font-size: 10.5pt; margin-top: 4px;">{ost}</div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div style="color: #4ade80; font-weight: 600; font-size: 9.5pt;">✨ Brak ekstremów pogodowych. Warunki sprzyjające wyprawie!</div>', unsafe_allow_html=True)
+        st.markdown('<div style="color: #4ade80; font-weight: 800; font-size: 10.5pt;">✨ Brak ekstremów pogodowych. Warunki sprzyjające wyprawie!</div>', unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
@@ -832,7 +835,7 @@ def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
                 st.rerun()
 
     if df_notatki.empty:
-        st.markdown("<p style='color: #94a3b8; font-size: 9.5pt; font-style: italic;'>Brak notatek. Dodaj pierwszą powyżej, aby zapisać ważne wskazówki.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='color: #94a3b8; font-size: 10pt; font-style: italic;'>Brak notatek. Dodaj pierwszą powyżej, aby zapisać ważne wskazówki.</p>", unsafe_allow_html=True)
         return
 
     if "editing_note_id" not in st.session_state:
@@ -851,7 +854,7 @@ def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
         col_t1, col_t2 = st.columns([5, 1])
         with col_t1:
             if tytul and str(tytul).strip():
-                st.markdown(f'<div style="font-size: 10.5pt; font-weight: 700; color: #38bdf8; margin-bottom: 4px;">📌 {tytul}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="font-size: 11.5pt; font-weight: 800; color: #38bdf8; margin-bottom: 4px;">📌 {tytul}</div>', unsafe_allow_html=True)
         with col_t2:
             edit_icon = "❌" if is_editing_this else "✏️"
             subcol1, subcol2 = st.columns(2)
@@ -868,13 +871,13 @@ def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
                     st.rerun()
 
         if tytul and str(tytul).strip():
-            st.markdown("<hr style='border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 6px 0 8px 0;'>", unsafe_allow_html=True)
+            st.markdown("<hr style='border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 6px 0 8px 0;'>", unsafe_allow_html=True)
 
         if not is_editing_this:
             if typ == 'text':
-                st.markdown(f"<div style='color: #cbd5e1; font-size: 9.5pt; line-height: 1.4; word-break: break-word;'>{zawartosc}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='color: #ffffff; font-weight: 600; font-size: 10.5pt; line-height: 1.4; word-break: break-word;'>{zawartosc}</div>", unsafe_allow_html=True)
             elif typ == 'link':
-                st.markdown(f'<a href="{zawartosc}" target="_blank" style="color: #38bdf8; text-decoration: underline; font-weight: 600; word-break: break-all; font-size: 9.5pt;">🔗 {zawartosc}</a>', unsafe_allow_html=True)
+                st.markdown(f'<a href="{zawartosc}" target="_blank" style="color: #38bdf8; text-decoration: underline; font-weight: 800; word-break: break-all; font-size: 10.5pt;">🔗 {zawartosc}</a>', unsafe_allow_html=True)
             elif typ == 'list':
                 punkty = [p.strip() for p in zawartosc.split('\n') if p.strip()]
                 for idx_p, punkt in enumerate(punkty):
@@ -1201,7 +1204,7 @@ def pobierz_trase_osrm(punkty):
     return [[p[0], p[1]] for p in punkty]
 
 def dodaj_marker_domku(m):
-    domek_icon_html = '<div style="background-color:#38bdf8;color:#0b1329;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">🏠</div>'
+    domek_icon_html = '<div style="background-color:#38bdf8;color:#050b18;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.4);">🏠</div>'
     domek_icon = folium.DivIcon(html=domek_icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=domek_icon, tooltip="Nasz Domek").add_to(m)
 
@@ -1492,7 +1495,7 @@ def renderuj_globalny_czat_ai(uzytkownik):
     with st.expander(f"💬 Asystent AI ({uzytkownik})", expanded=False):
         col_h1, col_h2, col_h3 = st.columns([3, 1, 1])
         with col_h1:
-            st.markdown(f"<span style='font-size: 8.5pt; color: #38bdf8; font-weight: 700;'>🧠 TRYB ADHD • {uzytkownik}</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='font-size: 9.5pt; color: #38bdf8; font-weight: 800;'>🧠 TRYB ADHD • {uzytkownik}</span>", unsafe_allow_html=True)
         with col_h2:
             if st.button("🔄 Odśwież", key=f"btn_refresh_{uzytkownik}", use_container_width=True, help="Odśwież widok aplikacji"):
                 st.session_state["flash_toast"] = "🔄 Widok został odświeżony!"
@@ -1676,6 +1679,28 @@ def renderuj_zadania_dzieci_expander(tekst_zadan, unikalny_klucz):
     for i, zadanie in enumerate(zadania_lista):
         st.checkbox(f"{zadanie}", key=f"zad_dziecko_exp_{unikalny_klucz}_{i}")
 
+# --- BEZPIECZNY KOMPONENT MELTDOWN / ADHD (Czysty Streamlit zamiast surowego HTML) ---
+def renderuj_karty_meltdown_ux(p):
+    adhd_val = p.get('trudnosc_adhd', 'Niski')
+    meltdown_val = p.get('potencjal_meltdownu', 'Brak danych')
+    strategie_val = p.get('strategie_meltdown', 'Brak strategii')
+
+    is_high_risk = "wysok" in str(meltdown_val).lower()
+    
+    st.markdown("---")
+    if is_high_risk:
+        st.error("**🚨 STREFA RATUNKOWA ADHD & MELTDOWN**")
+    else:
+        st.info("**🛡️ STREFA RATUNKOWA ADHD & MELTDOWN**")
+        
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"**🧠 Trudność ADHD:**\n{adhd_val}")
+    with col2:
+        st.markdown(f"**⚡ Potencjał meltdownu:**\n{meltdown_val}")
+        
+    st.success(f"**🛡️ Natychmiastowa Strategia Ratunkowa:**\n{strategie_val}")
+
 def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
     conn = sqlite3.connect('cretai.db')
     wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
@@ -1690,13 +1715,13 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
             planowana_data_val = ""
         
         st.markdown(f"""
-        <div style="background-color:#111e38; padding:10px 12px; border:1px solid #1e293b; border-radius:10px; text-align:center; font-size:11pt; font-weight:800; text-transform:uppercase; margin-bottom:8px; color:#38bdf8;">
+        <div style="background-color:#111e38; padding:12px; border:2px solid #38bdf8; border-radius:12px; text-align:center; font-size:12pt; font-weight:900; text-transform:uppercase; margin-bottom:10px; color:#38bdf8; box-shadow: 0 4px 12px rgba(56,189,248,0.2);">
             {tytul_w}
         </div>
         """, unsafe_allow_html=True)
 
         with st.form(key=f"form_plan_data_{wycieczka_id}"):
-            st.markdown(f'<div style="font-size: 8.5pt; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">📅 Planowana data wycieczki</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size: 9.5pt; font-weight: 800; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px;">📅 Planowana data wycieczki</div>', unsafe_allow_html=True)
             
             dzisiaj = date.today()
             try:
@@ -1749,13 +1774,13 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
                 for p in punkty_trasy:
                     if len(p) == 4:
                         lat, lon, krok, nazwa = p
-                        icon_html = f'<div style="background-color:#38bdf8;color:#0b1329;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">{krok}</div>'
-                        icon = folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))
+                        icon_html = f'<div style="background-color:#38bdf8;color:#050b18;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.4);">{krok}</div>'
+                        icon = folium.DivIcon(html=icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
                         folium.Marker([lat, lon], icon=icon, tooltip=f"Krok {krok}: {nazwa}").add_to(m_trasa)
                     
                 trasa_po_drogach = pobierz_trase_osrm(surowe_wspolrzedne)
                 if trasa_po_drogach:
-                    folium.PolyLine(trasa_po_drogach, color="#38bdf8", weight=4, opacity=0.8).add_to(m_trasa)
+                    folium.PolyLine(trasa_po_drogach, color="#38bdf8", weight=5, opacity=0.9).add_to(m_trasa)
                     
                 st_folium(m_trasa, width="100%", height=240, returned_objects=[])
 
@@ -1767,11 +1792,11 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
         czas_trwania = f"{w_gen['calkowity_czas_wycieczki_godziny']} godz."
 
         st.markdown(f"""
-        <div style="background-color:#111e38; border:1px solid #1e293b; border-radius:10px; padding:10px; margin-bottom:10px;">
-            <div style="font-size:9.5pt; font-weight:700; color:#38bdf8; margin-bottom:6px; display:flex; align-items:center; gap:6px;">
+        <div style="background-color:#111e38; border:1.5px solid #1e293b; border-radius:10px; padding:12px; margin-bottom:10px;">
+            <div style="font-size:10pt; font-weight:800; color:#38bdf8; margin-bottom:8px; display:flex; align-items:center; gap:6px;">
                 <span>🧭</span> LOGISTYKA DNIA
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
                 <div class="logistics-card">
                     <div class="logistics-title">⏰ Pobudka</div>
                     <div class="logistics-value">{pobudka_val}</div>
@@ -1794,17 +1819,17 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
 
         if pd.notna(w_gen['calosciowy_opis_wycieczki']) and str(w_gen['calosciowy_opis_wycieczki']).strip() != "":
             st.markdown(f"""
-            <div style="background-color:#111e38; border:1px solid #1e293b; border-radius:10px; padding:10px; margin-bottom:10px;">
-                <div style="font-size:9.5pt; font-weight:700; color:#38bdf8; margin-bottom:4px;">📝 Cel wycieczki</div>
-                <div style="color:#cbd5e1; font-size:10pt;">{w_gen['calosciowy_opis_wycieczki']}</div>
+            <div style="background-color:#111e38; border:1.5px solid #1e293b; border-radius:10px; padding:12px; margin-bottom:10px;">
+                <div style="font-size:10pt; font-weight:800; color:#38bdf8; margin-bottom:4px;">📝 Cel wycieczki</div>
+                <div style="color:#ffffff; font-weight:600; font-size:10.5pt; line-height:1.4;">{w_gen['calosciowy_opis_wycieczki']}</div>
             </div>
             """, unsafe_allow_html=True)
 
         if pd.notna(w_gen['calosciowa_taktyka_dnia']) and str(w_gen['calosciowa_taktyka_dnia']).strip() != "":
             st.markdown(f"""
-            <div style="background-color:#111e38; padding:10px; border:1px solid #1e293b; border-radius:10px; margin-bottom:10px;">
-                <span style="font-size:9.5pt; font-weight:700; color:#38bdf8;">🧠 TAKTYKA DNIA:</span><br>
-                <span style="color:#cbd5e1; font-size:10pt;">{w_gen['calosciowa_taktyka_dnia']}</span>
+            <div style="background-color:#111e38; padding:12px; border:1.5px solid #1e293b; border-radius:10px; margin-bottom:10px;">
+                <span style="font-size:10pt; font-weight:800; color:#38bdf8;">🧠 TAKTYKA DNIA:</span><br>
+                <span style="color:#ffffff; font-weight:600; font-size:10.5pt; line-height:1.4;">{w_gen['calosciowa_taktyka_dnia']}</span>
             </div>
             """, unsafe_allow_html=True)
 
@@ -1827,8 +1852,8 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
             sklep_maps_url = f"https://www.google.com/maps/search/supermarket/@{coords_clean},15z"
             resto_maps_url = f"https://www.google.com/maps/search/restaurant/@{coords_clean},15z"
 
-            warn_html = f'<div class="net-box-warn"><div class="net-title-warn">⚠️ Ostrzeżenie</div><div class="net-text" style="color:#fbbf24; font-weight:600;">{k["czerwona_strefa_ostrzezenie"]}</div></div>' if pd.notna(k.get('czerwona_strefa_ostrzezenie')) and str(k['czerwona_strefa_ostrzezenie']).strip() != "" else ""
-            desc_html = f'<div style="margin-top: 6px; background-color:rgba(255,255,255,0.03); border:1px solid #1e293b; border-radius:8px; padding:8px; font-size:9.5pt; color:#cbd5e1;">{k["opis"]}</div>' if pd.notna(k.get('opis')) and str(k.get('opis')).strip() != "" else ""
+            warn_html = f'<div class="net-box-warn"><div class="net-title-warn">⚠️ Ostrzeżenie</div><div class="net-text" style="color:#fbbf24; font-weight:800;">{k["czerwona_strefa_ostrzezenie"]}</div></div>' if pd.notna(k.get('czerwona_strefa_ostrzezenie')) and str(k['czerwona_strefa_ostrzezenie']).strip() != "" else ""
+            desc_html = f'<div style="margin-top: 6px; background-color:rgba(255,255,255,0.05); border:1.5px solid #1e293b; border-radius:8px; padding:10px; font-size:10.5pt; color:#ffffff; font-weight:600; line-height:1.4;">{k["opis"]}</div>' if pd.notna(k.get('opis')) and str(k.get('opis')).strip() != "" else ""
 
             tytul_expandera = f"🕒 {okienko}  |  📌 {krok_nazwa}" if okienko else f"📌 {krok_nazwa}"
 
@@ -1836,7 +1861,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
                 if pokaz_pogode and planowana_data_val:
                     renderuj_pogode_dla_kroku(k['wspolrzedne'], planowana_data_val, okienko)
 
-                card_html = f'''<div style="background-color:#111e38; padding:4px;"><div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;"><div style="background-color:#f43f5e; color:white; border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:9.5pt;">{krok_num}</div><span style="font-size:11pt; font-weight:800; color:#38bdf8;">{krok_nazwa}</span></div>{desc_html}<div style="display: flex; gap: 4px; margin-top: 8px; margin-bottom: 8px;"><a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0;" title="GPS"><span>📍</span><span>GPS</span></a><a href="{google_search_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0;" title="Google"><span>🔍</span><span>Google</span></a><a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0;" title="Sklep"><span>🛒</span><span>Sklep</span></a><a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0;" title="Restauracja"><span>🍽️</span><span>Resto</span></a><a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" style="padding:4px 0;" title="Opis"><span>📝</span><span>Opis</span></a></div><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px;"><div class="net-box" style="margin-bottom:0;"><div class="net-title">⏱️ Harmonogram</div><div style="font-size:10.5pt; font-weight:700; color:#f8fafc;">{k["okienko_zwiedzania"]}</div></div><div class="net-box-evac" style="margin-bottom:0;"><div class="net-title-evac">🚨 Ewakuacja</div><div style="font-size:10.5pt; font-weight:700; color:#f87171;">{k.get("godzina_ewakuacji", "Brak")}</div></div></div><div class="net-box"><div class="net-title">🎯 Taktyka</div><div class="net-text">{k["podsumowanie_taktyki"]}</div></div><div class="net-box-regen" style="margin-bottom:0;"><div class="net-title-regen">🌿 Regeneracja</div><div class="net-text" style="color:#4ade80;">{k["strefa_luzu_i_regeneracji"]}</div></div>{warn_html}</div>'''
+                card_html = f'''<div style="background-color:#111e38; padding:4px;"><div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;"><div style="background-color:#f43f5e; color:white; border-radius:50%; width:26px; height:26px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:10pt;">{krok_num}</div><span style="font-size:11.5pt; font-weight:900; color:#38bdf8;">{krok_nazwa}</span></div>{desc_html}<div style="display: flex; gap: 6px; margin-top: 10px; margin-bottom: 10px;"><a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" style="padding:6px 0;" title="GPS"><span>📍</span><span>GPS</span></a><a href="{google_search_url}" target="_blank" class="custom-nav-btn" style="padding:6px 0;" title="Google"><span>🔍</span><span>Google</span></a><a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" style="padding:6px 0;" title="Sklep"><span>🛒</span><span>Sklep</span></a><a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" style="padding:6px 0;" title="Restauracja"><span>🍽️</span><span>Resto</span></a><a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" style="padding:6px 0;" title="Opis"><span>📝</span><span>Opis</span></a></div><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;"><div class="net-box" style="margin-bottom:0;"><div class="net-title">⏱️ Harmonogram</div><div style="font-size:11pt; font-weight:900; color:#ffffff;">{k["okienko_zwiedzania"]}</div></div><div class="net-box-evac" style="margin-bottom:0;"><div class="net-title-evac">🚨 Ewakuacja</div><div style="font-size:11pt; font-weight:900; color:#f87171;">{k.get("godzina_ewakuacji", "Brak")}</div></div></div><div class="net-box"><div class="net-title">🎯 Taktyka</div><div class="net-text">{k["podsumowanie_taktyki"]}</div></div><div class="net-box-regen" style="margin-bottom:0;"><div class="net-title-regen">🌿 Regeneracja</div><div class="net-text" style="color:#4ade80; font-weight:800;">{k["strefa_luzu_i_regeneracji"]}</div></div>{warn_html}</div>'''
                 st.markdown(card_html, unsafe_allow_html=True)
 
         col_btn1, col_btn2 = st.columns(2)
@@ -1848,7 +1873,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
         with col_btn2:
             is_odbyta = int(w_gen.get('odbyta', 0)) == 1
             if is_odbyta:
-                st.markdown('<div style="background-color:rgba(34,197,94,0.1); color:#4ade80; padding:6px; border-radius:8px; text-align:center; font-weight:bold; border:1px solid rgba(34,197,94,0.3); font-size:9.5pt;">✨ Przebyta</div>', unsafe_allow_html=True)
+                st.markdown('<div style="background-color:rgba(34,197,94,0.15); color:#4ade80; padding:8px; border-radius:10px; text-align:center; font-weight:800; border:1.5px solid rgba(34,197,94,0.5); font-size:10.5pt;">✨ Przebyta</div>', unsafe_allow_html=True)
             else:
                 if st.button(f"✅ Oznacz przebytą", key=f"btn_odbyte_{wycieczka_id}", use_container_width=True):
                     oznacz_wycieczke_i_miejsca_jako_odbyte(wycieczka_id)
@@ -1876,7 +1901,7 @@ if st.session_state.active_tab == "zabytek":
         with open("logo.png", "rb") as f:
             logo_b64 = base64.b64encode(f.read()).decode("utf-8")
 
-    logo_img_tag = f'<img src="data:image/png;base64,{logo_b64}" style="width:40px;height:40px;border-radius:8px;object-fit:cover;">' if logo_b64 else '<div style="font-size:24px;">🧭</div>'
+    logo_img_tag = f'<img src="data:image/png;base64,{logo_b64}" style="width:42px;height:42px;border-radius:8px;object-fit:cover;">' if logo_b64 else '<div style="font-size:26px;">🧭</div>'
 
     st.markdown(f"""
         <div class="adventure-header">
@@ -1889,7 +1914,6 @@ if st.session_state.active_tab == "zabytek":
     
     st.markdown("### 🗺️ Nasze miejsca")
     
-    # Sortowanie miejsc po numerze (konwersja na int tam gdzie to możliwe dla poprawnej kolejności numerycznej)
     df_miejsca_sorted = df_miejsca.copy()
     df_miejsca_sorted['sort_key'] = pd.to_numeric(df_miejsca_sorted['numer_miejsca'], errors='coerce')
     df_miejsca_sorted = df_miejsca_sorted.sort_values(by=['sort_key', 'numer_miejsca']).drop(columns=['sort_key'])
@@ -1904,12 +1928,11 @@ if st.session_state.active_tab == "zabytek":
         else:
             st.session_state.active_place_id = None
 
-    # Pobieranie aktualnego indeksu dla selectboxa na podstawie session_state
     current_selection_index = None
     if st.session_state.active_place_id:
         match_idx = [i for i, opt in enumerate(miejsca_opcje_lista) if opt.startswith(f"{st.session_state.active_place_id}.")]
         if match_idx:
-            current_selection_index = match_idx[0] + 1  # +1 ze względu na pustą opcję na początku
+            current_selection_index = match_idx[0] + 1
 
     selected_option = st.selectbox(
         "Wybierz miejsce:", 
@@ -1921,7 +1944,6 @@ if st.session_state.active_tab == "zabytek":
         label_visibility="collapsed"
     )
 
-    # Ustalanie środka i przybliżenia mapy (domyślnie cała Kreta)
     map_lat, map_lon, map_zoom = 35.3, 24.5, 9
     if st.session_state.active_place_id:
         active_row = df_miejsca[df_miejsca['numer_miejsca'] == str(st.session_state.active_place_id)]
@@ -1952,8 +1974,8 @@ if st.session_state.active_tab == "zabytek":
                 is_visited = int(row.get('odwiedzone', 0)) == 1
                 bg_color = '#475569' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
                 
-                icon_html = f'<div style="background-color:{bg_color};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">{num}</div>'
-                icon = folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))
+                icon_html = f'<div style="background-color:{bg_color};color:white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.4);">{num}</div>'
+                icon = folium.DivIcon(html=icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
                 folium.Marker([lat, lon], icon=icon, tooltip=f"{num}. {name}").add_to(m)
             except:
                 pass
@@ -1980,10 +2002,10 @@ if st.session_state.active_tab == "zabytek":
             google_search_url = f"https://www.google.com/search?q={p['nazwa']} Kreta"
             
             st.markdown(f"""
-            <div id="selected-place-details" style="background-color: #111e38; border: 2px solid #38bdf8; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(56,189,248,0.2);">
+            <div id="selected-place-details" style="background-color: #111e38; border: 2.5px solid #38bdf8; border-radius: 14px; padding: 14px; margin-bottom: 12px; box-shadow: 0 4px 15px rgba(56,189,248,0.3);">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                    <span style="font-size: 13pt; font-weight: 800; color: #38bdf8;">{tytul_miejsca}</span>
-                    <a href="{google_search_url}" target="_blank" style="text-decoration: none; font-size: 16px; background-color: #1e293b; border: 1px solid #334155; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; color: #f8fafc;" title="Szukaj w Google">🔍</a>
+                    <span style="font-size: 13.5pt; font-weight: 900; color: #38bdf8;">{tytul_miejsca}</span>
+                    <a href="{google_search_url}" target="_blank" style="text-decoration: none; font-size: 16px; background-color: #1e293b; border: 1.5px solid #334155; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; color: #ffffff;" title="Szukaj w Google">🔍</a>
                 </div>
             """, unsafe_allow_html=True)
 
@@ -1991,7 +2013,7 @@ if st.session_state.active_tab == "zabytek":
             if is_visited:
                 st.markdown("""
                 <div style="text-align: center; margin-bottom: 8px;">
-                    <span style="background-color: rgba(34,197,94,0.1); color: #4ade80; padding: 3px 10px; border-radius: 10px; font-weight: bold; border: 1px solid rgba(34,197,94,0.3); font-size: 9.5pt;">
+                    <span style="background-color: rgba(34,197,94,0.15); color: #4ade80; padding: 4px 12px; border-radius: 10px; font-weight: 800; border: 1.5px solid rgba(34,197,94,0.5); font-size: 10pt;">
                         ✨ Odwiedzone
                     </span>
                 </div>
@@ -2010,29 +2032,29 @@ if st.session_state.active_tab == "zabytek":
             gps_maps_url = f"https://www.google.com/maps/search/?api=1&query={coords_clean}"
 
             st.markdown(f"""
-                <div style="display: flex; align-items: center; justify-content: space-between; margin: 10px 0 8px 0;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin: 12px 0 10px 0;">
                     <div style="display: flex; align-items: center; gap: 6px;">
-                        <div style="background-color: #38bdf8; color: #0b1329; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items:center; justify-content:center; font-size: 11px; font-weight: bold;">📍</div>
-                        <span style="font-size: 9pt; font-weight: 700; color: #94a3b8; text-transform: uppercase;">Lokalizacja GPS</span>
+                        <div style="background-color: #38bdf8; color: #050b18; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items:center; justify-content:center; font-size: 12px; font-weight: 900;">📍</div>
+                        <span style="font-size: 10pt; font-weight: 800; color: #94a3b8; text-transform: uppercase;">Lokalizacja GPS</span>
                     </div>
-                    <a href="{gps_maps_url}" target="_blank" style="background-color: #38bdf8; color: #0b1329; padding: 4px 12px; border-radius: 16px; font-size: 9pt; font-weight: 700; text-decoration: none;">NAWIGUJ ➔</a>
+                    <a href="{gps_maps_url}" target="_blank" style="background-color: #38bdf8; color: #050b18; padding: 6px 14px; border-radius: 16px; font-size: 10pt; font-weight: 900; text-decoration: none; box-shadow: 0 2px 8px rgba(56,189,248,0.4);">NAWIGUJ ➔</a>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                    <div style="background-color: #0b1329; border: 1px solid #1e293b; border-radius: 8px; padding: 8px;">
-                        <div style="font-size: 8pt; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">Dojazd (Stravros)</div>
-                        <div style="font-size: 10pt; font-weight: 700; color: #f8fafc;">{p['czas_dojazdu']}</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div style="background-color: #050b18; border: 1.5px solid #1e293b; border-radius: 10px; padding: 10px;">
+                        <div style="font-size: 9pt; font-weight: 800; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">Dojazd (Stravros)</div>
+                        <div style="font-size: 11pt; font-weight: 900; color: #ffffff;">{p['czas_dojazdu']}</div>
                     </div>
-                    <div style="background-color: #0b1329; border: 1px solid #1e293b; border-radius: 8px; padding: 8px;">
-                        <div style="font-size: 8pt; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">Godziny otwarcia</div>
-                        <div style="font-size: 10pt; font-weight: 700; color: #f8fafc;">{p['godziny_otwarcia']}</div>
+                    <div style="background-color: #050b18; border: 1.5px solid #1e293b; border-radius: 10px; padding: 10px;">
+                        <div style="font-size: 9pt; font-weight: 800; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">Godziny otwarcia</div>
+                        <div style="font-size: 11pt; font-weight: 900; color: #ffffff;">{p['godziny_otwarcia']}</div>
                     </div>
-                    <div style="background-color: #0b1329; border: 1px solid #1e293b; border-radius: 8px; padding: 8px;">
-                        <div style="font-size: 8pt; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">Najlepsza pora</div>
-                        <div style="font-size: 9.5pt; font-weight: 700; color: #f8fafc;">{p['najlepsza_pora']}</div>
+                    <div style="background-color: #050b18; border: 1.5px solid #1e293b; border-radius: 10px; padding: 10px;">
+                        <div style="font-size: 9pt; font-weight: 800; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">Najlepsza pora</div>
+                        <div style="font-size: 10.5pt; font-weight: 900; color: #ffffff;">{p['najlepsza_pora']}</div>
                     </div>
-                    <div style="background-color: #0b1329; border: 1px solid #1e293b; border-radius: 8px; padding: 8px;">
-                        <div style="font-size: 8pt; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">Czas zwiedzania</div>
-                        <div style="font-size: 10pt; font-weight: 700; color: #f8fafc;">{p['orientacyjny_czas']}</div>
+                    <div style="background-color: #050b18; border: 1.5px solid #1e293b; border-radius: 10px; padding: 10px;">
+                        <div style="font-size: 9pt; font-weight: 800; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">Czas zwiedzania</div>
+                        <div style="font-size: 11pt; font-weight: 900; color: #ffffff;">{p['orientacyjny_czas']}</div>
                     </div>
                 </div>
             </div>
@@ -2041,11 +2063,11 @@ if st.session_state.active_tab == "zabytek":
             koszt_val = p.get('koszt', '')
             if pd.notna(koszt_val) and str(koszt_val).strip() != "":
                 st.markdown(f"""
-                <div style="background-color: #111e38; border: 1px solid #1e293b; border-radius: 10px; padding: 10px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 8px;">
-                    <div style="font-size: 16px;">💶👥</div>
+                <div style="background-color: #111e38; border: 1.5px solid #1e293b; border-radius: 10px; padding: 12px; margin-bottom: 10px; display: flex; align-items: flex-start; gap: 8px;">
+                    <div style="font-size: 18px;">💶👥</div>
                     <div>
-                        <div style="font-size: 8.5pt; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">Koszt dla rodziny 2+2:</div>
-                        <div style="font-size: 10pt; color: #f8fafc; font-weight: 500;">{koszt_val}</div>
+                        <div style="font-size: 9pt; font-weight: 800; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">Koszt dla rodziny 2+2:</div>
+                        <div style="font-size: 11pt; color: #ffffff; font-weight: 800;">{koszt_val}</div>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -2053,21 +2075,17 @@ if st.session_state.active_tab == "zabytek":
             akcja_val = p.get('konieczna_akcja', '')
             if pd.notna(akcja_val) and str(akcja_val).strip() != "Brak" and str(akcja_val).strip() != "":
                 st.markdown(f"""
-                <div style="background-color: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 10px; padding: 10px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 8px;">
-                    <div style="font-size: 16px;">⚠️</div>
+                <div style="background-color: rgba(239,68,68,0.15); border: 1.5px solid rgba(239,68,68,0.5); border-radius: 10px; padding: 12px; margin-bottom: 10px; display: flex; align-items: flex-start; gap: 8px;">
+                    <div style="font-size: 18px;">⚠️</div>
                     <div>
-                        <div style="font-size: 8.5pt; font-weight: 600; color: #f87171; text-transform: uppercase; margin-bottom: 2px;">Konieczna akcja</div>
-                        <div style="font-size: 10pt; color: #f8fafc; font-weight: 500;">{akcja_val}</div>
+                        <div style="font-size: 9pt; font-weight: 800; color: #f87171; text-transform: uppercase; margin-bottom: 2px;">Konieczna akcja</div>
+                        <div style="font-size: 11pt; color: #ffffff; font-weight: 800;">{akcja_val}</div>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
 
-            adhd_val = p.get('trudnosc_adhd', '')
-            meltdown_val = p.get('potencjal_meltdownu', '')
-            strategie_val = p.get('strategie_meltdown', '')
-
-            html_wyzwania = f"""<div style="background-color: #111e38; border: 1px solid #1e293b; border-radius: 10px; padding: 12px; margin-top: 8px; margin-bottom: 8px;"><div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;"><span style="font-size: 16px;">🐂</span><span style="font-size: 10pt; font-weight: 800; color: #38bdf8; text-transform: uppercase;">Wyzwania & Rady ADHD</span></div><div style="margin-bottom: 8px;"><div style="font-size: 8.5pt; font-weight: 600; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">🧠 Trudności ADHD:</div><div style="font-size: 9.5pt; color: #cbd5e1; line-height: 1.35;">{adhd_val}</div></div><div style="margin-bottom: 8px;"><div style="font-size: 8.5pt; font-weight: 600; color: #f87171; text-transform: uppercase; margin-bottom: 2px;">⚡ Potencjał meltdownu:</div><div style="font-size: 9.5pt; color: #cbd5e1; line-height: 1.35;">{meltdown_val}</div></div><div><div style="font-size: 8.5pt; font-weight: 600; color: #4ade80; text-transform: uppercase; margin-bottom: 2px;">🛡️ Strategie ratunkowe:</div><div style="font-size: 9.5pt; color: #cbd5e1; line-height: 1.35;">{strategie_val}</div></div></div>"""
-            st.markdown(html_wyzwania, unsafe_allow_html=True)
+            # Wywołanie bezpiecznego komponentu meltdownów
+            renderuj_karty_meltdown_ux(p)
             
             if pd.notna(p['zadania_dla_dzieci']) and str(p['zadania_dla_dzieci']).strip() != "":
                 with st.expander("🧒 Zadania dla dzieci w tym miejscu"):
@@ -2076,7 +2094,7 @@ if st.session_state.active_tab == "zabytek":
             polaczenie_tekst = str(p['najlepiej_polaczyc'])
             def zamien_na_link(match):
                 nr_miejsca = match.group(1)
-                return f'<a href="?tab=zabytek&place={nr_miejsca}" target="_self" style="color: #38bdf8; font-weight: bold; text-decoration: underline;">Miejsce {nr_miejsca}</a>'
+                return f'<a href="?tab=zabytek&place={nr_miejsca}" target="_self" style="color: #38bdf8; font-weight: 900; text-decoration: underline;">Miejsce {nr_miejsca}</a>'
             
             polaczenie_przetworzone = re.sub(r'Miejsce\s+(\d+)', zamien_na_link, polaczenie_tekst, flags=re.IGNORECASE)
             st.markdown(f"**🔗 Najlepiej połączyć z:** {polaczenie_przetworzone}", unsafe_allow_html=True)
@@ -2086,7 +2104,7 @@ if st.session_state.active_tab == "zabytek":
 elif st.session_state.active_tab == "map":
     st.markdown("""
         <div class="adventure-header">
-            <div style="font-size:24px;">🗺️</div>
+            <div style="font-size:26px;">🗺️</div>
             <div>
                 <div class="adventure-title-text">CretAi • Wycieczki i Trasy</div>
             </div>
@@ -2116,8 +2134,8 @@ elif st.session_state.active_tab == "map":
                     is_visited = int(row.get('odwiedzone', 0)) == 1
                     bg_color = '#475569' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
                     
-                    icon_html = f'<div style="background-color:{bg_color};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">{num}</div>'
-                    icon = folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))
+                    icon_html = f'<div style="background-color:{bg_color};color:white;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.4);">{num}</div>'
+                    icon = folium.DivIcon(html=icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
                     folium.Marker([lat, lon], icon=icon, tooltip=f"{num}. {name}").add_to(m_all)
                 except:
                     pass
@@ -2163,7 +2181,7 @@ elif st.session_state.active_tab == "map":
 elif st.session_state.active_tab == "route":
     st.markdown("""
         <div class="adventure-header">
-            <div style="font-size:24px;">🚗</div>
+            <div style="font-size:26px;">🚗</div>
             <div>
                 <div class="adventure-title-text">CretAi • Trasa Dnia</div>
             </div>
