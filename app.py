@@ -1487,9 +1487,17 @@ elif st.session_state.active_tab == "zabytek":
         if not place_row.empty:
             p = place_row.iloc[0]
             
+            numer_m = str(p['numer_miejsca'])
+            tytul_miejsca = f"{numer_m}. {str(p['nazwa']).upper()}"
+            
+            google_search_url = f"https://www.google.com/search?q={p['nazwa']} Kreta"
+            
             st.markdown(f"""
-            <div style="background-color:#e6ded1; padding:12px; border-top:3px solid #b89b82; border-bottom:3px solid #b89b82; text-align:center; font-size:14pt; font-weight:900; text-transform:uppercase; margin-bottom:15px; color:#663223;">
-                🏛️ Miejsce {p['numer_miejsca']}. {p['nazwa']}
+            <div style="background-color: #e6ded1; border: 2px solid #b89b82; border-radius: 12px; padding: 14px 16px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.08);">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-family: Georgia, serif; font-size: 16pt; font-weight: 900; color: #663223; letter-spacing: 0.5px;">{tytul_miejsca}</span>
+                    <a href="{google_search_url}" target="_blank" style="text-decoration: none; font-size: 18px; background-color: #fcf8f2; border: 1px solid #b89b82; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1);" title="Szukaj w Google">🔍</a>
+                </div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -1503,28 +1511,54 @@ elif st.session_state.active_tab == "zabytek":
                 </div>
                 """, unsafe_allow_html=True)
 
-            numer_m = str(p['numer_miejsca'])
+            znalazles_zdjecie = False
             for ekst in ['.jpg', '.jpeg', '.png']:
                 sciezka_zdjecia = os.path.join("zdjecia", f"{numer_m}{ekst}")
                 if os.path.exists(sciezka_zdjecia):
+                    znalazles_zdjecie = True
                     st.image(sciezka_zdjecia, caption=f"{p['nazwa']}")
                     break
-
-            google_search_url = f"https://www.google.com/search?q={p['nazwa']} Kreta"
-            st.markdown(f"<p style='text-align:center;'><a href='{google_search_url}' target='_blank' style='color:#8b4513;'>🔍 Szukaj w Google</a></p>", unsafe_allow_html=True)
             
             if pd.notna(p['opis']) and str(p['opis']).strip() != "":
                 st.info(p['opis'])
-                
-            st.markdown(f"**⏰ Czas dojazdu:** {p['czas_dojazdu']}")
-            st.markdown(f"**🕒 Godziny otwarcia:** {p['godziny_otwarcia']}")
-            st.markdown(f"**🌟 Najlepsza pora:** {p['najlepsza_pora']}")
-            st.markdown(f"**⏱️ Czas zwiedzania:** {p['orientacyjny_czas']}")
-            st.markdown(f"**💶 Koszt (rodzina 2+2):** {p['koszt']}")
-            
+
+            coords_clean = str(p['wspolrzedne']).replace(" ", "") if pd.notna(p['wspolrzedne']) else "35.3,24.5"
+            gps_maps_url = f"https://www.google.com/maps/search/?api=1&query={coords_clean}"
+
+            st.markdown(f"""
+            <div style="background-color: #e6ded1; border: 2px solid #b89b82; border-radius: 12px; padding: 12px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.08);">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="background-color: #8c6a53; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items:center; justify-content:center; font-size: 13px;">📍</div>
+                        <span style="font-size: 10pt; font-weight: bold; color: #8c6a53; text-transform: uppercase; letter-spacing: 0.5px;">Lokalizacja GPS</span>
+                    </div>
+                    <a href="{gps_maps_url}" target="_blank" style="background-color: #663223; color: white; padding: 6px 14px; border-radius: 20px; font-size: 9.5pt; font-weight: bold; text-decoration: none; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">NAWIGUJ ➔</a>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div style="background-color: #fcf8f2; border: 1.5px solid #b89b82; border-radius: 10px; padding: 10px;">
+                        <div style="font-size: 8.5pt; font-weight: bold; color: #8c6a53; text-transform: uppercase; margin-bottom: 3px;">Czas dojazdu (Stravros)</div>
+                        <div style="font-size: 11pt; font-weight: bold; color: #3b2f2f;">{p['czas_dojazdu']}</div>
+                    </div>
+                    <div style="background-color: #fcf8f2; border: 1.5px solid #b89b82; border-radius: 10px; padding: 10px;">
+                        <div style="font-size: 8.5pt; font-weight: bold; color: #8c6a53; text-transform: uppercase; margin-bottom: 3px;">Godziny otwarcia</div>
+                        <div style="font-size: 11pt; font-weight: bold; color: #3b2f2f;">{p['godziny_otwarcia']}</div>
+                    </div>
+                    <div style="background-color: #fcf8f2; border: 1.5px solid #b89b82; border-radius: 10px; padding: 10px;">
+                        <div style="font-size: 8.5pt; font-weight: bold; color: #8c6a53; text-transform: uppercase; margin-bottom: 3px;">Najlepsza pora</div>
+                        <div style="font-size: 10.5pt; font-weight: bold; color: #3b2f2f;">{p['najlepsza_pora']}</div>
+                    </div>
+                    <div style="background-color: #fcf8f2; border: 1.5px solid #b89b82; border-radius: 10px; padding: 10px;">
+                        <div style="font-size: 8.5pt; font-weight: bold; color: #8c6a53; text-transform: uppercase; margin-bottom: 3px;">Czas zwiedzania</div>
+                        <div style="font-size: 11pt; font-weight: bold; color: #3b2f2f;">{p['orientacyjny_czas']}</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
             if pd.notna(p['konieczna_akcja']) and str(p['konieczna_akcja']).strip() != "Brak" and str(p['konieczna_akcja']).strip() != "":
                 st.warning(f"**! Konieczna akcja:** {p['konieczna_akcja']}")
                 
+            st.markdown(f"**💶 Koszt (rodzina 2+2):** {p['koszt']}")
             st.markdown(f"**🍽️ Zaplecze gastronomiczne:** {p['zaplecze_gastro']}")
             st.markdown(f"**🥪 Ile jedzenia:** {p['ile_jedzenia']}")
             st.markdown(f"**☀️ Ochrona przed słońcem:** {p['ochrona_slonce']}")
