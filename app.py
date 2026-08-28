@@ -275,6 +275,11 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Sprawdzenie komunikatów typu Toast po przeładowaniu strony
+if "flash_toast" in st.session_state and st.session_state["flash_toast"]:
+    st.toast(st.session_state["flash_toast"], icon="🧭")
+    st.session_state["flash_toast"] = None
+
 DOMEK_LAT = 35.5914
 DOMEK_LON = 24.0918
 
@@ -823,7 +828,7 @@ def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
             submitted = st.form_submit_button("💾 Zapisz nową notatkę", use_container_width=True)
             if submitted and nt_zawartosc:
                 dodaj_notatke(zawartosc=nt_zawartosc, typ_notatki=nt_typ, id_wycieczki=id_wycieczki, id_miejsca=id_miejsca, tytul=nt_tytul)
-                st.success("Dodano pomyślnie!")
+                st.session_state["flash_toast"] = "💾 Dodano nową notatkę!"
                 st.rerun()
 
     if df_notatki.empty:
@@ -859,7 +864,7 @@ def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
                     usun_notatke(note_id)
                     if st.session_state.editing_note_id == note_id:
                         st.session_state.editing_note_id = None
-                    st.success("Usunięto!")
+                    st.session_state["flash_toast"] = "🗑️ Usunięto notatkę!"
                     st.rerun()
 
         if tytul and str(tytul).strip():
@@ -883,7 +888,7 @@ def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
                     if st.form_submit_button("💾 Zapisz", use_container_width=True):
                         edytuj_notatke(note_id, zawartosc=nowa_tresc_ed, tytul=nowy_tytul_ed)
                         st.session_state.editing_note_id = None
-                        st.success("Zaktualizowano!")
+                        st.session_state["flash_toast"] = "💾 Zaktualizowano notatkę!"
                         st.rerun()
                 with col_cancel:
                     if st.form_submit_button("Anuluj", use_container_width=True):
@@ -985,7 +990,13 @@ def usun_wycieczke(id_wycieczki):
     conn.close()
     return f"Wycieczka #{id_wycieczki} została usunięta."
 
-def dodaj_krok_do_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis):
+def dodaj_krok_do_wycieczki(
+    id_wycieczki, krok_wycieczki, nazwa, wspolrzedne="35.3,24.5", 
+    okienko_zwiedzania="10:00 - 12:00", godzina_ewakuacji="12:00", 
+    czerwona_strefa_ostrzezenie="Unikać upału", strefa_luzu_i_regeneracji="Cień", 
+    podsumowanie_taktyki="Spokojne tempo", potencjal_meltdownu="Średni", 
+    strategie_meltdown="Okulary i woda", opis="Brak opisu"
+):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('''
@@ -995,7 +1006,12 @@ def dodaj_krok_do_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, ok
             strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, 
             strategie_meltdown, opis
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (str(id_wycieczki), str(krok_wycieczki), nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis))
+    ''', (
+        str(id_wycieczki), str(krok_wycieczki), str(nazwa), str(wspolrzedne), 
+        str(okienko_zwiedzania), str(godzina_ewakuacji), str(czerwona_strefa_ostrzezenie), 
+        str(strefa_luzu_i_regeneracji), str(podsumowanie_taktyki), str(potencjal_meltdownu), 
+        str(strategie_meltdown), str(opis)
+    ))
     conn.commit()
     conn.close()
     return f"Dodano krok nr {krok_wycieczki} ({nazwa}) do wycieczki #{id_wycieczki}!"
@@ -1284,6 +1300,23 @@ edytuj_wycieczke_tool = types.FunctionDeclaration(
     ),
 )
 
+dodaj_krok_tool = types.FunctionDeclaration(
+    name="dodaj_krok_do_wycieczki",
+    description="Dodaje nowy krok (punkt programu) do wskazanej wycieczki.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki (np. '1' lub '2')"),
+            "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer kolejny kroku (np. '3')"),
+            "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca / kroku"),
+            "wspolrzedne": types.Schema(type=types.Type.STRING, description="Współrzędne GPS (np. '35.2980, 25.1631')"),
+            "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Godziny np. '10:00 - 12:00'"),
+            "opis": types.Schema(type=types.Type.STRING, description="Krótki opis"),
+        },
+        required=["id_wycieczki", "krok_wycieczki", "nazwa"]
+    ),
+)
+
 aktualizuj_tool = types.FunctionDeclaration(
     name="aktualizuj_miejsce",
     description="Aktualizuje informacje o miejscu na Krecie.",
@@ -1332,28 +1365,6 @@ usun_wycieczke_tool = types.FunctionDeclaration(
         type=types.Type.OBJECT,
         properties={"id_wycieczki": types.Schema(type=types.Type.STRING)},
         required=["id_wycieczki"]
-    ),
-)
-dodaj_krok_tool = types.FunctionDeclaration(
-    name="dodaj_krok_do_wycieczki",
-    description="Dodaje krok do wycieczki.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING),
-            "krok_wycieczki": types.Schema(type=types.Type.STRING),
-            "nazwa": types.Schema(type=types.Type.STRING),
-            "wspolrzedne": types.Schema(type=types.Type.STRING),
-            "okienko_zwiedzania": types.Schema(type=types.Type.STRING),
-            "godzina_ewakuacji": types.Schema(type=types.Type.STRING),
-            "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING),
-            "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING),
-            "podsumowanie_taktyki": types.Schema(type=types.Type.STRING),
-            "potencjal_meltdownu": types.Schema(type=types.Type.STRING),
-            "strategie_meltdown": types.Schema(type=types.Type.STRING),
-            "opis": types.Schema(type=types.Type.STRING),
-        },
-        required=["id_wycieczki", "krok_wycieczki", "nazwa", "wspolrzedne"]
     ),
 )
 edytuj_krok_tool = types.FunctionDeclaration(
@@ -1433,9 +1444,9 @@ usun_checklist_tool = types.FunctionDeclaration(
 )
 
 cretai_tools = types.Tool(function_declarations=[
-    dodaj_notatke_tool, dodaj_miejsce_tool, edytuj_wycieczke_tool, aktualizuj_tool, usun_miejsce_tool, 
-    utworz_nowa_wycieczke_tool, usun_wycieczke_tool, 
-    dodaj_krok_tool, edytuj_krok_tool, usun_krok_tool, dodaj_checklist_tool, 
+    dodaj_notatke_tool, dodaj_miejsce_tool, edytuj_wycieczke_tool, dodaj_krok_tool, 
+    aktualizuj_tool, usun_miejsce_tool, utworz_nowa_wycieczke_tool, usun_wycieczke_tool, 
+    edytuj_krok_tool, usun_krok_tool, dodaj_checklist_tool, 
     edytuj_checklist_tool, usun_checklist_tool
 ])
 
@@ -1448,7 +1459,6 @@ with st.sidebar:
     
     st.header("⚙️ Ustawienia Asystenta")
     
-    # Pobieranie zapisanego klucza dla danego rodzica z bazy SQLite
     zapisany_klucz = pobierz_klucz_api_z_db(aktualny_uzytkownik)
     
     api_key_input = st.text_input(f"Klucz API Google Gemini ({aktualny_uzytkownik})", value=zapisany_klucz, type="password", key=f"api_key_{aktualny_uzytkownik}")
@@ -1480,12 +1490,17 @@ def renderuj_globalny_czat_ai(uzytkownik):
     st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
     
     with st.expander(f"💬 Asystent AI ({uzytkownik})", expanded=False):
-        col_h1, col_h2 = st.columns([4, 1])
+        col_h1, col_h2, col_h3 = st.columns([3, 1, 1])
         with col_h1:
-            st.markdown(f"<span style='font-size: 9pt; color: #38bdf8; font-weight: 700;'>🧠 TRYB ADHD • {uzytkownik}</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='font-size: 8.5pt; color: #38bdf8; font-weight: 700;'>🧠 TRYB ADHD • {uzytkownik}</span>", unsafe_allow_html=True)
         with col_h2:
-            if st.button("🔄 Nowy", key=f"btn_new_chat_{uzytkownik}", use_container_width=True, help="Wyczyść historię"):
+            if st.button("🔄 Odśwież", key=f"btn_refresh_{uzytkownik}", use_container_width=True, help="Odśwież widok aplikacji"):
+                st.session_state["flash_toast"] = "🔄 Widok został odświeżony!"
+                st.rerun()
+        with col_h3:
+            if st.button("🗑️ Nowy", key=f"btn_new_chat_{uzytkownik}", use_container_width=True, help="Wyczyść historię"):
                 wyczysc_historie_czatu_w_db(uzytkownik)
+                st.session_state["flash_toast"] = "🗑️ Historia czatu wyczyszczona."
                 st.rerun()
 
         if not gemini_api_key:
@@ -1503,7 +1518,7 @@ Dzisiejsza data to: {dzisiaj_str}.
 - Masz wgląd w bazę danych oraz w notatki i wskazówki wpisane przez użytkownika.
 - Pamiętaj o pełnej kontroli czasu, ewakuacji przed upałem i redukcji stresu.
 - Chronisz miejsca z flagą Base = true.
-- Możesz dodawać nowe miejsca, notatki oraz ustawiać planowaną datę wycieczki (pamiętaj, że data nie może być wcześniejsza niż dzisiejsza {dzisiaj_str})."""
+- Możesz dodawać nowe miejsca, notatki, planowane daty oraz KROKI DO WYCIECZEK za pomocą narzędzia dodaj_krok_do_wycieczki."""
 
         chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
 
@@ -1577,6 +1592,8 @@ Dzisiejsza data to: {dzisiaj_str}.
                                     wynik_bazy = dodaj_miejsce(**args)
                                 elif call_name == "edytuj_wycieczke":
                                     wynik_bazy = edytuj_wycieczke(**args)
+                                elif call_name == "dodaj_krok_do_wycieczki":
+                                    wynik_bazy = dodaj_krok_do_wycieczki(**args)
                                 elif call_name == "aktualizuj_miejsce":
                                     wynik_bazy = aktualizuj_miejsce(**args)
                                 elif call_name == "usun_miejsce":
@@ -1585,8 +1602,6 @@ Dzisiejsza data to: {dzisiaj_str}.
                                     wynik_bazy = utworz_nowa_wycieczke(**args)
                                 elif call_name == "usun_wycieczke":
                                     wynik_bazy = usun_wycieczke(**args)
-                                elif call_name == "dodaj_krok_do_wycieczki":
-                                    wynik_bazy = dodaj_krok_do_wycieczki(**args)
                                 elif call_name == "edytuj_krok_w_wycieczce":
                                     wynik_bazy = edytuj_krok_w_wycieczce(**args)
                                 elif call_name == "usun_krok_z_wycieczki":
@@ -1624,6 +1639,7 @@ Dzisiejsza data to: {dzisiaj_str}.
                         zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
 
                     st.markdown(assistant_reply)
+                    st.session_state["flash_toast"] = "✨ Asystent zaktualizował dane!"
                     st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)
@@ -1638,7 +1654,7 @@ if "place" in st.query_params:
     st.session_state.active_tab = "zabytek"
 
 if "active_place_id" not in st.session_state:
-    st.session_state.active_place_id = "1"
+    st.session_state.active_place_id = None
 
 COLORS = {
     'must have': '#f43f5e',
@@ -1700,7 +1716,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
                     else:
                         str_data = nowa_data_input.strftime("%Y-%m-%d")
                         edytuj_wycieczke(wycieczka_id, planowana_data=str_data)
-                        st.success("Zapisano!")
+                        st.session_state["flash_toast"] = f"📅 Zapisano datę wycieczki: {str_data}"
                         st.rerun()
 
         if pokaz_pogode:
@@ -1827,7 +1843,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
         with col_btn1:
             if st.button(f"🎯 Ustaw aktywną", key=f"btn_akt_{wycieczka_id}", use_container_width=True):
                 ustaw_aktywna_wycieczke_id(wycieczka_id)
-                st.success("Ustawiono!")
+                st.session_state["flash_toast"] = f"🎯 Wycieczka #{wycieczka_id} została ustawiona jako aktywna!"
                 st.rerun()
         with col_btn2:
             is_odbyta = int(w_gen.get('odbyta', 0)) == 1
@@ -1836,7 +1852,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
             else:
                 if st.button(f"✅ Oznacz przebytą", key=f"btn_odbyte_{wycieczka_id}", use_container_width=True):
                     oznacz_wycieczke_i_miejsca_jako_odbyte(wycieczka_id)
-                    st.success("Oznaczono!")
+                    st.session_state["flash_toast"] = f"✅ Wycieczka #{wycieczka_id} i powiązane miejsca oznaczone jako odbyte!"
                     st.rerun()
 
         renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
@@ -1872,7 +1888,55 @@ if st.session_state.active_tab == "zabytek":
     """, unsafe_allow_html=True)
     
     st.markdown("### 🗺️ Nasze miejsca")
-    m = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB dark_matter")
+    
+    # Sortowanie miejsc po numerze (konwersja na int tam gdzie to możliwe dla poprawnej kolejności numerycznej)
+    df_miejsca_sorted = df_miejsca.copy()
+    df_miejsca_sorted['sort_key'] = pd.to_numeric(df_miejsca_sorted['numer_miejsca'], errors='coerce')
+    df_miejsca_sorted = df_miejsca_sorted.sort_values(by=['sort_key', 'numer_miejsca']).drop(columns=['sort_key'])
+
+    miejsca_opcje_lista = [f"{r['numer_miejsca']}. {r['nazwa']}" for _, r in df_miejsca_sorted.iterrows()]
+    
+    def aktualizuj_wybrane_miejsce():
+        wybrany_tekst = st.session_state.selected_place_sb
+        if wybrany_tekst:
+            wybrany_num = wybrany_tekst.split(".")[0].strip()
+            st.session_state.active_place_id = wybrany_num
+        else:
+            st.session_state.active_place_id = None
+
+    # Pobieranie aktualnego indeksu dla selectboxa na podstawie session_state
+    current_selection_index = None
+    if st.session_state.active_place_id:
+        match_idx = [i for i, opt in enumerate(miejsca_opcje_lista) if opt.startswith(f"{st.session_state.active_place_id}.")]
+        if match_idx:
+            current_selection_index = match_idx[0] + 1  # +1 ze względu na pustą opcję na początku
+
+    selected_option = st.selectbox(
+        "Wybierz miejsce:", 
+        options=[None] + miejsca_opcje_lista,
+        index=current_selection_index,
+        format_func=lambda x: "🌐 Pokaż całą mapę (wybierz miejsce...)" if x is None else x,
+        key="selected_place_sb", 
+        on_change=aktualizuj_wybrane_miejsce,
+        label_visibility="collapsed"
+    )
+
+    # Ustalanie środka i przybliżenia mapy (domyślnie cała Kreta)
+    map_lat, map_lon, map_zoom = 35.3, 24.5, 9
+    if st.session_state.active_place_id:
+        active_row = df_miejsca[df_miejsca['numer_miejsca'] == str(st.session_state.active_place_id)]
+        if not active_row.empty:
+            coords_str = str(active_row.iloc[0]['wspolrzedne'])
+            if ',' in coords_str:
+                try:
+                    parts = coords_str.split(',')
+                    map_lat = float(parts[0].strip())
+                    map_lon = float(parts[1].strip())
+                    map_zoom = 14
+                except:
+                    pass
+
+    m = folium.Map(location=[map_lat, map_lon], zoom_start=map_zoom, tiles="CartoDB dark_matter")
     dodaj_marker_domku(m)
 
     for _, row in df_miejsca.iterrows():
@@ -1895,25 +1959,6 @@ if st.session_state.active_tab == "zabytek":
                 pass
 
     map_data = st_folium(m, width="100%", height=300)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("##### 📍 Szybki wybór miejsca z listy:")
-    
-    miejsca_opcje_lista = [f"{r['numer_miejsca']}. {r['nazwa']}" for _, r in df_miejsca.iterrows()]
-    
-    def aktualizuj_wybrane_miejsce():
-        wybrany_tekst = st.session_state.selected_place_sb
-        if wybrany_tekst:
-            wybrany_num = wybrany_tekst.split(".")[0].strip()
-            st.session_state.active_place_id = wybrany_num
-
-    st.selectbox(
-        "Wybierz miejsce:", 
-        options=miejsca_opcje_lista, 
-        key="selected_place_sb", 
-        on_change=aktualizuj_wybrane_miejsce,
-        label_visibility="collapsed"
-    )
 
     if map_data and map_data.get("last_object_clicked_tooltip"):
         clicked_tooltip = map_data["last_object_clicked_tooltip"]
