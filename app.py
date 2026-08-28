@@ -532,7 +532,7 @@ def zapisz_ustawienia_w_db(uzytkownik, api_key, dostawca_ai, model_ai):
     conn.commit()
     conn.close()
 
-# --- FUNKCJE POBIERANIA POGODY (wttr.in) ---
+# --- FUNKCJE POBIERANIA POGODY (wttr.in) ORAZ OBEJŚCIE DLA ASYSTENTA AI ---
 @st.cache_data(ttl=3600)
 def pobierz_prognoze_pogody(lat, lon, data_docelowa):
     try:
@@ -549,6 +549,31 @@ def pobierz_prognoze_pogody(lat, lon, data_docelowa):
     except:
         pass
     return None
+
+def sprawdz_pogode_w_locie(szerokosc_geograficzna, dlugosc_geograficzna, data_wspolrzedne="dzisiaj"):
+    """Narzędzie dla asystenta AI pozwalające sprawdzić aktualną prognozę pogody online dla dowolnych współrzędnych."""
+    try:
+        lat = float(szerokosc_geograficzna)
+        lon = float(dlugosc_geograficzna)
+    except:
+        return "Błąd: Niepoprawne współrzędne geograficzne."
+    
+    docelowa_data = str(data_wspolrzedne).strip()
+    if docelowa_data.lower() in ["dzisiaj", "today", ""]:
+        docelowa_data = date.today().strftime("%Y-%m-%d")
+
+    prognoza = pobierz_prognoze_pogody(lat, lon, docelowa_data)
+    if not prognoza:
+        return f"Nie udało się pobrać pogody dla współrzędnych {lat}, {lon} na dzień {docelowa_data}."
+    
+    max_t = prognoza.get('maxtempC', 'brak')
+    min_t = prognoza.get('mintempC', 'brak')
+    hourly = prognoza.get('hourly', [])
+    opis = "Brak szczegółów"
+    if hourly:
+        opis = hourly[0].get('weatherDesc', [{}])[0].get('value', 'Brak opisu')
+
+    return f"Prognoza pogody dla współrzędnych ({lat}, {lon}) na dzień {docelowa_data}: Maks: {max_t}°C, Min: {min_t}°C, Stan: {opis}."
 
 def renderuj_pogode_dla_kroku(wspolrzedne, planowana_data, okienko_czasowe):
     if not planowana_data or not str(planowana_data).strip():
@@ -1117,7 +1142,7 @@ def dodaj_marker_domku(m):
     domek_icon = folium.DivIcon(html=domek_icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=domek_icon, tooltip="Nasz Domek").add_to(m)
 
-# --- NARZĘDZIA AI (FUNCTIONS DLA GEMINI) ---
+# --- NARZĘDZIA AI (FUNCTIONS DLA GEMINI WRAZ Z FUNKCJĄ POGODOWĄ W LOCIE) ---
 dodaj_notatke_tool = types.FunctionDeclaration(
     name="dodaj_notatke",
     description="Dodaje nową notatkę, link lub listę do wycieczki lub miejsca.",
@@ -1291,11 +1316,26 @@ usun_krok_wycieczki_tool = types.FunctionDeclaration(
     ),
 )
 
+sprawdz_pogode_w_locie_tool = types.FunctionDeclaration(
+    name="sprawdz_pogode_w_locie",
+    description="Pobiera aktualną prognozę pogody online dla podanych współrzędnych i daty w formacie RRRR-MM-DD.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "szerokosc_geograficzna": types.Schema(type=types.Type.STRING, description="Szerokość geograficzna np. '35.2980'"),
+            "dlugosc_geograficzna": types.Schema(type=types.Type.STRING, description="Długość geograficzna np. '25.1631'"),
+            "data_wspolrzedne": types.Schema(type=types.Type.STRING, description="Data w formacie RRRR-MM-DD lub słowo 'dzisiaj'"),
+        },
+        required=["szerokosc_geograficzna", "dlugosc_geograficzna"]
+    ),
+)
+
 cretai_tools = types.Tool(function_declarations=[
     dodaj_notatke_tool, edytuj_notatke_tool, usun_notatke_tool, 
     edytuj_miejsce_tool, usun_miejsce_tool, edytuj_wycieczke_tool, 
     dodaj_zakup_tool, edytuj_zakup_tool, usun_zakup_tool, 
-    dodaj_krok_wycieczki_tool, edytuj_krok_wycieczki_tool, usun_krok_wycieczki_tool
+    dodaj_krok_wycieczki_tool, edytuj_krok_wycieczki_tool, usun_krok_wycieczki_tool,
+    sprawdz_pogode_w_locie_tool
 ])
 
 def wykonaj_narzedzie_bazy(call_name, args):
@@ -1323,6 +1363,8 @@ def wykonaj_narzedzie_bazy(call_name, args):
         return edytuj_krok_wycieczki(**args)
     elif call_name == "usun_krok_wycieczki":
         return usun_krok_wycieczki(**args)
+    elif call_name == "sprawdz_pogode_w_locie":
+        return sprawdz_pogode_w_locie(**args)
     return "Wykonano."
 
 # --- W PANELU BOCZNYM: WYBÓR UŻYTKOWNIKA, DOSTAWCY AI I KLUCZA ---
@@ -1393,6 +1435,7 @@ def renderuj_globalny_czat_ai(uzytkownik):
 Dzisiejsza data to: {dzisiaj_str}.
 {zewnetrzny_kontekst}
 - Masz na stałe wgląd w lokalizację domku ({DOMEK_LAT}, {DOMEK_LON}) oraz sklepu obok domku ({SKLEP_LAT}, {SKLEP_LON}).
+- Masz do dyspozycji funkcję `sprawdz_pogode_w_locie` w swoich narzędziach, dzięki której możesz odpytywać serwis pogodowy o aktualne warunki online. Korzystaj z niej, gdy użytkownik pyta o pogodę!
 - Pamiętaj o żelaznej zasadzie: miejsca z flagą Base=true są bezwzględnie chronione i nie wolno ich usuwać ani modyfikować ich flag bazowych.
 - Zawsze przed edycją lub usunięciem kroku, zapoznaj się z mapą ID kroków w kontekście bazy, aby upewnić się, że operujesz na właściwym kroku.
 - Pamiętaj o pełnej kontroli czasu, ewakuacji przed upałem i redukcji stresu."""
@@ -1400,10 +1443,14 @@ Dzisiejsza data to: {dzisiaj_str}.
         chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
 
         chat_container = st.container(height=240)
+        ostatnia_wiadomosc_modelu = ""
         with chat_container:
             for message in chat_historia_z_db:
                 role = message["role"]
                 content = message["content"]
+                if role == "model":
+                    ostatnia_wiadomosc_modelu = content if isinstance(content, str) else "".join([p.text for p in content.parts if hasattr(p, "text") and p.text])
+                
                 with st.chat_message(role):
                     if isinstance(content, str):
                         st.markdown(content)
@@ -1411,6 +1458,17 @@ Dzisiejsza data to: {dzisiaj_str}.
                         for p in content.parts:
                             if hasattr(p, "text") and p.text:
                                 st.markdown(p.text)
+
+        if ostatnia_wiadomosc_modelu:
+            czysty_tekst = json.dumps(ostatnia_wiadomosc_modelu)
+            st.components.v1.html(f"""
+                <div style="text-align: right; margin-bottom: 6px;">
+                    <button onclick="navigator.clipboard.writeText({czysty_tekst}); alert('Skopiowano ostatnią odpowiedź do schowka!');" 
+                            style="background-color: #111e38; color: #38bdf8; border: 1.5px solid #38bdf8; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; cursor: pointer;">
+                        📋 Kopiuj ostatnią odpowiedź
+                    </button>
+                </div>
+            """, height=35)
 
         prompt = st.chat_input(f"Pytanie do AI ({uzytkownik})...", key=f"chat_input_{uzytkownik}")
         if prompt:
@@ -1968,7 +2026,7 @@ if st.session_state.active_tab == "zabytek":
 
             renderuj_karty_meltdown_ux(p)
             
-            if pd.notna(p['zadania_dla_dzieci']) and str(p['zadania_dlogie_dzieci']).strip() != "" if 'zadania_dlogie_dzieci' in p else pd.notna(p['zadania_dla_dzieci']) and str(p['zadania_dla_dzieci']).strip() != "":
+            if pd.notna(p['zadania_dla_dzieci']) and str(p['zadania_dla_dzieci']).strip() != "":
                 with st.expander("🧒 Zadania dla dzieci w tym miejscu"):
                     renderuj_zadania_dzieci_expander(p['zadania_dla_dzieci'], p['numer_miejsca'])
             
