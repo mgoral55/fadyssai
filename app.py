@@ -42,7 +42,7 @@ st.markdown("""
         margin-bottom: 0.25rem;
     }
     
-    /* Belka tytułowa z wektorowym SVG logiem */
+    /* Belka tytułowa z logiem z pliku */
     .adventure-header {
         background: linear-gradient(135deg, #111e38 0%, #1e293b 100%);
         border: 1.5px solid #38bdf8;
@@ -60,11 +60,6 @@ st.markdown("""
         color: #f8fafc;
         letter-spacing: 0.03em;
         text-transform: uppercase;
-    }
-    .adventure-subtitle {
-        font-size: 0.75rem;
-        color: #38bdf8;
-        font-weight: 600;
     }
 
     /* Pasek nawigacji dolnej */
@@ -1088,7 +1083,7 @@ if "place" in st.query_params:
     st.session_state.active_tab = "zabytek"
 
 if "active_place_id" not in st.session_state:
-    st.session_state.active_place_id = None
+    st.session_state.active_place_id = "1"
 
 COLORS = {
     'must have': '#f43f5e',
@@ -1323,41 +1318,61 @@ if st.session_state.active_tab == "chat":
     renderuj_sekcje_czatu_ai("tab_chat")
 
 elif st.session_state.active_tab == "zabytek":
-    svg_logo = """
-    <svg width="40" height="40" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect width="100" height="100" rx="20" fill="#0b1329"/>
-        <path d="M30 65C30 50 45 45 50 35C55 45 70 50 70 65" stroke="#38bdf8" stroke-width="6" stroke-linecap="round"/>
-        <circle cx="50" cy="30" r="12" fill="#2dd4bf"/>
-        <path d="M42 45L58 45" stroke="#f43f5e" stroke-width="6" stroke-linecap="round"/>
-    </svg>
-    """
-    svg_base64 = base64.b64encode(svg_logo.encode("utf-8")).decode("utf-8")
+    # Wczytanie logo.png z dysku i zakodowanie do Base64
+    logo_b64 = ""
+    if os.path.exists("logo.png"):
+        with open("logo.png", "rb") as f:
+            logo_b64 = base64.b64encode(f.read()).decode("utf-8")
 
+    logo_img_tag = f'<img src="data:image/png;base64,{logo_b64}" style="width:40px;height:40px;border-radius:8px;object-fit:cover;">' if logo_b64 else '<div style="font-size:24px;">🧭</div>'
+
+    # Nagłówek bez podtytułu
     st.markdown(f"""
         <div class="adventure-header">
-            <img src="data:image/svg+xml;base64,{svg_base64}" style="width:40px;height:40px;border-radius:8px;">
+            {logo_img_tag}
             <div>
                 <div class="adventure-title-text">OdyssAi • Kreta</div>
-                <div class="adventure-subtitle">Przewodnik wyprawy z duchem przygody</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
     
-    list_options_zabytek = ["-- Wybierz miejsce z listy lub mapy --"] + list(df_miejsca['numer_miejsca'].astype(str) + ". " + df_miejsca['nazwa'])
-    curr_zabytek_idx = 0
-    if st.session_state.active_place_id and st.session_state.active_place_id.isdigit():
-        matching_z = [i for i, opt in enumerate(list_options_zabytek) if opt.startswith(st.session_state.active_place_id + ".")]
-        if matching_z:
-            curr_zabytek_idx = matching_z[0]
+    # --- MAPA NA SAMYM GÓRZE ---
+    st.markdown("### 🗺️ Mapa lokalizacji")
+    m = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB dark_matter")
+    dodaj_marker_domku(m)
 
-    wybrany_zabytek_main = st.selectbox("Wybierz miejsce:", options=list_options_zabytek, index=curr_zabytek_idx, key="main_zabytek_sb")
-    if wybrany_zabytek_main != "-- Wybierz miejsce z listy lub mapy --":
-        chosen_id_m = wybrany_zabytek_main.split(". ")[0]
-        if chosen_id_m != st.session_state.active_place_id:
-            st.session_state.active_place_id = chosen_id_m
-            st.rerun()
+    for _, row in df_miejsca.iterrows():
+        coords = str(row['wspolrzedne'])
+        if ',' in coords:
+            try:
+                parts = coords.split(',')
+                lat = float(parts[0].strip())
+                lon = float(parts[1].strip())
+                name = row['nazwa']
+                num = str(row['numer_miejsca'])
+                typ_raw = str(row.get('typ', '')).strip().lower()
+                is_visited = int(row.get('odwiedzone', 0)) == 1
+                bg_color = '#475569' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
+                
+                icon_html = f'<div style="background-color:{bg_color};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">{num}</div>'
+                icon = folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))
+                folium.Marker([lat, lon], icon=icon, tooltip=f"{num}. {name}").add_to(m)
+            except:
+                pass
 
-    # --- POPRAWKA UX: Szczegóły miejsca wyświetlane od razu POD selectboxem (z automatu widoczne na telefonie) ---
+    map_data = st_folium(m, width="100%", height=300)
+
+    if map_data and map_data.get("last_object_clicked_tooltip"):
+        clicked_tooltip = map_data["last_object_clicked_tooltip"]
+        if "." in clicked_tooltip:
+            clicked_id = clicked_tooltip.split(".")[0].strip()
+            if clicked_id.isdigit() and clicked_id != st.session_state.active_place_id:
+                st.session_state.active_place_id = clicked_id
+                st.rerun()
+
+    st.markdown("---")
+
+    # --- NAGŁÓWEK Z NAZWĄ MIEJSCA BEZPOŚREDNIO POD MAPĄ ORAZ JEGO SZCZEGÓŁY ---
     if st.session_state.active_place_id:
         place_row = df_miejsca[df_miejsca['numer_miejsca'] == str(st.session_state.active_place_id)]
         
@@ -1468,41 +1483,6 @@ elif st.session_state.active_tab == "zabytek":
             
             polaczenie_przetworzone = re.sub(r'Miejsce\s+(\d+)', zamien_na_link, polaczenie_tekst, flags=re.IGNORECASE)
             st.markdown(f"**🔗 Najlepiej połączyć z:** {polaczenie_przetworzone}", unsafe_allow_html=True)
-
-    # Mapa przeniesiona pod karty szczegółów
-    st.markdown("---")
-    st.markdown("### 🗺️ Mapa lokalizacji")
-    m = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB dark_matter")
-    dodaj_marker_domku(m)
-
-    for _, row in df_miejsca.iterrows():
-        coords = str(row['wspolrzedne'])
-        if ',' in coords:
-            try:
-                parts = coords.split(',')
-                lat = float(parts[0].strip())
-                lon = float(parts[1].strip())
-                name = row['nazwa']
-                num = str(row['numer_miejsca'])
-                typ_raw = str(row.get('typ', '')).strip().lower()
-                is_visited = int(row.get('odwiedzone', 0)) == 1
-                bg_color = '#475569' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
-                
-                icon_html = f'<div style="background-color:{bg_color};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">{num}</div>'
-                icon = folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))
-                folium.Marker([lat, lon], icon=icon, tooltip=f"{num}. {name}").add_to(m)
-            except:
-                pass
-
-    map_data = st_folium(m, width="100%", height=300)
-
-    if map_data and map_data.get("last_object_clicked_tooltip"):
-        clicked_tooltip = map_data["last_object_clicked_tooltip"]
-        if "." in clicked_tooltip:
-            clicked_id = clicked_tooltip.split(".")[0].strip()
-            if clicked_id.isdigit() and clicked_id != st.session_state.active_place_id:
-                st.session_state.active_place_id = clicked_id
-                st.rerun()
 
     renderuj_sekcje_czatu_ai("tab_zabytek")
 
