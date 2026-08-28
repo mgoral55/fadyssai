@@ -10,7 +10,7 @@ import urllib.request
 import json
 import re
 import base64
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 # Próba zaimportowania Anthropic SDK dla kolegi używającego Claude'a
 try:
@@ -550,7 +550,7 @@ def pobierz_prognoze_pogody(lat, lon, data_docelowa):
         pass
     return None
 
-def sprawdz_pogode_w_locie(szerokosc_geograficzna, dlugosc_geograficzna, data_wspolrzedne="dzisiaj"):
+def sprawdź_pogodę_w_locie(szerokosc_geograficzna, dlugosc_geograficzna, data_wspolrzedne="dzisiaj"):
     """Narzędzie dla asystenta AI pozwalające sprawdzić aktualną prognozę pogody online dla dowolnych współrzędnych."""
     try:
         lat = float(szerokosc_geograficzna)
@@ -672,7 +672,7 @@ def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
         ostrzezenia.append(f"🔥 Ekstremalny upał! Maksymalna temperatura sięgnie {max_temp}°C. Bezwzględnie zadbaj o nawodnienie i ochronę przed słońcem.")
 
     st.markdown(f"""
-        <div style="background-color: #111e38; border: 2px solid {'#ef4444' if ostrzezenia else '#38bdf8'}; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.4);">
+        <div style="background-color: #111e38; border: 2.5px solid {'#ef4444' if ostrzezenia else '#38bdf8'}; border-radius: 12px; padding: 14px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.4);">
             <div style="font-size: 10.5pt; font-weight: 900; color: {'#f87171' if ostrzezenia else '#38bdf8'}; margin-bottom: 6px; text-transform: uppercase;">
                 📊 Podsumowanie pogody dla całej wycieczki ({planowana_data})
             </div>
@@ -1364,7 +1364,7 @@ def wykonaj_narzedzie_bazy(call_name, args):
     elif call_name == "usun_krok_wycieczki":
         return usun_krok_wycieczki(**args)
     elif call_name == "sprawdz_pogode_w_locie":
-        return sprawdz_pogode_w_locie(**args)
+        return sprawdź_pogodę_w_locie(**args)
     return "Wykonano."
 
 # --- W PANELU BOCZNYM: WYBÓR UŻYTKOWNIKA, DOSTAWCY AI I KLUCZA ---
@@ -1624,7 +1624,8 @@ def renderuj_karty_meltdown_ux(p):
 def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
     conn = sqlite3.connect('cretai.db')
     wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
-    kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
+    # Poprawione sortowanie: alfanumeryczne lub po dacie/czasie rozpoczęcia okienka
+    kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY okienko_zwiedzania ASC', conn, params=(str(wycieczka_id),))
     conn.close()
     
     if not wycieczka_row.empty:
@@ -1635,7 +1636,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
             planowana_data_val = ""
         
         st.markdown(f"""
-        <div style="background-color:#111e38; padding:12px; border:2px solid #38bdf8; border-radius:12px; text-align:center; font-size:12pt; font-weight:900; text-transform:uppercase; margin-bottom:10px; color:#38bdf8; box-shadow: 0 4px 12px rgba(56,189,248,0.2);">
+        <div style="background-color:#111e38; padding:12px; border:2.5px solid #38bdf8; border-radius:12px; text-align:center; font-size:12pt; font-weight:900; text-transform:uppercase; margin-bottom:10px; color:#38bdf8; box-shadow: 0 4px 12px rgba(56,189,248,0.2);">
             {tytul_w}
         </div>
         """, unsafe_allow_html=True)
