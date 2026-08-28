@@ -50,6 +50,16 @@ st.markdown("""
         margin-bottom: 0.35rem;
     }
     
+    /* Poprawka widoczności wpisywanego tekstu w polach input / czacie (biel na ciemnym tle) */
+    input, textarea, [data-baseweb="input"] input, [data-baseweb="base-input"] input, .stChatInput input {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+    }
+    ::placeholder {
+        color: #94a3b8 !important;
+        opacity: 1 !important;
+    }
+
     /* Belka tytułowa z logiem z pliku */
     .adventure-header {
         background: linear-gradient(135deg, #111e38 0%, #1e293b 100%);
@@ -292,6 +302,8 @@ if "flash_toast" in st.session_state and st.session_state["flash_toast"]:
 
 DOMEK_LAT = 35.5914
 DOMEK_LON = 24.0918
+SKLEP_LAT = 35.586222
+SKLEP_LON = 24.091861
 
 def init_db():
     conn = sqlite3.connect('cretai.db')
@@ -372,43 +384,6 @@ def init_db():
         )
     ''')
 
-    try:
-        cursor.execute("ALTER TABLE miejsca ADD COLUMN odwiedzone INTEGER DEFAULT 0")
-    except:
-        pass
-    try:
-        cursor.execute("ALTER TABLE miejsca ADD COLUMN Base TEXT DEFAULT 'false'")
-    except:
-        pass
-    try:
-        cursor.execute("ALTER TABLE wycieczka ADD COLUMN odbyta INTEGER DEFAULT 0")
-    except:
-        pass
-    try:
-        cursor.execute("ALTER TABLE wycieczka ADD COLUMN pobudka TEXT")
-    except:
-        pass
-    try:
-        cursor.execute("ALTER TABLE wycieczka ADD COLUMN czas_wyjazdu TEXT")
-    except:
-        pass
-    try:
-        cursor.execute("ALTER TABLE wycieczka ADD COLUMN planowana_data TEXT")
-    except:
-        pass
-    try:
-        cursor.execute("ALTER TABLE czat_historia ADD COLUMN uzytkownik TEXT")
-    except:
-        pass
-    try:
-        cursor.execute("ALTER TABLE uzytkownik_ustawienia ADD COLUMN dostawca_ai TEXT DEFAULT 'Google Gemini'")
-    except:
-        pass
-    try:
-        cursor.execute("ALTER TABLE uzytkownik_ustawienia ADD COLUMN model_ai TEXT DEFAULT 'gemini-3.1-flash-lite'")
-    except:
-        pass
-
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS krok_wycieczki (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -424,6 +399,17 @@ def init_db():
             potencjal_meltdownu TEXT,
             strategie_meltdown TEXT,
             opis TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS zakupy (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_kroku INTEGER,
+            nazwa_produktu TEXT NOT NULL,
+            ilosc TEXT,
+            kupione INTEGER DEFAULT 0,
+            FOREIGN KEY (id_kroku) REFERENCES krok_wycieczki(id) ON DELETE CASCADE
         )
     ''')
 
@@ -519,58 +505,6 @@ def init_db():
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', kroki_w1)
-
-        cursor.execute("INSERT INTO checklist (id_wycieczki, typ) VALUES ('1', 'sprzęt')")
-        ch1_s = cursor.lastrowid
-        cursor.executemany("INSERT INTO checklist_item (id_checklisty, nazwa, ilosc) VALUES (?, ?, ?)", [
-            (ch1_s, "iPad + aplikacja 3D", "1"),
-            (ch1_s, "Okulary przeciwsłoneczne", "4")
-        ])
-
-        cursor.execute("INSERT INTO checklist (id_wycieczki, typ) VALUES ('1', 'jedzenie')")
-        ch1_j = cursor.lastrowid
-        cursor.executemany("INSERT INTO checklist_item (id_checklisty, nazwa, ilosc) VALUES (?, ?, ?)", [
-            (ch1_j, "Woda 0.5L", "4"),
-            (ch1_j, "Musy owocowe", "6")
-        ])
-
-        cursor.execute('''
-            INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, planowana_data, odbyta)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-        ''', (
-            "2",
-            "Wyspa Łez i Sekretne Zatoki: Spinalonga & Agios Nikolaos",
-            "Malownicza wyprawa na historyczną wyspę-twierdzę Spinalonga z rejsem statkiem z Eloundy oraz popołudniowym relaksem i kawą nad malowniczym jeziorem Voulismeni v Agios Nikolaos.",
-            "Wczesny wyjazd na parking w Elounda, rejs na Spinalongę przed największym upałem, a po obiedzie spacer wokół jeziora w Agios Nikolaos.",
-            "10.5",
-            "17:00",
-            "07:30",
-            "08:00",
-            ""
-        ))
-
-        kroki_w2 = [
-            ("2", "1", "Elounda - Port i Rejs na Spinalongę", "35.2575, 25.7314", "09:00 - 11:30", "11:30", "Silne słońce na łodzi i na wyspie. Konieczne nakrycia głowy!", "Odpoczynek w cieniu kawiarni w porcie Elounda.", "Spokojny rejs tradycyjną łodzią i zwiedzanie historycznej twierdzy.", "Średni (długi rejs, nasłonecznienie)", "Okulary przeciwsłoneczne, woda z lodem w termosie, czapka.", "Dawna wenecka twierdza i późniejsza kolonia trędowatych z niezwykłą atmosferą."),
-            ("2", "2", "Agios Nikolaos & Jezioro Voulismeni", "35.1915, 25.7171", "12:50 - 15:30", "15:30", "Dużo turystów wokół jeziora w godzinach popołudniowych.", "Kawiarnie nad brzegiem jeziora z widokiem na klify.", "Niespieszny obiad i lody nad wodą.", "Niski (przyjemny spacer, dużo miejsc do zatrzymania)", "Lody jako nagroda, swobodne tempo.", "Urokliwe miasteczko wokół bezdennego jeziora połączonego z morzem wąskim kanałem.")
-        ]
-        cursor.executemany('''
-            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', kroki_w2)
-
-        cursor.execute("INSERT INTO checklist (id_wycieczki, typ) VALUES ('2', 'sprzęt')")
-        ch2_s = cursor.lastrowid
-        cursor.executemany("INSERT INTO checklist_item (id_checklisty, nazwa, ilosc) VALUES (?, ?, ?)", [
-            (ch2_s, "Nakrycie głowy / czapka", "4"),
-            (ch2_s, "Krem z filtrem UV 50+", "1")
-        ])
-
-        cursor.execute("INSERT INTO checklist (id_wycieczki, typ) VALUES ('2', 'jedzenie')")
-        ch2_j = cursor.lastrowid
-        cursor.executemany("INSERT INTO checklist_item (id_checklisty, nazwa, ilosc) VALUES (?, ?, ?)", [
-            (ch2_j, "Zimna woda w termosie", "2"),
-            (ch2_j, "Batony energetyczne", "4")
-        ])
 
         conn.commit()
     conn.close()
@@ -730,7 +664,7 @@ def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# --- FUNKCJE OBSŁUGI BAZY CZATU Z PODZIAŁEM NA UŻYTKOWNIKÓW ---
+# --- FUNKCJE OBSŁUGI BAZY CZATU ---
 def pobierz_historie_czatu_z_db(uzytkownik):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
@@ -758,7 +692,7 @@ def wyczysc_historie_czatu_w_db(uzytkownik):
     conn.commit()
     conn.close()
 
-# --- FUNKCJE OBSŁUGI NOTATEK I MIEJSC (DOSTĘPNE DLA LLM) ---
+# --- FUNKCJE OBSŁUGI NOTATEK, MIEJSC, KROKÓW I ZAKUPÓW (DODAWANIE, EDYCJA, USUWANIE Z OCHRONĄ BASE=TRUE) ---
 def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=None, tytul=None):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
@@ -769,39 +703,6 @@ def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=N
     conn.commit()
     conn.close()
     return "Dodano nową notatkę!"
-
-def dodaj_miejsce(
-    numer_miejsca, nazwa, nazwa_angielska="", opis="", wspolrzedne="35.3,24.5", 
-    typ="others", czas_dojazdu="30 min", godziny_otwarcia="08:00 - 20:00", 
-    najlepsza_pora="Rano", orientacyjny_czas="1.5 godz.", koszt="Brak", 
-    konieczna_akcja="Brak", zaplecze_gastro="Dostępne", ile_jedzenia="Woda", 
-    trudnosc_adhd="Niski", potencjal_meltdownu="Niski", strategie_meltdown="Spokojne tempo", 
-    ochrona_slonce="Czapka", najlepiej_polaczyc="Brak", zadania_dla_dzieci="Obserwacja"
-):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT numer_miejsca FROM miejsca WHERE numer_miejsca = ?', (str(numer_miejsca),))
-    if cursor.fetchone():
-        conn.close()
-        return f"OSTRZEŻENIE: Miejsce o numerze {numer_miejsca} już istnieje w bazie!"
-
-    cursor.execute('''
-        INSERT INTO miejsca (
-            numer_miejsca, nazwa, nazwa_angielska, opis, wspolrzedne, typ,
-            czas_dojazdu, godziny_otwarcia, najlepsza_pora, orientacyjny_czas,
-            koszt, konieczna_akcja, zaplecze_gastro, ile_jedzenia, trudnosc_adhd,
-            potencjal_meltdownu, strategie_meltdown, ochrona_slonce, najlepiej_polaczyc, zadania_dla_dzieci, odwiedzone, Base
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'false')
-    ''', (
-        str(numer_miejsca), str(nazwa), str(nazwa_angielska), str(opis), str(wspolrzedne), str(typ),
-        str(czas_dojazdu), str(godziny_otwarcia), str(najlepsza_pora), str(orientacyjny_czas),
-        str(koszt), str(konieczna_akcja), str(zaplecze_gastro), str(ile_jedzenia), str(trudnosc_adhd),
-        str(potencjal_meltdownu), str(strategie_meltdown), str(ochrona_slonce), str(najlepiej_polaczyc), str(zadania_dla_dzieci)
-    ))
-    conn.commit()
-    conn.close()
-    return f"Pomyślnie dodano nowe miejsce nr {numer_miejsca} ({nazwa}) do bazy!"
 
 def edytuj_notatke(notatka_id, zawartosc=None, tytul=None, typ_notatki=None):
     conn = sqlite3.connect('cretai.db')
@@ -922,38 +823,59 @@ def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
 
         st.markdown('</div>', unsafe_allow_html=True)
 
-def oznacz_wycieczke_i_miejsca_jako_odbyte(id_wycieczki):
+def dodaj_miejsce(
+    numer_miejsca, nazwa, nazwa_angielska="", opis="", wspolrzedne="35.3,24.5", 
+    typ="others", czas_dojazdu="30 min", godziny_otwarcia="08:00 - 20:00", 
+    najlepsza_pora="Rano", orientacyjny_czas="1.5 godz.", koszt="Brak", 
+    konieczna_akcja="Brak", zaplecze_gastro="Dostępne", ile_jedzenia="Woda", 
+    trudnosc_adhd="Niski", potencjal_meltdownu="Niski", strategie_meltdown="Spokojne tempo", 
+    ochrona_slonce="Czapka", najlepiej_polaczyc="Brak", zadania_dla_dzieci="Obserwacja"
+):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
-    cursor.execute('UPDATE wycieczka SET odbyta = 1 WHERE id = ?', (str(id_wycieczki),))
     
-    cursor.execute('SELECT krok_wycieczki FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
-    kroki = cursor.fetchall()
-    
-    for k in kroki:
-        numer_miejsca = k[0]
-        cursor.execute('UPDATE miejsca SET odwiedzone = 1 WHERE numer_miejsca = ?', (str(numer_miejsca),))
-        
+    cursor.execute('SELECT numer_miejsca FROM miejsca WHERE numer_miejsca = ?', (str(numer_miejsca),))
+    if cursor.fetchone():
+        conn.close()
+        return f"OSTRZEŻENIE: Miejsce o numerze {numer_miejsca} już istnieje w bazie!"
+
+    cursor.execute('''
+        INSERT INTO miejsca (
+            numer_miejsca, nazwa, nazwa_angielska, opis, wspolrzedne, typ,
+            czas_dojazdu, godziny_otwarcia, najlepsza_pora, orientacyjny_czas,
+            koszt, konieczna_akcja, zaplecze_gastro, ile_jedzenia, trudnosc_adhd,
+            potencjal_meltdownu, strategie_meltdown, ochrona_slonce, najlepiej_polaczyc, zadania_dla_dzieci, odwiedzone, Base
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'false')
+    ''', (
+        str(numer_miejsca), str(nazwa), str(nazwa_angielska), str(opis), str(wspolrzedne), str(typ),
+        str(czas_dojazdu), str(godziny_otwarcia), str(najlepsza_pora), str(orientacyjny_czas),
+        str(koszt), str(konieczna_akcja), str(zaplecze_gastro), str(ile_jedzenia), str(trudnosc_adhd),
+        str(potencjal_meltdownu), str(strategie_meltdown), str(ochrona_slonce), str(najlepiej_polaczyc), str(zadania_dla_dzieci)
+    ))
     conn.commit()
     conn.close()
-    return f"Wycieczka #{id_wycieczki} oraz powiązane z nią miejsca zostały oznaczone jako odbyte!"
+    return f"Pomyślnie dodano nowe miejsce nr {numer_miejsca} ({nazwa}) do bazy!"
 
-def aktualizuj_miejsce(numer_miejsca, opis=None, konieczna_akcja=None):
+def edytuj_miejsce(numer_miejsca, nazwa=None, opis=None, konieczna_akcja=None, koszt=None):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('SELECT Base FROM miejsca WHERE numer_miejsca = ?', (str(numer_miejsca),))
     res = cursor.fetchone()
     if res and str(res[0]).lower() == 'true':
         conn.close()
-        return f"OSTRZEŻENIE: Miejsce nr {numer_miejsca} pochodzi z bazy bazowej (CSV) i ma flagę Base=true. Modyfikacja zablokowana!"
+        return f"OSTRZEŻENIE: Miejsce nr {numer_miejsca} posiada flagę Base=true. Pełna edycja bazy bazowej jest zablokowana."
 
+    if nazwa:
+        cursor.execute('UPDATE miejsca SET nazwa = ? WHERE numer_miejsca = ?', (nazwa, str(numer_miejsca)))
     if opis:
         cursor.execute('UPDATE miejsca SET opis = ? WHERE numer_miejsca = ?', (opis, str(numer_miejsca)))
     if konieczna_akcja:
         cursor.execute('UPDATE miejsca SET konieczna_akcja = ? WHERE numer_miejsca = ?', (konieczna_akcja, str(numer_miejsca)))
+    if koszt:
+        cursor.execute('UPDATE miejsca SET koszt = ? WHERE numer_miejsca = ?', (koszt, str(numer_miejsca)))
     conn.commit()
     conn.close()
-    return f"Miejsce nr {numer_miejsca} zostało zaktualizowane!"
+    return f"Miejsce nr {numer_miejsca} zostało zaktualizowane."
 
 def usun_miejsce(numer_miejsca):
     conn = sqlite3.connect('cretai.db')
@@ -962,60 +884,14 @@ def usun_miejsce(numer_miejsca):
     res = cursor.fetchone()
     if res and str(res[0]).lower() == 'true':
         conn.close()
-        return f"OSTRZEŻENIE: Miejsce nr {numer_miejsca} pochodzi z bazy bazowej (CSV) i ma flagę Base=true. Usuwanie zablokowane!"
+        return f"OSTRZEŻENIE: Miejsce nr {numer_miejsca} posiada flagę Base=true i jest chronione przed usunięciem!"
     
     cursor.execute('DELETE FROM miejsca WHERE numer_miejsca = ?', (str(numer_miejsca),))
     conn.commit()
     conn.close()
     return f"Miejsce nr {numer_miejsca} zostało usunięte."
 
-def utworz_nowa_wycieczke(id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, planowana_data=""):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT OR REPLACE INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, planowana_data, odbyta)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-    ''', (str(id), tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, str(calkowity_czas_wycieczki_godziny), szacowana_godzina_powrotu, pobudka, czas_wyjazdu, planowana_data))
-    conn.commit()
-    conn.close()
-    return f"Nowa wycieczka '{tytul_wycieczki}' (ID: {id}) została utworzona!"
-
-def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, szacowana_godzina_powrotu=None, pobudka=None, czas_wyjazdu=None, planowana_data=None):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    if tytul_wycieczki:
-        cursor.execute('UPDATE wycieczka SET tytul_wycieczki = ? WHERE id = ?', (tytul_wycieczki, str(id)))
-    if calosciowy_opis_wycieczki:
-        cursor.execute('UPDATE wycieczka SET calosciowy_opis_wycieczki = ? WHERE id = ?', (calosciowy_opis_wycieczki, str(id)))
-    if calosciowa_taktyka_dnia:
-        cursor.execute('UPDATE wycieczka SET calosciowa_taktyka_dnia = ? WHERE id = ?', (calosciowa_taktyka_dnia, str(id)))
-    if szacowana_godzina_powrotu:
-        cursor.execute('UPDATE wycieczka SET szacowana_godzina_powrotu = ? WHERE id = ?', (szacowana_godzina_powrotu, str(id)))
-    if pobudka:
-        cursor.execute('UPDATE wycieczka SET pobudka = ? WHERE id = ?', (pobudka, str(id)))
-    if czas_wyjazdu:
-        cursor.execute('UPDATE wycieczka SET czas_wyjazdu = ? WHERE id = ?', (czas_wyjazdu, str(id)))
-    if planowana_data is not None:
-        cursor.execute('UPDATE wycieczka SET planowana_data = ? WHERE id = ?', (planowana_data, str(id)))
-    conn.commit()
-    conn.close()
-    return f"Wycieczka #{id} została zaktualizowana."
-
-def usun_wycieczke(id_wycieczki):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM wycieczka WHERE id = ?', (str(id_wycieczki),))
-    cursor.execute('DELETE FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
-    cursor.execute('SELECT id FROM checklist WHERE id_wycieczki = ?', (str(id_wycieczki),))
-    chl_rows = cursor.fetchall()
-    for row in chl_rows:
-        cursor.execute('DELETE FROM checklist_item WHERE id_checklisty = ?', (row[0],))
-    cursor.execute('DELETE FROM checklist WHERE id_wycieczki = ?', (str(id_wycieczki),))
-    conn.commit()
-    conn.close()
-    return f"Wycieczka #{id_wycieczki} została usunięta."
-
-def dodaj_krok_do_wycieczki(
+def dodaj_krok_wycieczki(
     id_wycieczki, krok_wycieczki, nazwa, wspolrzedne="35.3,24.5", 
     okienko_zwiedzania="10:00 - 12:00", godzina_ewakuacji="12:00", 
     czerwona_strefa_ostrzezenie="Unikać upału", strefa_luzu_i_regeneracji="Cień", 
@@ -1041,14 +917,14 @@ def dodaj_krok_do_wycieczki(
     conn.close()
     return f"Dodano krok nr {krok_wycieczki} ({nazwa}) do wycieczki #{id_wycieczki}!"
 
-def edytuj_krok_w_wycieczce(id_wycieczki, krok_wycieczki, nazwa=None, okienko_zwiedzania=None, godzina_ewakuacji=None, czerwona_strefa_ostrzezenie=None, strefa_luzu_i_regeneracji=None, podsumowanie_taktyki=None, potencjal_meltdownu=None, strategie_meltdown=None, opis=None):
+def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa=None, okienko_zwiedzania=None, godzina_ewakuacji=None, czerwona_strefa_ostrzezenie=None, podsumowanie_taktyki=None, opis=None):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? AND (krok_wycieczki = ? OR nazwa LIKE ?)', (str(id_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%"))
     res = cursor.fetchone()
     if not res:
         conn.close()
-        return f"Nie znaleziono kroku."
+        return f"Nie znaleziono kroku wycieczki."
     krok_row_id = res[0]
     if nazwa:
         cursor.execute('UPDATE krok_wycieczki SET nazwa = ? WHERE id = ?', (nazwa, krok_row_id))
@@ -1058,79 +934,63 @@ def edytuj_krok_w_wycieczce(id_wycieczki, krok_wycieczki, nazwa=None, okienko_zw
         cursor.execute('UPDATE krok_wycieczki SET godzina_ewakuacji = ? WHERE id = ?', (godzina_ewakuacji, krok_row_id))
     if czerwona_strefa_ostrzezenie:
         cursor.execute('UPDATE krok_wycieczki SET czerwona_strefa_ostrzezenie = ? WHERE id = ?', (czerwona_strefa_ostrzezenie, krok_row_id))
-    if strefa_luzu_i_regeneracji:
-        cursor.execute('UPDATE krok_wycieczki SET strefa_luzu_i_regeneracji = ? WHERE id = ?', (strefa_luzu_i_regeneracji, krok_row_id))
     if podsumowanie_taktyki:
         cursor.execute('UPDATE krok_wycieczki SET podsumowanie_taktyki = ? WHERE id = ?', (podsumowanie_taktyki, krok_row_id))
-    if potencjal_meltdownu:
-        cursor.execute('UPDATE krok_wycieczki SET potencjal_meltdownu = ? WHERE id = ?', (potencjal_meltdownu, krok_row_id))
-    if strategie_meltdown:
-        cursor.execute('UPDATE krok_wycieczki SET strategie_meltdown = ? WHERE id = ?', (strategie_meltdown, krok_row_id))
     if opis:
         cursor.execute('UPDATE krok_wycieczki SET opis = ? WHERE id = ?', (opis, krok_row_id))
     conn.commit()
     conn.close()
-    return f"Krok {krok_wycieczki} zaktualizowany."
+    return f"Zaktualizowano krok wycieczki."
 
-def usun_krok_z_wycieczki(id_wycieczki, krok_wycieczki):
+def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('DELETE FROM krok_wycieczki WHERE id_wycieczki = ? AND (krok_wycieczki = ? OR nazwa LIKE ?)', (str(id_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%"))
     conn.commit()
     conn.close()
-    return f"Usunięto krok."
+    return f"Usunięto krok z wycieczki."
 
-def dodaj_element_checklisty(id_wycieczki, typ, nazwa, ilosc="1"):
+def pobierz_zakupy_dla_kroku(id_kroku):
+    conn = sqlite3.connect('cretai.db')
+    df = pd.read_sql('SELECT * FROM zakupy WHERE id_kroku = ?', conn, params=(str(id_kroku),))
+    conn.close()
+    return df
+
+def dodaj_produkt_zakupow(id_kroku, nazwa_produktu, ilosc="1"):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT id FROM checklist WHERE id_wycieczki = ? AND typ = ?', (str(id_wycieczki), typ))
-    res = cursor.fetchone()
-    if res:
-        chl_id = res[0]
-    else:
-        cursor.execute('INSERT INTO checklist (id_wycieczki, typ) VALUES (?, ?)', (str(id_wycieczki), typ))
-        chl_id = cursor.lastrowid
-    cursor.execute('INSERT INTO checklist_item (id_checklisty, nazwa, ilosc) VALUES (?, ?, ?)', (chl_id, nazwa, str(ilosc)))
+    cursor.execute('''
+        INSERT INTO zakupy (id_kroku, nazwa_produktu, ilosc, kupione)
+        VALUES (?, ?, ?, 0)
+    ''', (str(id_kroku), nazwa_produktu, str(ilosc)))
     conn.commit()
     conn.close()
-    return f"Dodano do checklisty."
+    return f"Dodano produkt '{nazwa_produktu}' do listy zakupów kroku."
 
-def edytuj_element_checklisty(id_wycieczki, typ, stara_nazwa, nowa_nazwa=None, nowa_ilosc=None):
+def edytuj_produkt_zakupow(zakup_id, nazwa_produktu=None, ilosc=None):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT id FROM checklist WHERE id_wycieczki = ? AND typ = ?', (str(id_wycieczki), typ))
-    res = cursor.fetchone()
-    if not res:
-        conn.close()
-        return f"Nie znaleziono checklisty."
-    chl_id = res[0]
-    cursor.execute('SELECT id FROM checklist_item WHERE id_checklisty = ? AND nazwa LIKE ?', (chl_id, f"%{stara_nazwa}%"))
-    item_res = cursor.fetchone()
-    if not item_res:
-        conn.close()
-        return f"Nie znaleziono elementu."
-    item_id = item_res[0]
-    if nowa_nazwa:
-        cursor.execute('UPDATE checklist_item SET nazwa = ? WHERE id = ?', (nowa_nazwa, item_id))
-    if nowa_ilosc:
-        cursor.execute('UPDATE checklist_item SET ilosc = ? WHERE id = ?', (str(nowa_ilosc), item_id))
+    if nazwa_produktu:
+        cursor.execute('UPDATE zakupy SET nazwa_produktu = ? WHERE id = ?', (nazwa_produktu, zakup_id))
+    if ilosc:
+        cursor.execute('UPDATE zakupy SET ilosc = ? WHERE id = ?', (ilosc, zakup_id))
     conn.commit()
     conn.close()
-    return f"Zaktualizowano element."
+    return f"Zaktualizowano produkt zakupowy."
 
-def usun_element_checklisty(id_wycieczki, typ, nazwa):
+def zmien_status_zakupu(zakup_id, kupione):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT id FROM checklist WHERE id_wycieczki = ? AND typ = ?', (str(id_wycieczki), typ))
-    res = cursor.fetchone()
-    if not res:
-        conn.close()
-        return f"Nie znaleziono."
-    chl_id = res[0]
-    cursor.execute('DELETE FROM checklist_item WHERE id_checklisty = ? AND nazwa LIKE ?', (chl_id, f"%{nazwa}%"))
+    cursor.execute('UPDATE zakupy SET kupione = ? WHERE id = ?', (1 if kupione else 0, zakup_id))
     conn.commit()
     conn.close()
-    return f"Usunięto element."
+
+def usun_produkt_zakupow(zakup_id):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM zakupy WHERE id = ?', (zakup_id,))
+    conn.commit()
+    conn.close()
 
 def pobierz_wszystkie_miejsca():
     conn = sqlite3.connect('cretai.db')
@@ -1170,42 +1030,44 @@ def pobierz_skrocone_opcje_wycieczek():
     return opcje
 
 def wczytaj_kontekst_zewnetrzny():
-    tekst = "Jesteś asystentem podróży CretAi na Kretę.\n--- BAZA DANYCH SQLITE ---\n"
+    tekst = f"Jesteś asystentem podróży CretAi na Kretę.\n"
+    tekst += f"- Lokalizacja naszego DOMEK (baza wypadowa): {DOMEK_LAT}, {DOMEK_LON}\n"
+    tekst += f"- Lokalizacja SKLEP obok domku: {SKLEP_LAT}, {SKLEP_LON}\n"
+    tekst += "--- BAZA DANYCH SQLITE ---\n"
     conn = sqlite3.connect('cretai.db')
     try:
         miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, typ, czas_dojazdu, orientacyjny_czas, koszt, konieczna_akcja, odwiedzone, Base FROM miejsca', conn)
         wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, planowana_data, odbyta FROM wycieczka', conn)
         kroki_df = pd.read_sql('SELECT id_wycieczki, krok_wycieczki, nazwa, okienko_zwiedzania FROM krok_wycieczki', conn)
-        checklisty_df = pd.read_sql('SELECT c.id_wycieczki, c.typ, i.nazwa, i.ilosc FROM checklist c JOIN checklist_item i ON c.id = i.id_checklisty', conn)
+        zakupy_df = pd.read_sql('SELECT id, id_kroku, nazwa_produktu, ilosc, kupione FROM zakupy', conn)
         notatki_df = pd.read_sql('SELECT id, id_wycieczki, id_miejsca, tytul, zawartosc, typ_notatki FROM notatki', conn)
     except:
         miejsca_df = pd.DataFrame()
         wycieczki_df = pd.DataFrame()
         kroki_df = pd.DataFrame()
-        checklisty_df = pd.DataFrame()
+        zakupy_df = pd.DataFrame()
         notatki_df = pd.DataFrame()
     conn.close()
 
     if not miejsca_df.empty:
         tekst += "Miejsca:\n"
         for _, r in miejsca_df.iterrows():
-            tekst += f"- Nr {r['numer_miejsca']}: {r['nazwa']} (Typ: {r['typ']}, Odwiedzone: {r['odwiedzone']}, Dojazd: {r['czas_dojazdu']})\n"
+            tekst += f"- Nr {r['numer_miejsca']}: {r['nazwa']} (Typ: {r['typ']}, Odwiedzone: {r['odwiedzone']}, Dojazd: {r['czas_dojazdu']}, Base: {r['Base']})\n"
     if not wycieczki_df.empty:
         tekst += "\nWycieczki:\n"
         for _, w in wycieczki_df.iterrows():
             if int(w.get('odbyta', 0)) == 1:
                 continue
             tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Data: {w.get('planowana_data', 'brak')} | Opis: {w['calosciowy_opis_wycieczki']}\n"
+    if not zakupy_df.empty:
+        tekst += "\nZakupy zaplanowane na trasie:\n"
+        for _, z in zakupy_df.iterrows():
+            tekst += f"- ID Zakupu {z['id']} (Krok ID {z['id_kroku']}): {z['nazwa_produktu']} (ilość: {z['ilosc']}, kupione: {z['kupione']})\n"
     if not notatki_df.empty:
-        tekst += "\nNotatki użytkownika (Własne wskazówki i linki):\n"
+        tekst += "\nNotatki użytkownika:\n"
         for _, n in notatki_df.iterrows():
             t_tytul = f"[{n['tytul']}] " if pd.notna(n['tytul']) and str(n['tytul']).strip() != "" else ""
-            kontekst_powiazania = ""
-            if pd.notna(n['id_wycieczki']):
-                kontekst_powiazania = f" (dot. wycieczki #{n['id_wycieczki']})"
-            elif pd.notna(n['id_miejsca']):
-                kontekst_powiazania = f" (dot. miejsca nr {n['id_miejsca']})"
-            tekst += f"- {t_tytul}{n['zawartosc']}{kontekst_powiazania}\n"
+            tekst += f"- ID {n['id']}: {t_tytul}{n['zawartosc']}\n"
 
     return tekst
 
@@ -1230,34 +1092,6 @@ def dodaj_marker_domku(m):
     domek_icon = folium.DivIcon(html=domek_icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=domek_icon, tooltip="Nasz Domek").add_to(m)
 
-@st.dialog("🎒 Checklista Wycieczki")
-def pokaz_checklistu_popup(wycieczka_id):
-    conn = sqlite3.connect('cretai.db')
-    checklisty_df = pd.read_sql('SELECT * FROM checklist WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
-    items_df = pd.DataFrame()
-    if not checklisty_df.empty:
-        ids_chl = tuple(checklisty_df['id'].tolist())
-        if len(ids_chl) == 1:
-            items_df = pd.read_sql('SELECT * FROM checklist_item WHERE id_checklisty = ?', conn, params=(ids_chl[0],))
-        else:
-            placeholders = ','.join(['?'] * len(ids_chl))
-            items_df = pd.read_sql(f'SELECT * FROM checklist_item WHERE id_checklisty IN ({placeholders})', conn, params=ids_chl)
-    conn.close()
-
-    if checklisty_df.empty or items_df.empty:
-        st.info("Brak zdefiniowanej checklisty.")
-    else:
-        for _, chl in checklisty_df.iterrows():
-            typ_chl = chl['typ'].capitalize()
-            chl_id = chl['id']
-            powiazane_itemy = items_df[items_df['id_checklisty'] == chl_id]
-            if not powiazane_itemy.empty:
-                st.markdown(f"**📌 {typ_chl}:**")
-                for _, itm in powiazane_itemy.iterrows():
-                    ilosc_val = itm['ilosc']
-                    ilosc_str = f" *({ilosc_val})*" if pd.notna(ilosc_val) and ilosc_val != "1" else ""
-                    st.checkbox(f"{itm['nazwa']}{ilosc_str}", key=f"chk_pop_{itm['id']}")
-
 # --- NARZĘDZIA AI (FUNCTIONS DLA GEMINI) ---
 dodaj_notatke_tool = types.FunctionDeclaration(
     name="dodaj_notatke",
@@ -1275,58 +1109,102 @@ dodaj_notatke_tool = types.FunctionDeclaration(
     ),
 )
 
-dodaj_miejsce_tool = types.FunctionDeclaration(
-    name="dodaj_miejsce",
-    description="Dodaje nowe miejsce do bazy danych miejsc na Krecie.",
+edytuj_notatke_tool = types.FunctionDeclaration(
+    name="edytuj_notatke",
+    description="Edytuje treść lub tytuł istniejącej notatki.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "numer_miejsca": types.Schema(type=types.Type.STRING, description="Unikalny numer/id miejsca (np. '15')"),
-            "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca po polsku"),
-            "nazwa_angielska": types.Schema(type=types.Type.STRING, description="Nazwa po angielsku"),
-            "opis": types.Schema(type=types.Type.STRING, description="Opis miejsca"),
-            "wspolrzedne": types.Schema(type=types.Type.STRING, description="Współrzędne GPS np. '35.2980, 25.1631'"),
-            "typ": types.Schema(type=types.Type.STRING, description="Typ miejsca"),
-            "czas_dojazdu": types.Schema(type=types.Type.STRING, description="Czas dojazdu ze Stavros"),
-            "godziny_otwarcia": types.Schema(type=types.Type.STRING, description="Godziny otwarcia"),
-            "najlepsza_pora": types.Schema(type=types.Type.STRING, description="Najlepsza pora zwiedzania"),
-            "orientacyjny_czas": types.Schema(type=types.Type.STRING, description="Szacowany czas wizyty"),
-            "koszt": types.Schema(type=types.Type.STRING, description="Koszt dla rodziny 2+2"),
-            "konieczna_akcja": types.Schema(type=types.Type.STRING, description="Wymagane działania"),
-            "zaplecze_gastro": types.Schema(type=types.Type.STRING, description="Zaplecze gastronomiczne"),
-            "ile_jedzenia": types.Schema(type=types.Type.STRING, description="Zalecane zapasy jedzenia"),
-            "trudnosc_adhd": types.Schema(type=types.Type.STRING, description="Poziom trudności ADHD"),
-            "potencjal_meltdownu": types.Schema(type=types.Type.STRING, description="Potencjał meltdownu"),
-            "strategie_meltdown": types.Schema(type=types.Type.STRING, description="Strategie radzenia sobie z meltdownem"),
-            "ochrona_slonce": types.Schema(type=types.Type.STRING, description="Ochrona przed słońcem"),
-            "najlepiej_polaczyc": types.Schema(type=types.Type.STRING, description="Z czym połączyć wizytę"),
-            "zadania_dla_dzieci": types.Schema(type=types.Type.STRING, description="Zadania aktywizujące dla dzieci"),
+            "notatka_id": types.Schema(type=types.Type.INTEGER, description="ID notatki do edycji"),
+            "zawartosc": types.Schema(type=types.Type.STRING, description="Nowa treść notatki"),
+            "tytul": types.Schema(type=types.Type.STRING, description="Nowy tytuł notatki"),
         },
-        required=["numer_miejsca", "nazwa"]
+        required=["notatka_id"]
     ),
 )
 
-edytuj_wycieczke_tool = types.FunctionDeclaration(
-    name="edytuj_wycieczke",
-    description="Edytuje parametry wycieczki, w tym planowaną datę (format RRRR-MM-DD, nie może być przeszła).",
+usun_notatke_tool = types.FunctionDeclaration(
+    name="usun_notatke",
+    description="Usuwa wskazaną notatkę po jej ID.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "id": types.Schema(type=types.Type.STRING),
-            "tytul_wycieczki": types.Schema(type=types.Type.STRING),
-            "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING),
-            "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING),
-            "szacowana_godzina_powrotu": types.Schema(type=types.Type.STRING),
-            "pobudka": types.Schema(type=types.Type.STRING),
-            "czas_wyjazdu": types.Schema(type=types.Type.STRING),
-            "planowana_data": types.Schema(type=types.Type.STRING, description="Planowana data wycieczki w formacie RRRR-MM-DD"),
+            "notatka_id": types.Schema(type=types.Type.INTEGER, description="ID notatki do usunięcia"),
         },
-        required=["id"]
+        required=["notatka_id"]
     ),
 )
 
-dodaj_krok_tool = types.FunctionDeclaration(
-    name="dodaj_krok_do_wycieczki",
+edytuj_miejsce_tool = types.FunctionDeclaration(
+    name="edytuj_miejsce",
+    description="Edytuje dane miejsca w bazie (z uwzględnieniem ochrony Base=true).",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "numer_miejsca": types.Schema(type=types.Type.STRING, description="Numer miejsca"),
+            "nazwa": types.Schema(type=types.Type.STRING, description="Nowa nazwa"),
+            "opis": types.Schema(type=types.Type.STRING, description="Nowy opis"),
+            "konieczna_akcja": types.Schema(type=types.Type.STRING, description="Nowa konieczna akcja"),
+            "koszt": types.Schema(type=types.Type.STRING, description="Nowy koszt"),
+        },
+        required=["numer_miejsca"]
+    ),
+)
+
+usun_miejsce_tool = types.FunctionDeclaration(
+    name="usun_miejsce",
+    description="Usuwa miejsce z bazy, pod warunkiem że nie posiada flagi Base=true (chronione).",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "numer_miejsca": types.Schema(type=types.Type.STRING, description="Numer miejsca do usunięcia"),
+        },
+        required=["numer_miejsca"]
+    ),
+)
+
+dodaj_zakup_tool = types.FunctionDeclaration(
+    name="dodaj_produkt_zakupow",
+    description="Dodaje nowy produkt do checklisty zakupowej powiązanej z konkretnym krokiem wycieczki.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "id_kroku": types.Schema(type=types.Type.STRING, description="ID kroku wycieczki"),
+            "nazwa_produktu": types.Schema(type=types.Type.STRING, description="Nazwa produktu zakupowego"),
+            "ilosc": types.Schema(type=types.Type.STRING, description="Ilość lub opakowanie, np. '2 szt', '1 litr'"),
+        },
+        required=["id_kroku", "nazwa_produktu"]
+    ),
+)
+
+edytuj_zakup_tool = types.FunctionDeclaration(
+    name="edytuj_produkt_zakupow",
+    description="Edytuje produkt lub ilość na liście zakupów.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "zakup_id": types.Schema(type=types.Type.INTEGER, description="ID pozycji zakupowej"),
+            "nazwa_produktu": types.Schema(type=types.Type.STRING, description="Nowa nazwa produktu"),
+            "ilosc": types.Schema(type=types.Type.STRING, description="Nowa ilość"),
+        },
+        required=["zakup_id"]
+    ),
+)
+
+usun_zakup_tool = types.FunctionDeclaration(
+    name="usun_produkt_zakupow",
+    description="Usuwa produkt z listy zakupów.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "zakup_id": types.Schema(type=types.Type.INTEGER, description="ID pozycji zakupowej do usunięcia"),
+        },
+        required=["zakup_id"]
+    ),
+)
+
+dodaj_krok_wycieczki_tool = types.FunctionDeclaration(
+    name="dodaj_krok_wycieczki",
     description="Dodaje nowy krok (punkt programu) do wskazanej wycieczki.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
@@ -1342,176 +1220,68 @@ dodaj_krok_tool = types.FunctionDeclaration(
     ),
 )
 
-aktualizuj_tool = types.FunctionDeclaration(
-    name="aktualizuj_miejsce",
-    description="Aktualizuje informacje o miejscu na Krecie.",
+edytuj_krok_wycieczki_tool = types.FunctionDeclaration(
+    name="edytuj_krok_wycieczki",
+    description="Edytuje parametry istniejącego kroku wycieczki.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "numer_miejsca": types.Schema(type=types.Type.STRING, description="Numer miejsca"),
+            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+            "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku"),
+            "nazwa": types.Schema(type=types.Type.STRING, description="Nowa nazwa"),
+            "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Nowy harmonogram"),
+            "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="Nowa godzina ewakuacji"),
+            "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Nowe ostrzeżenie"),
+            "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Nowa taktyka"),
             "opis": types.Schema(type=types.Type.STRING, description="Nowy opis"),
-            "konieczna_akcja": types.Schema(type=types.Type.STRING, description="Nowa akcja"),
-        },
-        required=["numer_miejsca"]
-    ),
-)
-usun_miejsce_tool = types.FunctionDeclaration(
-    name="usun_miejsce",
-    description="Usuwa miejsce z bazy.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={"numer_miejsca": types.Schema(type=types.Type.STRING)},
-        required=["numer_miejsca"]
-    ),
-)
-utworz_nowa_wycieczke_tool = types.FunctionDeclaration(
-    name="utworz_nowa_wycieczke",
-    description="Tworzy nową wycieczkę.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "id": types.Schema(type=types.Type.STRING),
-            "tytul_wycieczki": types.Schema(type=types.Type.STRING),
-            "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING),
-            "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING),
-            "calkowity_czas_wycieczki_godziny": types.Schema(type=types.Type.STRING),
-            "szacowana_godzina_powrotu": types.Schema(type=types.Type.STRING),
-            "pobudka": types.Schema(type=types.Type.STRING),
-            "czas_wyjazdu": types.Schema(type=types.Type.STRING),
-            "planowana_data": types.Schema(type=types.Type.STRING),
-        },
-        required=["id", "tytul_wycieczki", "calosciowy_opis_wycieczki", "calosciowa_taktyka_dnia"]
-    ),
-)
-usun_wycieczke_tool = types.FunctionDeclaration(
-    name="usun_wycieczke",
-    description="Usuwa wycieczkę.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={"id_wycieczki": types.Schema(type=types.Type.STRING)},
-        required=["id_wycieczki"]
-    ),
-)
-edytuj_krok_tool = types.FunctionDeclaration(
-    name="edytuj_krok_w_wycieczce",
-    description="Edytuje krok wycieczki.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING),
-            "krok_wycieczki": types.Schema(type=types.Type.STRING),
-            "nazwa": types.Schema(type=types.Type.STRING),
-            "okienko_zwiedzania": types.Schema(type=types.Type.STRING),
-            "godzina_ewakuacji": types.Schema(type=types.Type.STRING),
-            "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING),
-            "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING),
-            "podsumowanie_taktyki": types.Schema(type=types.Type.STRING),
-            "potencjal_meltdownu": types.Schema(type=types.Type.STRING),
-            "strategie_meltdown": types.Schema(type=types.Type.STRING),
-            "opis": types.Schema(type=types.Type.STRING),
         },
         required=["id_wycieczki", "krok_wycieczki"]
     ),
 )
-usun_krok_tool = types.FunctionDeclaration(
-    name="usun_krok_z_wycieczki",
-    description="Usuwa krok wycieczki.",
+
+usun_krok_wycieczki_tool = types.FunctionDeclaration(
+    name="usun_krok_wycieczki",
+    description="Usuwa wskazany krok z wycieczki.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING),
-            "krok_wycieczki": types.Schema(type=types.Type.STRING),
+            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+            "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku do usunięcia"),
         },
         required=["id_wycieczki", "krok_wycieczki"]
-    ),
-)
-dodaj_checklist_tool = types.FunctionDeclaration(
-    name="dodaj_element_checklisty",
-    description="Dodaje element do checklisty.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING),
-            "typ": types.Schema(type=types.Type.STRING),
-            "nazwa": types.Schema(type=types.Type.STRING),
-            "ilosc": types.Schema(type=types.Type.STRING),
-        },
-        required=["id_wycieczki", "typ", "nazwa"]
-    ),
-)
-edytuj_checklist_tool = types.FunctionDeclaration(
-    name="edytuj_element_checklisty",
-    description="Edytuje element checklisty.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING),
-            "typ": types.Schema(type=types.Type.STRING),
-            "stara_nazwa": types.Schema(type=types.Type.STRING),
-            "nowa_nazwa": types.Schema(type=types.Type.STRING),
-            "nowa_ilosc": types.Schema(type=types.Type.STRING),
-        },
-        required=["id_wycieczki", "typ", "stara_nazwa"]
-    ),
-)
-usun_checklist_tool = types.FunctionDeclaration(
-    name="usun_element_checklisty",
-    description="Usuwa element z checklisty.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING),
-            "typ": types.Schema(type=types.Type.STRING),
-            "nazwa": types.Schema(type=types.Type.STRING),
-        },
-        required=["id_wycieczki", "typ", "nazwa"]
     ),
 )
 
 cretai_tools = types.Tool(function_declarations=[
-    dodaj_notatke_tool, dodaj_miejsce_tool, edytuj_wycieczke_tool, dodaj_krok_tool, 
-    aktualizuj_tool, usun_miejsce_tool, utworz_nowa_wycieczke_tool, usun_wycieczke_tool, 
-    edytuj_krok_tool, usun_krok_tool, dodaj_checklist_tool, 
-    edytuj_checklist_tool, usun_checklist_tool
+    dodaj_notatke_tool, edytuj_notatke_tool, usun_notatke_tool, 
+    edytuj_miejsce_tool, usun_miejsce_tool, 
+    dodaj_zakup_tool, edytuj_zakup_tool, usun_zakup_tool, 
+    dodaj_krok_wycieczki_tool, edytuj_krok_wycieczki_tool, usun_krok_wycieczki_tool
 ])
 
-# Wykonawca funkcji dla bazy danych (wspólny dla obu silników)
 def wykonaj_narzedzie_bazy(call_name, args):
-    if call_name == "edytuj_wycieczke" and "planowana_data" in args:
-        p_data = args["planowana_data"]
-        try:
-            d_obj = datetime.strptime(p_data, "%Y-%m-%d").date()
-            if d_obj < date.today():
-                return f"BŁĄD: Planowana data nie może być z przeszłości (dzisiaj jest {date.today()})!"
-        except:
-            pass
-
     if call_name == "dodaj_notatke":
         return dodaj_notatke(**args)
-    elif call_name == "dodaj_miejsce":
-        return dodaj_miejsce(**args)
-    elif call_name == "edytuj_wycieczke":
-        return edytuj_wycieczke(**args)
-    elif call_name == "dodaj_krok_do_wycieczki":
-        return dodaj_krok_do_wycieczki(**args)
-    elif call_name == "aktualizuj_miejsce":
-        return aktualizuj_miejsce(**args)
+    elif call_name == "edytuj_notatke":
+        return edytuj_notatke(**args)
+    elif call_name == "usun_notatke":
+        return usun_notatke(**args)
+    elif call_name == "edytuj_miejsce":
+        return edytuj_miejsce(**args)
     elif call_name == "usun_miejsce":
         return usun_miejsce(**args)
-    elif call_name == "utworz_nowa_wycieczke":
-        return utworz_nowa_wycieczke(**args)
-    elif call_name == "usun_wycieczke":
-        return usun_wycieczke(**args)
-    elif call_name == "edytuj_krok_w_wycieczce":
-        return edytuj_krok_w_wycieczce(**args)
-    elif call_name == "usun_krok_z_wycieczki":
-        return usun_krok_z_wycieczki(**args)
-    elif call_name == "dodaj_element_checklisty":
-        return dodaj_element_checklisty(**args)
-    elif call_name == "edytuj_element_checklisty":
-        return edytuj_element_checklisty(**args)
-    elif call_name == "usun_element_checklisty":
-        return usun_element_checklisty(**args)
+    elif call_name == "dodaj_produkt_zakupow":
+        return dodaj_produkt_zakupow(**args)
+    elif call_name == "edytuj_produkt_zakupow":
+        return edytuj_produkt_zakupow(**args)
+    elif call_name == "usun_produkt_zakupow":
+        return usun_produkt_zakupow(**args)
+    elif call_name == "dodaj_krok_wycieczki":
+        return dodaj_krok_wycieczki(**args)
+    elif call_name == "edytuj_krok_wycieczki":
+        return edytuj_krok_wycieczki(**args)
+    elif call_name == "usun_krok_wycieczki":
+        return usun_krok_wycieczki(**args)
     return "Wykonano."
 
 # --- W PANELU BOCZNYM: WYBÓR UŻYTKOWNIKA, DOSTAWCY AI I KLUCZA ---
@@ -1547,12 +1317,12 @@ with st.sidebar:
     st.markdown("### 🧭 Szybka Nawigacja")
     st.markdown(f"""
         <div class="custom-nav-bar">
-            <a href="https://www.google.com/maps/search/?api=1&query=35.586222,24.091861" target="_blank" class="custom-nav-btn" title="Sklep"><span>🛒</span><span>Sklep</span></a>
-            <a href="https://www.google.com/maps/search/?api=1&query=35.5914,24.0918" target="_blank" class="custom-nav-btn" title="Domek"><span>🏠</span><span>Domek</span></a>
+            <a href="https://www.google.com/maps/search/?api=1&query={SKLEP_LAT},{SKLEP_LON}" target="_blank" class="custom-nav-btn" title="Sklep"><span>🛒</span><span>Sklep</span></a>
+            <a href="https://www.google.com/maps/search/?api=1&query={DOMEK_LAT},{DOMEK_LON}" target="_blank" class="custom-nav-btn" title="Domek"><span>🏠</span><span>Domek</span></a>
         </div>
     """, unsafe_allow_html=True)
 
-# --- GLOBALNY, PŁYWAJĄCY ASYSTENT AI OBSŁUGUJĄCY GEMINI ORAZ CLAUDE ---
+# --- GLOBALNY, PŁYWAJĄCY ASYSTENT AI ---
 def renderuj_globalny_czat_ai(uzytkownik):
     st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
     
@@ -1581,10 +1351,9 @@ def renderuj_globalny_czat_ai(uzytkownik):
         system_prompt = f"""Jesteś inteligentnym asystentem podróży CretAi na Kretę, pomagającym rodzicom dzieci z ADHD.
 Dzisiejsza data to: {dzisiaj_str}.
 {zewnetrzny_kontekst}
-- Masz wgląd w bazę danych oraz w notatki i wskazówki wpisane przez użytkownika.
-- Pamiętaj o pełnej kontroli czasu, ewakuacji przed upałem i redukcji stresu.
-- Chronisz miejsca z flagą Base = true.
-- Możesz modyfikować bazy, dodawać miejsca, notatki, planowane daty oraz KROKI DO WYCIECZEK."""
+- Masz na stałe wgląd w lokalizację domku ({DOMEK_LAT}, {DOMEK_LON}) oraz sklepu obok domku ({SKLEP_LAT}, {SKLEP_LON}).
+- Pamiętaj o żelaznej zasadzie: miejsca z flagą Base=true są bezwzględnie chronione i nie wolno ich usuwać ani modyfikować ich flag bazowych.
+- Pamiętaj o pełnej kontroli czasu, ewakuacji przed upałem i redukcji stresu."""
 
         chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
 
@@ -1665,11 +1434,9 @@ Dzisiejsza data to: {dzisiaj_str}.
 
                         else:  # --- ANTHROPIC CLAUDE ---
                             if not ANTHROPIC_AVAILABLE:
-                                assistant_reply = "Błąd: Pakiet `anthropic` nie jest zainstalowany w środowisku. Zainstaluj go poleceniem `pip install anthropic`."
+                                assistant_reply = "Błąd: Pakiet `anthropic` nie jest zainstalowany."
                             else:
                                 client_c = anthropic.Anthropic(api_key=api_key_input)
-                                
-                                # Konwersja historii do formatu Claude Messages API
                                 claude_messages = []
                                 conn = sqlite3.connect('cretai.db')
                                 cursor = conn.cursor()
@@ -1687,12 +1454,8 @@ Dzisiejsza data to: {dzisiaj_str}.
                                     system=system_prompt,
                                     messages=claude_messages
                                 )
-                                
-                                if response.content:
-                                    text_blocks = [block.text for block in response.content if hasattr(block, "text")]
-                                    assistant_reply = "".join(text_blocks)
-                                else:
-                                    assistant_reply = "Brak odpowiedzi od Claude."
+                                text_blocks = [block.text for block in response.content if hasattr(block, "text")]
+                                assistant_reply = "".join(text_blocks)
 
                         zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
                     except Exception as e:
@@ -1890,15 +1653,13 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
             </div>
             """, unsafe_allow_html=True)
 
-        if st.button("🎒 Sprawdź checklistę", use_container_width=True):
-            pokaz_checklistu_popup(wycieczka_id)
-
         st.markdown("<h3>Szczegółowy plan</h3>", unsafe_allow_html=True)
         
         for _, k in kroki_df.iterrows():
             krok_num = str(k['krok_wycieczki'])
             krok_nazwa = str(k['nazwa'])
             okienko = str(k.get('okienko_zwiedzania', ''))
+            krok_row_id = k['id']
             
             pasujące_miejsce = df_miejsca[df_miejsca['numer_miejsca'] == krok_num]
             miejsce_id_cel = str(pasujące_miejsce.iloc[0]['numer_miejsca']) if not pasujące_miejsce.empty else "1"
@@ -1921,21 +1682,44 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
                 card_html = f'''<div style="background-color:#111e38; padding:4px;"><div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;"><div style="background-color:#f43f5e; color:white; border-radius:50%; width:26px; height:26px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:10pt;">{krok_num}</div><span style="font-size:11.5pt; font-weight:900; color:#38bdf8;">{krok_nazwa}</span></div>{desc_html}<div style="display: flex; gap: 6px; margin-top: 10px; margin-bottom: 10px;"><a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" style="padding:6px 0;" title="GPS"><span>📍</span><span>GPS</span></a><a href="{google_search_url}" target="_blank" class="custom-nav-btn" style="padding:6px 0;" title="Google"><span>🔍</span><span>Google</span></a><a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" style="padding:6px 0;" title="Sklep"><span>🛒</span><span>Sklep</span></a><a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" style="padding:6px 0;" title="Restauracja"><span>🍽️</span><span>Resto</span></a><a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" style="padding:6px 0;" title="Opis"><span>📝</span><span>Opis</span></a></div><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;"><div class="net-box" style="margin-bottom:0;"><div class="net-title">⏱️ Harmonogram</div><div style="font-size:11pt; font-weight:900; color:#ffffff;">{k["okienko_zwiedzania"]}</div></div><div class="net-box-evac" style="margin-bottom:0;"><div class="net-title-evac">🚨 Ewakuacja</div><div style="font-size:11pt; font-weight:900; color:#f87171;">{k.get("godzina_ewakuacji", "Brak")}</div></div></div><div class="net-box"><div class="net-title">🎯 Taktyka</div><div class="net-text">{k["podsumowanie_taktyki"]}</div></div><div class="net-box-regen" style="margin-bottom:0;"><div class="net-title-regen">🌿 Regeneracja</div><div class="net-text" style="color:#4ade80; font-weight:800;">{k["strefa_luzu_i_regeneracji"]}</div></div>{warn_html}</div>'''
                 st.markdown(card_html, unsafe_allow_html=True)
 
-        col_btn1, col_btn2 = st.columns(2)
-        with col_btn1:
-            if st.button(f"🎯 Ustaw aktywną", key=f"btn_akt_{wycieczka_id}", use_container_width=True):
-                ustaw_aktywna_wycieczke_id(wycieczka_id)
-                st.session_state["flash_toast"] = f"🎯 Wycieczka #{wycieczka_id} została ustawiona jako aktywna!"
-                st.rerun()
-        with col_btn2:
-            is_odbyta = int(w_gen.get('odbyta', 0)) == 1
-            if is_odbyta:
-                st.markdown('<div style="background-color:rgba(34,197,94,0.15); color:#4ade80; padding:8px; border-radius:10px; text-align:center; font-weight:800; border:1.5px solid rgba(34,197,94,0.5); font-size:10.5pt;">✨ Przebyta</div>', unsafe_allow_html=True)
-            else:
-                if st.button(f"✅ Oznacz przebytą", key=f"btn_odbyte_{wycieczka_id}", use_container_width=True):
-                    oznacz_wycieczke_i_miejsca_jako_odbyte(wycieczka_id)
-                    st.session_state["flash_toast"] = f"✅ Wycieczka #{wycieczka_id} i powiązane miejsca oznaczone jako odbyte!"
-                    st.rerun()
+                # ROZWIJANE MENU: CHECKLISTA ZAKUPÓW W TYM MIEJSCU
+                df_zakupy_kroku = pobierz_zakupy_dla_kroku(krok_row_id)
+                with st.expander("🛒 Checklista zakupów w tym miejscu"):
+                    with st.form(key=f"form_add_zakup_{krok_row_id}", clear_on_submit=True):
+                        st.markdown('<div style="font-size: 9pt; font-weight: 800; color: #94a3b8; margin-bottom: 2px;">PRODUKT I ILOŚĆ</div>', unsafe_allow_html=True)
+                        col_z1, col_z2 = st.columns([3, 1])
+                        with col_z1:
+                            nowy_prod = st.text_input("Nowy produkt", placeholder="np. Woda, owoce", label_visibility="collapsed")
+                        with col_z2:
+                            nowa_il = st.text_input("Ilość", value="1", placeholder="Ilość", label_visibility="collapsed")
+                        
+                        if st.form_submit_button("➕ Dodaj zakup", use_container_width=True):
+                            if nowy_prod.strip():
+                                dodaj_produkt_zakupow(krok_row_id, nowy_prod.strip(), nowa_il.strip())
+                                st.session_state["flash_toast"] = "🛒 Dodano produkt do zakupów!"
+                                st.rerun()
+
+                    if df_zakupy_kroku.empty:
+                        st.markdown("<p style='color: #94a3b8; font-size: 9.5pt; font-style: italic;'>Brak zakupów zaplanowanych w tym miejscu.</p>", unsafe_allow_html=True)
+                    else:
+                        for _, z in df_zakupy_kroku.iterrows():
+                            z_id = z['id']
+                            z_nazwa = z['nazwa_produktu']
+                            z_ilosc = z['ilosc']
+                            z_kupione = bool(z['kupione'])
+                            
+                            col_chk, col_del = st.columns([5, 1])
+                            with col_chk:
+                                etykieta_z = f"{z_nazwa} (*{z_ilosc}*)" if z_ilosc and z_ilosc != "1" else z_nazwa
+                                stan_checkboxa = st.checkbox(etykieta_z, value=z_kupione, key=f"chk_zakup_{z_id}")
+                                if stan_checkboxa != z_kupione:
+                                    zmien_status_zakupu(z_id, stan_checkboxa)
+                                    st.rerun()
+                            with col_del:
+                                if st.button("🗑️", key=f"del_zakup_{z_id}", help="Usuń produkt"):
+                                    usun_produkt_zakupow(z_id)
+                                    st.session_state["flash_toast"] = "🗑️ Usunięto produkt!"
+                                    st.rerun()
 
         renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
 
@@ -1951,7 +1735,6 @@ st.markdown(f"""
     </div>
 """, unsafe_allow_html=True)
 
-# Renderowanie zawartości w zależności od aktywnej zakładki
 if st.session_state.active_tab == "zabytek":
     logo_b64 = ""
     if os.path.exists("logo.png"):
@@ -2170,9 +1953,6 @@ elif st.session_state.active_tab == "map":
     opcje_wycieczek_lista = ["-- Wybierz wycieczkę lub zobacz mapę wszystkich miejsc --"] + wycieczki_options
     wybrana_mapa_sb = st.selectbox("", options=opcje_wycieczek_lista, key="map_wycieczka_select", label_visibility="collapsed")
     
-    if "last_clicked_place_info" in st.session_state and st.session_state.last_clicked_place_info:
-        st.markdown(st.session_state.last_clicked_place_info)
-
     if wybrana_mapa_sb == "-- Wybierz wycieczkę lub zobacz mapę wszystkich miejsc --":
         m_all = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB dark_matter")
         dodaj_marker_domku(m_all)
@@ -2196,39 +1976,8 @@ elif st.session_state.active_tab == "map":
                 except:
                     pass
         
-        map_all_data = st_folium(m_all, width="100%", height=340)
-        
-        if map_all_data and map_all_data.get("last_object_clicked_tooltip"):
-            clicked_tooltip = map_all_data["last_object_clicked_tooltip"]
-            if "." in clicked_tooltip:
-                klikniety_numer_miejsca = clicked_tooltip.split(".")[0].strip()
-                
-                conn = sqlite3.connect('cretai.db')
-                powiazane_kroki = pd.read_sql('''
-                    SELECT DISTINCT k.id_wycieczki, w.tytul_wycieczki 
-                    FROM krok_wycieczki k 
-                    JOIN wycieczka w ON k.id_wycieczki = w.id 
-                    WHERE (k.krok_wycieczki = ? OR k.nazwa LIKE ?) AND w.odbyta = 0
-                ''', conn, params=(klikniety_numer_miejsca, f"%{clicked_tooltip.split('.')[1].strip()}%"))
-                conn.close()
-                
-                info_tekst = ""
-                if not powiazane_kroki.empty:
-                    info_tekst = f"📌 Miejsce **{clicked_tooltip}** znajduje się w aktywnych wycieczkach:\n"
-                    for _, row_w in powiazane_kroki.iterrows():
-                        info_tekst += f"- **Wycieczka #{row_w['id_wycieczki']}**: {row_w['tytul_wycieczki']}\n"
-                else:
-                    info_tekst = f"📌 Miejsce **{clicked_tooltip}** nie jest obecnie przypisane do żadnej aktywnej wycieczki."
-                
-                if st.session_state.get("last_clicked_text") != clicked_tooltip:
-                    st.session_state.last_clicked_text = clicked_tooltip
-                    st.session_state.last_clicked_place_info = info_tekst
-                    st.rerun()
+        st_folium(m_all, width="100%", height=340)
     else:
-        if "last_clicked_place_info" in st.session_state:
-            st.session_state.last_clicked_text = None
-            st.session_state.last_clicked_place_info = None
-            
         if wybrana_mapa_sb:
             wybrana_id = wybrana_mapa_sb.split(". ")[0]
             st.markdown("---")
@@ -2255,5 +2004,4 @@ elif st.session_state.active_tab == "route":
     else:
         renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False, pokaz_pogode=True)
 
-# Globalny asystent AI z uwzględnieniem wybranego użytkownika i dostawcy
 renderuj_globalny_czat_ai(aktualny_uzytkownik)
