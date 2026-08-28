@@ -8,6 +8,7 @@ from streamlit_folium import st_folium
 import os
 import urllib.request
 import json
+import re
 
 # --- 1. KONFIGURACJA STRONY I STYL PERGAMINU (MOBILE FIRST / UX ADHD) ---
 st.set_page_config(page_title="OdyssAi - Kreta", layout="centered", page_icon="🧭")
@@ -1626,7 +1627,13 @@ elif st.session_state.active_tab == "zabytek":
                 with st.expander("🧒 Dodatkowe zadania dla dzieci w tym miejscu"):
                     renderuj_zadania_dzieci_expander(p['zadania_dla_dzieci'], p['numer_miejsca'])
             
-            st.markdown(f"**🔗 Najlepiej połączyć z:** {p['najlepiej_polaczyc']}")
+            polaczenie_tekst = str(p['najlepiej_polaczyc'])
+            def zamien_na_link(match):
+                nr_miejsca = match.group(1)
+                return f'<a href="?tab=zabytek&place={nr_miejsca}" target="_self" style="color: #663223; font-weight: bold; text-decoration: underline;">Miejsce {nr_miejsca}</a>'
+            
+            polaczenie_przetworzone = re.sub(r'Miejsce\s+(\d+)', zamien_na_link, polaczenie_tekst, flags=re.IGNORECASE)
+            st.markdown(f"**🔗 Najlepiej połączyć z:** {polaczenie_przetworzone}", unsafe_allow_html=True)
 
     renderuj_sekcje_czatu_ai("tab_zabytek")
 
