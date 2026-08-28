@@ -1298,7 +1298,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
             </div>
             """, unsafe_allow_html=True)
 
-        # Przeniesienie ramki "Taktyka dnia" bezpośrednio pod ramkę opisu wycieczki
         if pd.notna(w_gen['calosciowa_taktyka_dnia']) and str(w_gen['calosciowa_taktyka_dnia']).strip() != "":
             st.markdown(f"""
             <div style="background-color:#e6ded1; padding:14px; border:2px solid #b89b82; border-radius:8px; margin-bottom:15px;">
@@ -1307,13 +1306,17 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
             </div>
             """, unsafe_allow_html=True)
 
-        # Przycisk checklisty uruchamiający modal (popup)
         if st.button("🎒 Sprawdź checklistę wycieczki", use_container_width=True):
             pokaz_checklistu_popup(wycieczka_id)
 
-        st.markdown("---")
-
-        st.markdown("### 📍 Szczegółowy plan (Kroki wycieczki)")
+        st.markdown(
+            """
+            <div style="margin-top: -10px; margin-bottom: -10px;">
+                <h3>Szczegółowy plan</h3>
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
         
         for _, k in kroki_df.iterrows():
             krok_num = str(k['krok_wycieczki'])
@@ -1331,12 +1334,9 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
             warn_html = f'<div class="net-box-warn" style="margin-top: 10px; margin-bottom: 0;"><div class="net-title-warn">⚠️ Ostrzeżenie</div><div class="net-text" style="color:#721c24; font-weight:bold;">{k["czerwona_strefa_ostrzezenie"]}</div></div>' if pd.notna(k.get('czerwona_strefa_ostrzezenie')) and str(k['czerwona_strefa_ostrzezenie']).strip() != "" else ""
             desc_html = f'<div style="margin-top: 10px; background-color:#fcf8f2; border:1px solid #b89b82; border-radius:8px; padding:10px; font-size:10pt; color:#3b2f2f; font-style:italic;">{k["opis"]}</div>' if pd.notna(k.get('opis')) and str(k.get('opis')).strip() != "" else ""
 
-            # Rozwijane menu kroku (expander) z przywróconym tytułem na kafelek
             with st.expander(f"Krok {krok_num}: {krok_nazwa}"):
                 card_html = f'''<div style="background-color:#e6ded1; border:2px solid #b89b82; border-radius:14px; padding:16px; margin-bottom:10px; box-shadow:0 2px 5px rgba(0,0,0,0.08); position:relative;"><div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;"><div style="background-color:#e83e8c; color:white; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:11pt; border:2px solid white; box-shadow:0 1px 3px rgba(0,0,0,0.3);">{krok_num}</div><span style="font-size:13pt; font-weight:900; color:#663223; text-decoration:underline;">{krok_nazwa}</span></div>{desc_html}<div style="display: flex; gap: 6px; margin-top: 12px; margin-bottom: 12px;"><a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="GPS">📍</a><a href="{google_search_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Google">🔍</a><a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Sklep">🛒</a><a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Restauracja">🍽️</a><a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" style="padding:4px 0; font-size:16px;" title="Opis">📝</a></div><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;"><div class="net-box" style="margin-bottom:0;"><div class="net-title">⏱️ Harmonogram</div><div class="net-value" style="font-size:11pt; font-weight:bold; color:#3b2f2f;">{k["okienko_zwiedzania"]}</div></div><div class="net-box-evac" style="margin-bottom:0;"><div class="net-title-evac">🚨 Ewakuacja</div><div style="font-size:11pt; font-weight:bold; color:#a71d2a;">{k.get("godzina_ewakuacji", "Brak")}</div></div></div><div class="net-box"><div class="net-title">🎯 Taktyka</div><div class="net-text">{k["podsumowanie_taktyki"]}</div></div><div class="net-box-regen" style="margin-bottom: 0;"><div class="net-title-regen">🌿 Strefa luzu i regeneracji</div><div class="net-text" style="color:#155724;">{k["strefa_luzu_i_regeneracji"]}</div></div>{warn_html}</div>'''
                 st.markdown(card_html, unsafe_allow_html=True)
-
-        st.markdown("---")
 
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
