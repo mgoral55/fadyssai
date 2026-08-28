@@ -62,6 +62,37 @@ st.markdown("""
         color: white;
         border-color: #663223;
     }
+    /* Mniejsze przyciski nawigacyjne do panelu bocznego */
+    .sidebar-nav-bar {
+        display: flex;
+        justify-content: space-between;
+        gap: 4px;
+        width: 100%;
+        margin-bottom: 0.5rem;
+    }
+    .sidebar-nav-btn {
+        flex: 1;
+        background-color: #e6ded1;
+        border: 1px solid #b89b82;
+        color: #663223;
+        padding: 4px 0;
+        text-align: center;
+        border-radius: 6px;
+        font-size: 14px;
+        text-decoration: none;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        cursor: pointer;
+    }
+    .sidebar-nav-btn:hover {
+        background-color: #d4c8b8;
+        border-color: #663223;
+    }
+    .sidebar-nav-btn.active {
+        background-color: #b89b82;
+        color: white;
+        border-color: #663223;
+    }
+
     /* Eleganckie belki nagłówkowe w stylu antycznym */
     .antique-header {
         background: linear-gradient(to right, #d4c8b8, #e6ded1, #d4c8b8);
@@ -185,7 +216,8 @@ def init_db():
             ochrona_slonce TEXT,
             najlepiej_polaczyc TEXT,
             zadania_dla_dzieci TEXT,
-            odwiedzone INTEGER DEFAULT 0
+            odwiedzone INTEGER DEFAULT 0,
+            Base TEXT DEFAULT 'false'
         )
     ''')
 
@@ -205,6 +237,10 @@ def init_db():
 
     try:
         cursor.execute("ALTER TABLE miejsca ADD COLUMN odwiedzone INTEGER DEFAULT 0")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE miejsca ADD COLUMN Base TEXT DEFAULT 'false'")
     except:
         pass
     try:
@@ -274,12 +310,12 @@ def init_db():
         
         for _, row in df_csv.iterrows():
             cursor.execute('''
-                INSERT OR IGNORE INTO miejsca (
+                INSERT OR REPLACE INTO miejsca (
                     numer_miejsca, nazwa, nazwa_angielska, opis, wspolrzedne, typ,
                     czas_dojazdu, godziny_otwarcia, najlepsza_pora, orientacyjny_czas,
                     koszt, konieczna_akcja, zaplecze_gastro, ile_jedzenia, trudnosc_adhd,
-                    potencjal_meltdownu, strategie_meltdown, ochrona_slonce, najlepiej_polaczyc, zadania_dla_dzieci, odwiedzone
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    potencjal_meltdownu, strategie_meltdown, ochrona_slonce, najlepiej_polaczyc, zadania_dla_dzieci, odwiedzone, Base
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'true')
             ''', (
                 str(row.get('numer miejsca', '')),
                 str(row.get('nazwa', '')),
@@ -404,6 +440,14 @@ def oznacz_wycieczke_i_miejsca_jako_odbyte(id_wycieczki):
 def aktualizuj_miejsce(numer_miejsca, opis=None, konieczna_akcja=None):
     conn = sqlite3.connect('fadyssai.db')
     cursor = conn.cursor()
+    
+    # Sprawdzamy, czy miejsce ma Base == 'true'
+    cursor.execute('SELECT Base FROM miejsca WHERE numer_miejsca = ?', (str(numer_miejsca),))
+    res = cursor.fetchone()
+    if res and str(res[0]).lower() == 'true':
+        conn.close()
+        return f"OSTRZEŻENIE: Miejsce nr {numer_miejsca} pochodzi z bazy bazowej (CSV) i ma ustawioną flagę Base=true. Modyfikacja tego miejsca przez AI jest zablokowana!"
+
     if opis:
         cursor.execute('UPDATE miejsca SET opis = ? WHERE numer_miejsca = ?', (opis, str(numer_miejsca)))
     if konieczna_akcja:
@@ -411,6 +455,20 @@ def aktualizuj_miejsce(numer_miejsca, opis=None, konieczna_akcja=None):
     conn.commit()
     conn.close()
     return f"Miejsce nr {numer_miejsca} w bazie Fadyssai zostało zaktualizowane!"
+
+def usun_miejsce(numer_miejsca):
+    conn = sqlite3.connect('fadyssai.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT Base FROM miejsca WHERE numer_miejsca = ?', (str(numer_miejsca),))
+    res = cursor.fetchone()
+    if res and str(res[0]).lower() == 'true':
+        conn.close()
+        return f"OSTRZEŻENIE: Miejsce nr {numer_miejsca} pochodzi z bazy bazowej (CSV) i ma ustawioną flagę Base=true. Usuwanie tego miejsca jest absolutnie zablokowane!"
+    
+    cursor.execute('DELETE FROM miejsca WHERE numer_miejsca = ?', (str(numer_miejsca),))
+    conn.commit()
+    conn.close()
+    return f"Miejsce nr {numer_miejsca} zostało usunięte z bazy."
 
 def utworz_nowa_wycieczke(id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu):
     conn = sqlite3.connect('fadyssai.db')
@@ -604,19 +662,12 @@ def pobierz_skrocone_opcje_wycieczek():
         opcje.append(f"{wid}. {skrocony}")
     return opcje
 
-# Pomocnicza funkcja ładowania zewnętrznego kontekstu, źródeł ORAZ całej bazy danych SQLite dla AI
+# Pomocnicza funkcja ładowania wewnętrznej bazy danych SQLite dla AI (bez dynamicznych plików zewnętrznych)
 def wczytaj_kontekst_zewnetrzny():
-    tekst = ""
-    if os.path.exists("context.md"):
-        try:
-            with open("context.md", "r", encoding="utf-8") as f:
-                tekst += f.read() + "\n\n"
-        except:
-            pass
-            
+    tekst = "Jesteś asystentem podróży Fadyssai na Kretę.\n--- AKTUALNA BAZA DANYCH W SQLITE ---\n"
     conn = sqlite3.connect('fadyssai.db')
     try:
-        miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, typ, czas_dojazdu, orientacyjny_czas, koszt, konieczna_akcja, odwiedzone FROM miejsca', conn)
+        miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, typ, czas_dojazdu, orientacyjny_czas, koszt, konieczna_akcja, odwiedzone, Base FROM miejsca', conn)
         wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, odbyta FROM wycieczka', conn)
         kroki_df = pd.read_sql('SELECT id_wycieczki, krok_wycieczki, nazwa, okienko_zwiedzania FROM krok_wycieczki', conn)
         checklisty_df = pd.read_sql('SELECT c.id_wycieczki, c.typ, i.nazwa, i.ilosc FROM checklist c JOIN checklist_item i ON c.id = i.id_checklisty', conn)
@@ -627,11 +678,11 @@ def wczytaj_kontekst_zewnetrzny():
         checklisty_df = pd.DataFrame()
     conn.close()
 
-    tekst += "--- AKTUALNA BAZA DANYCH W SQLITE ---\n"
     if not miejsca_df.empty:
         tekst += "Miejsca:\n"
         for _, r in miejsca_df.iterrows():
-            tekst += f"- Nr {r['numer_miejsca']}: {r['nazwa']} (Typ: {r['typ']}, Odwiedzone: {r['odwiedzone']}, Dojazd: {r['czas_dojazdu']}, Koszt: {r['koszt']})\n"
+            base_flag = r.get('Base', 'false')
+            tekst += f"- Nr {r['numer_miejsca']}: {r['nazwa']} (Typ: {r['typ']}, Odwiedzone: {r['odwiedzone']}, Base: {base_flag}, Dojazd: {r['czas_dojazdu']}, Koszt: {r['koszt']})\n"
     if not wycieczki_df.empty:
         tekst += "\nWycieczki:\n"
         for _, w in wycieczki_df.iterrows():
@@ -647,20 +698,7 @@ def wczytaj_kontekst_zewnetrzny():
         for _, cl in checklisty_df.iterrows():
             tekst += f"- Wycieczka #{cl['id_wycieczki']} [{cl['typ']}]: {cl['nazwa']} (ilość: {cl['ilosc']})\n"
 
-    if os.path.exists("sources"):
-        tekst += "\n--- WSPÓLNE ŹRÓDŁA WIEDZY RODZIN ---\n"
-        for plik in os.listdir("sources"):
-            sciezka = os.path.join("sources", plik)
-            if os.path.isfile(sciezka) and (plik.endswith(".txt") or plik.endswith(".md")):
-                try:
-                    with open(sciezka, "r", encoding="utf-8", errors="ignore") as sf:
-                        zawartosc = sf.read()
-                        if len(zawartosc) > 3000:
-                            zawartosc = zawartosc[:3000] + "\n[... skrócono ...]"
-                        tekst += f"\n[Źródło: {plik}]\n" + zawartosc + "\n"
-                except:
-                    pass
-    return tekst if tekst else "Jesteś asystentem podróży Fadyssai na Kretę."
+    return tekst
 
 # Pomocnicza funkcja pobierająca trasę po drogach z OSRM
 def pobierz_trase_osrm(punkty):
@@ -688,13 +726,25 @@ def dodaj_marker_domku(m):
 # --- 3. NARĘDZIA DLA GEMINI ---
 aktualizuj_tool = types.FunctionDeclaration(
     name="aktualizuj_miejsce",
-    description="Aktualizuje informacje o wybranym miejscu na Krecie na podstawie numeru miejsca.",
+    description="Aktualizuje informacje o wybranym miejscu na Krecie na podstawie numeru miejsca. UWAGA: Miejsca z flagą Base=true (pochodzące z CSV) nie mogą być modyfikowane.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
             "numer_miejsca": types.Schema(type=types.Type.STRING, description="Numer miejsca, np. '1'"),
             "opis": types.Schema(type=types.Type.STRING, description="Nowy opis miejsca"),
             "konieczna_akcja": types.Schema(type=types.Type.STRING, description="Nowa konieczna akcja"),
+        },
+        required=["numer_miejsca"]
+    ),
+)
+
+usun_miejsce_tool = types.FunctionDeclaration(
+    name="usun_miejsce",
+    description="Usuwa miejsce z bazy danych. UWAGA: Miejsca z flagą Base=true nie mogą być pod żadnym pozorem usuwane.",
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "numer_miejsca": types.Schema(type=types.Type.STRING, description="Numer miejsca do usunięcia"),
         },
         required=["numer_miejsca"]
     ),
@@ -854,6 +904,7 @@ usun_checklist_tool = types.FunctionDeclaration(
 
 fadyssai_tools = types.Tool(function_declarations=[
     aktualizuj_tool, 
+    usun_miejsce_tool,
     utworz_nowa_wycieczke_tool, 
     edytuj_wycieczke_tool, 
     usun_wycieczke_tool, 
@@ -880,7 +931,8 @@ def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
     system_prompt = f"""Jesteś inteligentnym, empatycznym asystentem podróży Fadyssai na Kretę.
 {zewnetrzny_kontekst}
 - Masz pełny wgląd w całą bazę danych SQLite, obejmującą tabele: `miejsca`, `wycieczka`, `krok_wycieczki` oraz tabele powiązane z checklistami.
-- **BARDZO WAŻNE:** Nigdy nie zapisuj, nie modyfikuj ani nie usuwaj niczego w bazie danych samowolnie. Modyfikacje i usuwanie (użycie narzędzi takich jak `utworz_nowa_wycieczke`, `edytuj_wycieczke`, `usun_wycieczke`, `aktualizuj_miejsce`, `dodaj_krok_do_wycieczki`, `edytuj_krok_w_wycieczce`, `usun_krok_z_wycieczki`, `dodaj_element_checklisty`, `edytuj_element_checklisty`, `usun_element_checklisty`) mogą być wywołane **wyłącznie wtedy, gdy użytkownik wyda jednoznaczne, bezpośrednie polecenie**. W przeciwnym razie tylko rozmawiasz i doradzasz."""
+- **BARDZO WAŻNE OGRANICZENIE BEZPIECZEŃSTWA:** Miejsca w tabeli `miejsca`, które mają flagę `Base = true` (zaczytane z pliku CSV przy starcie aplikacji), są **BEZWZGLĘDNIE CHRONIONE**. Nie wolno ich modyfikować, nadpisywać ani usuwać pod żadnym pozorem. Próba ich usunięcia lub zmiany zostanie odrzucona przez system. Możesz dodawać nowe miejsca lub modyfikować jedynie te, które nie mają flagi Base=true.
+- **BARDZO WAŻNE:** Nigdy nie zapisuj, nie modyfikuj ani nie usuwaj niczego w bazie danych samowolnie. Modyfikacje i usuwanie mogą być wywołane **wyłącznie wtedy, gdy użytkownik wyda jednoznaczne, bezpośrednie polecenie**."""
 
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -895,6 +947,10 @@ def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
                 for p in content.parts:
                     if hasattr(p, "text") and p.text:
                         st.markdown(p.text)
+
+    if st.button("🗑️ Nowy czat", key=f"btn_new_chat_{klucz_unikalny_sufiks}", use_container_width=True):
+        st.session_state.chat_history = []
+        st.rerun()
 
     prompt = st.chat_input("Rozmawiaj o wycieczkach, kminie plany...", key=f"chat_input_{klucz_unikalny_sufiks}")
     if prompt:
@@ -938,6 +994,8 @@ def renderuj_sekcje_czatu_ai(klucz_unikalny_sufiks):
                         call_name = call.name
                         if call_name == "aktualizuj_miejsce":
                             wynik_bazy = aktualizuj_miejsce(**args)
+                        elif call_name == "usun_miejsce":
+                            wynik_bazy = usun_miejsce(**args)
                         elif call_name == "utworz_nowa_wycieczke":
                             wynik_bazy = utworz_nowa_wycieczke(**args)
                         elif call_name == "edytuj_wycieczke":
@@ -1006,6 +1064,10 @@ if "tab" in st.query_params:
 elif "active_tab" not in st.session_state:
     st.session_state.active_tab = "zabytek"  # Domyślnie wchodzi w Miejsca i Zabytki
 
+if "place" in st.query_params:
+    st.session_state.active_place_id = st.query_params["place"]
+    st.session_state.active_tab = "zabytek"
+
 if "active_place_id" not in st.session_state:
     st.session_state.active_place_id = None
 
@@ -1024,67 +1086,6 @@ DEFAULT_COLOR = '#DC3545'
 
 df_miejsca = pobierz_wszystkie_miejsca()
 wycieczki_options = pobierz_skrocone_opcje_wycieczek()
-
-# --- PANEL BOCZNY (WSPÓLNE ŹRÓDŁA WIEDZY + KLUCZ API) ---
-with st.sidebar:
-    st.header("⚙️ Ustawienia Asystenta")
-    gemini_api_key = st.text_input("Klucz API Google Gemini", type="password", key="api_key_input")
-    
-    dostepne_modele = [
-        "gemini-3.1-flash-lite",
-        "gemini-3.5-flash-lite",
-        "gemini-3.5-flash",
-        "gemini-3.6-flash"
-    ]
-    wybrany_model = st.selectbox("Wybierz model AI", options=dostepne_modele, index=0)
-    
-    st.markdown("---")
-    
-    if st.button("🗑️ Nowy czat", use_container_width=True):
-        st.session_state.chat_history = []
-        st.success("Rozpoczęto nowy czat!")
-        st.rerun()
-
-    st.markdown("---")
-    
-    st.header("📚 Wspólne Źródła Wiedzy")
-    st.markdown("Wrzuć pliki tekstowe lub notatki, z których asystent ma korzystać dla całej grupy:")
-    
-    os.makedirs("sources", exist_ok=True)
-    uploaded_file = st.file_uploader("Dodaj źródło", type=["txt", "md", "pdf"])
-    if uploaded_file is not None:
-        file_path = os.path.join("sources", uploaded_file.name)
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        st.success(f"Dodano źródło: {uploaded_file.name}")
-        
-    zrodla = [f for f in os.listdir("sources") if os.path.isfile(os.path.join("sources", f))]
-    if zrodla:
-        st.markdown("**Aktywne źródła:**")
-        for z in zrodla:
-            st.text(f"• {z}")
-
-# --- GŁÓWNY INTERFEJS: 2 RZĘDY IKONEK ---
-domek_maps_url = "https://www.google.com/maps/search/?api=1&query=35.5914,24.0918"
-sklep_maps_url = "https://www.google.com/maps/search/?api=1&query=35.586222,24.091861"
-
-active_zabytek = "active" if st.session_state.active_tab == "zabytek" else ""
-active_map = "active" if st.session_state.active_tab == "map" else ""
-active_route = "active" if st.session_state.active_tab == "route" else ""
-active_chat = "active" if st.session_state.active_tab == "chat" else ""
-
-st.markdown(f"""
-    <div class="custom-nav-bar">
-        <a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" title="Nawiguj do Sklepu">🛒</a>
-        <a href="{domek_maps_url}" target="_blank" class="custom-nav-btn" title="Nawiguj do Domku">🏠</a>
-        <a href="?tab=chat" target="_self" class="custom-nav-btn {active_chat}" title="Czat AI">💬</a>
-    </div>
-    <div class="custom-nav-bar" style="margin-bottom: 1rem;">
-        <a href="?tab=zabytek" target="_self" class="custom-nav-btn {active_zabytek}" title="Miejsca">🏛️</a>
-        <a href="?tab=map" target="_self" class="custom-nav-btn {active_map}" title="Wycieczki">🗺️</a>
-        <a href="?tab=route" target="_self" class="custom-nav-btn {active_route}" title="Trasa i Wycieczka">🚗</a>
-    </div>
-""", unsafe_allow_html=True)
 
 # --- POPUP CHECKLISTY (MODAL) ---
 @st.dialog("🎒 Checklista Wycieczki")
@@ -1111,7 +1112,8 @@ def pokaz_checklistu_popup(wycieczka_id):
             if not powiazane_itemy.empty:
                 st.markdown(f"**📌 {typ_chl}:**")
                 for _, itm in powiazane_itemy.iterrows():
-                    ilosc_str = f" *({itm['ilosc']})*" if pd.notna(itm['ilosc']) and itm['ilosc'] != "1" else ""
+                    ilosc_val = itm['ilosc']
+                    ilosc_str = f" *({ilosc_val})*" if pd.notna(ilosc_val) and ilosc_val != "1" else ""
                     st.checkbox(f"{itm['nazwa']}{ilosc_str}", key=f"chk_pop_{itm['id']}")
 
 # --- POPUP ZADANIA DLA DZIECI (MODAL) ---
@@ -1133,9 +1135,11 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
     
     if not wycieczka_row.empty:
         w_gen = wycieczka_row.iloc[0]
+        tytul_w = str(w_gen['tytul_wycieczki'])
+        
         st.markdown(f"""
         <div style="background-color:#e6ded1; padding:12px; border-top:3px solid #b89b82; border-bottom:3px solid #b89b82; text-align:center; font-size:14pt; font-weight:900; text-transform:uppercase; margin-bottom:15px; color:#663223;">
-            🚗 Wycieczka #{w_gen['id']}: {w_gen['tytul_wycieczki']}
+            {tytul_w}
         </div>
         """, unsafe_allow_html=True)
 
@@ -1188,15 +1192,13 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
         for _, k in kroki_df.iterrows():
             krok_num = str(k['krok_wycieczki'])
             krok_nazwa = str(k['nazwa'])
-            if st.button(f"📌 Przejdź do kroku {krok_num}: {krok_nazwa}", key=f"spis_{wycieczka_id}_{k['id']}"):
-                st.session_state.jump_to_step = f"krok_{k['id']}"
-                st.rerun()
+            st.markdown(f"**{krok_num}.** {krok_nazwa}")
 
         st.markdown("---")
 
         pobudka_val = w_gen.get('pobudka', '07:00') if pd.notna(w_gen.get('pobudka')) else '07:00'
         wyjazd_val = w_gen.get('czas_wyjazdu', '07:30') if pd.notna(w_gen.get('czas_wyjazdu')) else '07:30'
-        st.markdown(f"**⏰ Pobudka:** {pobudka_val} | **🚗 Wyjazd:** {wyjazd_val} | **⏱️ Czas trwania:** {w_gen['calkowity_czas_wycieczki_godziny']}h | Powrót: **{w_gen['szacowana_godzina_powrotu']}**")
+        st.markdown(f"**⏰ Pobudka:** {pobudka_val} | **Wyjazd:** {wyjazd_val} | **⏱️ Czas trwania:** {w_gen['calkowity_czas_wycieczki_godziny']}h | Powrót: **{w_gen['szacowana_godzina_powrotu']}**")
 
         st.markdown("---")
 
@@ -1215,7 +1217,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
 
         st.markdown("---")
 
-        st.markdown("### 📍 Szczegółowe kroki wycieczki")
+        st.markdown("### 📍 Szczegółowy plan")
         for _, k in kroki_df.iterrows():
             krok_num = str(k['krok_wycieczki'])
             krok_nazwa = str(k['nazwa'])
@@ -1234,7 +1236,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
                     <div id="krok_{k["id"]}"></div>
                     <script>
                         setTimeout(function() {{
-                            var el = document.getElementById("krok_{k["id"]}");
+                            var el = document.getElementById("krok_{k['id']}");
                             if(el) {{ el.scrollIntoView({{behavior: "smooth", block: "start"}}); }}
                         }}, 100);
                     </script>
@@ -1243,32 +1245,28 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
 
             st.markdown(anchor_html, unsafe_allow_html=True)
             
-            st.markdown(f"""
+            st.markdown(f'''
             <div style="background-color:#e6ded1; padding:14px; border-left:6px solid #663223; border-top:1px solid #b89b82; border-bottom:1px solid #b89b82; margin-top:20px; margin-bottom:8px;">
-                <span style="font-size:16pt; font-weight:900; color:#663223; text-transform:uppercase;">🏛️ Krok {krok_num}: </span>
+                <span style="font-size:16pt; font-weight:900; color:#663223; text-transform:uppercase;">🏛️ Krok {krok_num}: {krok_nazwa}</span>
             </div>
-            """, unsafe_allow_html=True)
+            ''', unsafe_allow_html=True)
             
-            if st.button(f"Miejsce {krok_num}. {krok_nazwa}", key=f"link_krok_miejsce_{wycieczka_id}_{k['id']}"):
-                st.session_state.active_place_id = miejsce_id_cel
-                st.session_state.active_tab = "zabytek"
-                st.query_params["tab"] = "zabytek"
-                st.rerun()
-
             google_search_url = f"https://www.google.com/search?q={krok_nazwa} Kreta"
             gps_maps_url = f"https://www.google.com/maps/search/?api=1&query={k['wspolrzedne']}"
             coords_clean = str(k['wspolrzedne']).replace(" ", "")
             sklep_maps_url = f"https://www.google.com/maps/search/supermarket/@{coords_clean},15z"
             resto_maps_url = f"https://www.google.com/maps/search/restaurant/@{coords_clean},15z"
+            info_url = f"?tab=zabytek"
 
-            st.markdown(f"""
-                <div class="custom-nav-bar" style="margin-bottom: 10px;">
+            st.markdown(f'''
+                <div class="custom-nav-bar" style="margin-bottom: 10px; display: flex; gap: 6px;">
                     <a href="{google_search_url}" target="_blank" class="custom-nav-btn" title="Szukaj w Google">🔍</a>
                     <a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" title="Pineska GPS">📍</a>
                     <a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" title="Najbliższy sklep spożywczy w pobliżu kroku">🛒</a>
                     <a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" title="Najbliższa restauracja w pobliżu kroku">🍽️</a>
+                    <a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" title="Info o miejscu">Info</a>
                 </div>
-            """, unsafe_allow_html=True)
+            ''', unsafe_allow_html=True)
 
             if pd.notna(k['opis']) and str(k['opis']).strip() != "":
                 st.write(k['opis'])
@@ -1309,6 +1307,50 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True):
 
     else:
         st.warning("Nie znaleziono wybranej wycieczki.")
+
+# --- PANEL BOCZNY (PRZYCISKI SKLEPU, DOMKU, CZATU + KLUCZ API) ---
+domek_maps_url = "https://www.google.com/maps/search/?api=1&query=35.5914,24.0918"
+sklep_maps_url = "https://www.google.com/maps/search/?api=1&query=35.586222,24.091861"
+
+active_zabytek = "active" if st.session_state.active_tab == "zabytek" else ""
+active_map = "active" if st.session_state.active_tab == "map" else ""
+active_route = "active" if st.session_state.active_tab == "route" else ""
+active_chat = "active" if st.session_state.active_tab == "chat" else ""
+
+with st.sidebar:
+    st.markdown("### 🧭 Szybka Nawigacja")
+    st.markdown(f"""
+        <div class="sidebar-nav-bar">
+            <a href="{sklep_maps_url}" target="_blank" class="sidebar-nav-btn" title="Nawiguj do Sklepu">🛒 Sklep</a>
+            <a href="{domek_maps_url}" target="_blank" class="sidebar-nav-btn" title="Nawiguj do Domku">🏠 Domek</a>
+            <a href="?tab=chat" target="_self" class="sidebar-nav-btn {active_chat}" title="Czat AI">💬 Czat</a>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.header("⚙️ Ustawienia Asystenta")
+    gemini_api_key = st.text_input("Klucz API Google Gemini", type="password", key="api_key_input")
+    
+    dostepne_modele = [
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash-lite",
+        "gemini-3.5-flash",
+        "gemini-3.6-flash"
+    ]
+    wybrany_model = st.selectbox("Wybierz model AI", options=dostepne_modele, index=0)
+    
+    st.markdown("---")
+    
+
+
+# --- GŁÓWNY INTERFEJS: GÓRNY PASEK NAWIGACYJNY (Miejsca, Wycieczki, Trasa) ---
+st.markdown(f"""
+    <div class="custom-nav-bar">
+        <a href="?tab=zabytek" target="_self" class="custom-nav-btn {active_zabytek}" title="Miejsca">🏛️ Miejsca</a>
+        <a href="?tab=map" target="_self" class="custom-nav-btn {active_map}" title="Wycieczki">🗺️ Wycieczki</a>
+        <a href="?tab=route" target="_self" class="custom-nav-btn {active_route}" title="Trasa i Wycieczka">🚗 Trasa</a>
+    </div>
+""", unsafe_allow_html=True)
 
 # --- ZAWARTOŚĆ ZALEŻNA OD WYBRANEJ ZAKŁADKI ---
 if st.session_state.active_tab == "chat":
