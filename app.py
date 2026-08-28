@@ -348,6 +348,13 @@ def init_db():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS uzytkownik_ustawienia (
+            uzytkownik TEXT PRIMARY KEY,
+            api_key TEXT
+        )
+    ''')
+
     try:
         cursor.execute("ALTER TABLE miejsca ADD COLUMN odwiedzone INTEGER DEFAULT 0")
     except:
@@ -544,6 +551,22 @@ def init_db():
     conn.close()
 
 init_db()
+
+# --- FUNKCJE ZARZĄDZANIA KLUCZAMI API PER UŻYTKOWNIK ---
+def pobierz_klucz_api_z_db(uzytkownik):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT api_key FROM uzytkownik_ustawienia WHERE uzytkownik = ?', (uzytkownik,))
+    res = cursor.fetchone()
+    conn.close()
+    return res[0] if res and res[0] else ""
+
+def zapisz_klucz_api_w_db(uzytkownik, api_key):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR REPLACE INTO uzytkownik_ustawienia (uzytkownik, api_key) VALUES (?, ?)', (uzytkownik, api_key))
+    conn.commit()
+    conn.close()
 
 # --- FUNKCJE POBIERANIA POGODY (wttr.in) ---
 @st.cache_data(ttl=3600)
@@ -1244,7 +1267,7 @@ dodaj_miejsce_tool = types.FunctionDeclaration(
 
 edytuj_wycieczke_tool = types.FunctionDeclaration(
     name="edytuj_wycieczke",
-    description="Edytuje parametry wycieczki, w tym planowaną datę (format RRRR-MM-DD, nie może być przeszła względem dzisiejszego dnia).",
+    description="Edytuje parametry wycieczki, w tym planowaną datę (format RRRR-MM-DD, nie może być przeszła).",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
@@ -1416,28 +1439,24 @@ cretai_tools = types.Tool(function_declarations=[
     edytuj_checklist_tool, usun_checklist_tool
 ])
 
-# --- W PANELU BOCZNYM: WYBÓR UŻYTKOWNIKA (IZOLACJA HISTORII CZATU) ---
+# --- W PANELU BOCZNYM: WYBÓR UŻYTKOWNIKA I TRWAŁY KLUCZ API ---
 with st.sidebar:
     st.markdown("### 👤 Profil Użytkownika")
     dostepni_uzytkownicy = ["Rodzic 1", "Rodzic 2", "Rodzic 3", "Rodzic 4"]
     aktualny_uzytkownik = st.selectbox("Wybierz swój profil", options=dostepni_uzytkownicy, index=0)
     st.markdown("---")
     
-    st.markdown("### 🧭 Szybka Nawigacja")
-    st.markdown(f"""
-        <div class="custom-nav-bar">
-            <a href="https://www.google.com/maps/search/?api=1&query=35.586222,24.091861" target="_blank" class="custom-nav-btn" title="Sklep"><span>🛒</span><span>Sklep</span></a>
-            <a href="https://www.google.com/maps/search/?api=1&query=35.5914,24.0918" target="_blank" class="custom-nav-btn" title="Domek"><span>🏠</span><span>Domek</span></a>
-        </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("---")
     st.header("⚙️ Ustawienia Asystenta")
     
-    if "api_key_input" not in st.session_state:
-        st.session_state.api_key_input = "AQ.Ab8RN6JvgXsJSd38hgosyhFJJrGwMvHQqX72bb0MlpYQTKRMzg"
+    # Pobieranie zapisanego klucza dla danego rodzica z bazy SQLite
+    zapisany_klucz = pobierz_klucz_api_z_db(aktualny_uzytkownik)
+    
+    api_key_input = st.text_input(f"Klucz API Google Gemini ({aktualny_uzytkownik})", value=zapisany_klucz, type="password", key=f"api_key_{aktualny_uzytkownik}")
+    
+    if api_key_input != zapisany_klucz:
+        zapisz_klucz_api_w_db(aktualny_uzytkownik, api_key_input)
 
-    gemini_api_key = st.text_input("Klucz API Google Gemini", type="password", key="api_key_input")
+    gemini_api_key = api_key_input
     
     dostepne_modele = [
         "gemini-3.1-flash-lite",
@@ -1446,7 +1465,15 @@ with st.sidebar:
         "gemini-3.6-flash"
     ]
     wybrany_model = st.selectbox("Wybierz model AI", options=dostepne_modele, index=0)
+    
     st.markdown("---")
+    st.markdown("### 🧭 Szybka Nawigacja")
+    st.markdown(f"""
+        <div class="custom-nav-bar">
+            <a href="https://www.google.com/maps/search/?api=1&query=35.586222,24.091861" target="_blank" class="custom-nav-btn" title="Sklep"><span>🛒</span><span>Sklep</span></a>
+            <a href="https://www.google.com/maps/search/?api=1&query=35.5914,24.0918" target="_blank" class="custom-nav-btn" title="Domek"><span>🏠</span><span>Domek</span></a>
+        </div>
+    """, unsafe_allow_html=True)
 
 # --- GLOBALNY, PŁYWAJĄCY ASYSTENT AI Z IZOLOWANĄ HISTORIĄ DLA UŻYTKOWNIKA ---
 def renderuj_globalny_czat_ai(uzytkownik):
@@ -1462,7 +1489,7 @@ def renderuj_globalny_czat_ai(uzytkownik):
                 st.rerun()
 
         if not gemini_api_key:
-            st.warning("Wprowadź klucz API w menu bocznym.")
+            st.warning("Wprowadź swój klucz API w menu bocznym.")
             st.markdown('</div>', unsafe_allow_html=True)
             return
 
@@ -1534,7 +1561,6 @@ Dzisiejsza data to: {dzisiaj_str}.
                                 args = call.args
                                 call_name = call.name
                                 
-                                # Dynamiczna walidacja daty przez AI
                                 if call_name == "edytuj_wycieczke" and "planowana_data" in args:
                                     p_data = args["planowana_data"]
                                     try:
@@ -1653,7 +1679,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
         </div>
         """, unsafe_allow_html=True)
 
-        # Edytowalne pole planowanej daty z dynamiczną walidacją minimalną (dzisiaj)
         with st.form(key=f"form_plan_data_{wycieczka_id}"):
             st.markdown(f'<div style="font-size: 8.5pt; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 2px;">📅 Planowana data wycieczki</div>', unsafe_allow_html=True)
             
@@ -1678,7 +1703,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
                         st.success("Zapisano!")
                         st.rerun()
 
-        # Jeśli jesteśmy w widoku aktualnej wycieczki, wyświetlamy podsumowanie pogody pod datą
         if pokaz_pogode:
             renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data_val)
 
