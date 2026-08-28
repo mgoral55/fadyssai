@@ -12,6 +12,13 @@ import re
 import base64
 from datetime import datetime, date
 
+# Próba zaimportowania Anthropic SDK dla kolegi używającego Claude'a
+try:
+    import anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+
 # --- 1. KONFIGURACJA STRONY I DESIGN SYSTEM: DUCH PRZYGODY (DARK + NEONY + SOLAR READABILITY) ---
 st.set_page_config(page_title="CretAi - Kreta", layout="centered", page_icon="🧭")
 
@@ -359,7 +366,9 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS uzytkownik_ustawienia (
             uzytkownik TEXT PRIMARY KEY,
-            api_key TEXT
+            api_key TEXT,
+            dostawca_ai TEXT DEFAULT 'Google Gemini',
+            model_ai TEXT DEFAULT 'gemini-3.1-flash-lite'
         )
     ''')
 
@@ -389,6 +398,14 @@ def init_db():
         pass
     try:
         cursor.execute("ALTER TABLE czat_historia ADD COLUMN uzytkownik TEXT")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE uzytkownik_ustawienia ADD COLUMN dostawca_ai TEXT DEFAULT 'Google Gemini'")
+    except:
+        pass
+    try:
+        cursor.execute("ALTER TABLE uzytkownik_ustawienia ADD COLUMN model_ai TEXT DEFAULT 'gemini-3.1-flash-lite'")
     except:
         pass
 
@@ -560,19 +577,24 @@ def init_db():
 
 init_db()
 
-# --- FUNKCJE ZARZĄDZANIA KLUCZAMI API PER UŻYTKOWNIK ---
-def pobierz_klucz_api_z_db(uzytkownik):
+# --- FUNKCJE ZARZĄDZANIA USTAWIENIAMI I KLUCZAMI API PER UŻYTKOWNIK ---
+def pobierz_ustawienia_z_db(uzytkownik):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT api_key FROM uzytkownik_ustawienia WHERE uzytkownik = ?', (uzytkownik,))
+    cursor.execute('SELECT api_key, dostawca_ai, model_ai FROM uzytkownik_ustawienia WHERE uzytkownik = ?', (uzytkownik,))
     res = cursor.fetchone()
     conn.close()
-    return res[0] if res and res[0] else ""
+    if res:
+        return res[0] or "", res[1] or "Google Gemini", res[2] or "gemini-3.1-flash-lite"
+    return "", "Google Gemini", "gemini-3.1-flash-lite"
 
-def zapisz_klucz_api_w_db(uzytkownik, api_key):
+def zapisz_ustawienia_w_db(uzytkownik, api_key, dostawca_ai, model_ai):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
-    cursor.execute('INSERT OR REPLACE INTO uzytkownik_ustawienia (uzytkownik, api_key) VALUES (?, ?)', (uzytkownik, api_key))
+    cursor.execute('''
+        INSERT OR REPLACE INTO uzytkownik_ustawienia (uzytkownik, api_key, dostawca_ai, model_ai) 
+        VALUES (?, ?, ?, ?)
+    ''', (uzytkownik, api_key, dostawca_ai, model_ai))
     conn.commit()
     conn.close()
 
@@ -1236,7 +1258,7 @@ def pokaz_checklistu_popup(wycieczka_id):
                     ilosc_str = f" *({ilosc_val})*" if pd.notna(ilosc_val) and ilosc_val != "1" else ""
                     st.checkbox(f"{itm['nazwa']}{ilosc_str}", key=f"chk_pop_{itm['id']}")
 
-# --- NARZĘDZIA AI (FUNCTIONS) ---
+# --- NARZĘDZIA AI (FUNCTIONS DLA GEMINI) ---
 dodaj_notatke_tool = types.FunctionDeclaration(
     name="dodaj_notatke",
     description="Dodaje nową notatkę, link lub listę do wycieczki lub miejsca.",
@@ -1453,7 +1475,46 @@ cretai_tools = types.Tool(function_declarations=[
     edytuj_checklist_tool, usun_checklist_tool
 ])
 
-# --- W PANELU BOCZNYM: WYBÓR UŻYTKOWNIKA I TRWAŁY KLUCZ API ---
+# Wykonawca funkcji dla bazy danych (wspólny dla obu silników)
+def wykonaj_narzedzie_bazy(call_name, args):
+    if call_name == "edytuj_wycieczke" and "planowana_data" in args:
+        p_data = args["planowana_data"]
+        try:
+            d_obj = datetime.strptime(p_data, "%Y-%m-%d").date()
+            if d_obj < date.today():
+                return f"BŁĄD: Planowana data nie może być z przeszłości (dzisiaj jest {date.today()})!"
+        except:
+            pass
+
+    if call_name == "dodaj_notatke":
+        return dodaj_notatke(**args)
+    elif call_name == "dodaj_miejsce":
+        return dodaj_miejsce(**args)
+    elif call_name == "edytuj_wycieczke":
+        return edytuj_wycieczke(**args)
+    elif call_name == "dodaj_krok_do_wycieczki":
+        return dodaj_krok_do_wycieczki(**args)
+    elif call_name == "aktualizuj_miejsce":
+        return aktualizuj_miejsce(**args)
+    elif call_name == "usun_miejsce":
+        return usun_miejsce(**args)
+    elif call_name == "utworz_nowa_wycieczke":
+        return utworz_nowa_wycieczke(**args)
+    elif call_name == "usun_wycieczke":
+        return usun_wycieczke(**args)
+    elif call_name == "edytuj_krok_w_wycieczce":
+        return edytuj_krok_w_wycieczce(**args)
+    elif call_name == "usun_krok_z_wycieczki":
+        return usun_krok_z_wycieczki(**args)
+    elif call_name == "dodaj_element_checklisty":
+        return dodaj_element_checklisty(**args)
+    elif call_name == "edytuj_element_checklisty":
+        return edytuj_element_checklisty(**args)
+    elif call_name == "usun_element_checklisty":
+        return usun_element_checklisty(**args)
+    return "Wykonano."
+
+# --- W PANELU BOCZNYM: WYBÓR UŻYTKOWNIKA, DOSTAWCY AI I KLUCZA ---
 with st.sidebar:
     st.markdown("### 👤 Profil Użytkownika")
     dostepni_uzytkownicy = ["Rodzic 1", "Rodzic 2", "Rodzic 3", "Rodzic 4"]
@@ -1462,23 +1523,26 @@ with st.sidebar:
     
     st.header("⚙️ Ustawienia Asystenta")
     
-    zapisany_klucz = pobierz_klucz_api_z_db(aktualny_uzytkownik)
+    zapisany_klucz, zapisany_dostawca, zapisany_model = pobierz_ustawienia_z_db(aktualny_uzytkownik)
     
-    api_key_input = st.text_input(f"Klucz API Google Gemini ({aktualny_uzytkownik})", value=zapisany_klucz, type="password", key=f"api_key_{aktualny_uzytkownik}")
+    dostawcy_ai = ["Google Gemini", "Anthropic Claude"]
+    dostawca_index = dostawcy_ai.index(zapisany_dostawca) if zapisany_dostawca in dostawcy_ai else 0
+    wybrany_dostawca = st.selectbox("Wybierz dostawcę AI", options=dostawcy_ai, index=dostawca_index)
     
-    if api_key_input != zapisany_klucz:
-        zapisz_klucz_api_w_db(aktualny_uzytkownik, api_key_input)
+    if wybrany_dostawca == "Google Gemini":
+        dostepne_modele = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash"]
+    else:
+        dostepne_modele = ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"]
+    
+    model_index = dostepne_modele.index(zapisany_model) if zapisany_model in dostepne_modele else 0
+    wybrany_model = st.selectbox("Wybierz model AI", options=dostepne_modele, index=model_index)
+    
+    klucz_label = f"Klucz API ({wybrany_dostawca})"
+    api_key_input = st.text_input(klucz_label, value=zapisany_klucz, type="password", key=f"api_key_{aktualny_uzytkownik}")
+    
+    if api_key_input != zapisany_klucz or wybrany_dostawca != zapisany_dostawca or wybrany_model != zapisany_model:
+        zapisz_ustawienia_w_db(aktualny_uzytkownik, api_key_input, wybrany_dostawca, wybrany_model)
 
-    gemini_api_key = api_key_input
-    
-    dostepne_modele = [
-        "gemini-3.1-flash-lite",
-        "gemini-3.5-flash-lite",
-        "gemini-3.5-flash",
-        "gemini-3.6-flash"
-    ]
-    wybrany_model = st.selectbox("Wybierz model AI", options=dostepne_modele, index=0)
-    
     st.markdown("---")
     st.markdown("### 🧭 Szybka Nawigacja")
     st.markdown(f"""
@@ -1488,11 +1552,11 @@ with st.sidebar:
         </div>
     """, unsafe_allow_html=True)
 
-# --- GLOBALNY, PŁYWAJĄCY ASYSTENT AI Z IZOLOWANĄ HISTORIĄ DLA UŻYTKOWNIKA ---
+# --- GLOBALNY, PŁYWAJĄCY ASYSTENT AI OBSŁUGUJĄCY GEMINI ORAZ CLAUDE ---
 def renderuj_globalny_czat_ai(uzytkownik):
     st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
     
-    with st.expander(f"💬 Asystent AI ({uzytkownik})", expanded=False):
+    with st.expander(f"💬 Asystent AI ({uzytkownik}) [{wybrany_dostawca}]", expanded=False):
         col_h1, col_h2, col_h3 = st.columns([3, 1, 1])
         with col_h1:
             st.markdown(f"<span style='font-size: 9.5pt; color: #38bdf8; font-weight: 800;'>🧠 TRYB ADHD • {uzytkownik}</span>", unsafe_allow_html=True)
@@ -1506,14 +1570,13 @@ def renderuj_globalny_czat_ai(uzytkownik):
                 st.session_state["flash_toast"] = "🗑️ Historia czatu wyczyszczona."
                 st.rerun()
 
-        if not gemini_api_key:
-            st.warning("Wprowadź swój klucz API w menu bocznym.")
+        if not api_key_input:
+            st.warning(f"Wprowadź swój klucz API dla {wybrany_dostawca} w menu bocznym.")
             st.markdown('</div>', unsafe_allow_html=True)
             return
 
-        client = genai.Client(api_key=gemini_api_key)
-        zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
         dzisiaj_str = date.today().strftime("%Y-%m-%d")
+        zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
         
         system_prompt = f"""Jesteś inteligentnym asystentem podróży CretAi na Kretę, pomagającym rodzicom dzieci z ADHD.
 Dzisiejsza data to: {dzisiaj_str}.
@@ -1521,7 +1584,7 @@ Dzisiejsza data to: {dzisiaj_str}.
 - Masz wgląd w bazę danych oraz w notatki i wskazówki wpisane przez użytkownika.
 - Pamiętaj o pełnej kontroli czasu, ewakuacji przed upałem i redukcji stresu.
 - Chronisz miejsca z flagą Base = true.
-- Możesz dodawać nowe miejsca, notatki, planowane daty oraz KROKI DO WYCIECZEK za pomocą narzędzia dodaj_krok_do_wycieczki."""
+- Możesz modyfikować bazy, dodawać miejsca, notatki, planowane daty oraz KROKI DO WYCIECZEK."""
 
         chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
 
@@ -1547,102 +1610,97 @@ Dzisiejsza data to: {dzisiaj_str}.
                     st.markdown(prompt)
 
                 with st.chat_message("assistant"):
+                    assistant_reply = ""
                     try:
-                        aktualna_historia_db = pobierz_historie_czatu_z_db(uzytkownik)
-                        contents = [item["raw_content"] for item in aktualna_historia_db if "raw_content" in item]
-                        if not contents:
-                            contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
+                        if wybrany_dostawca == "Google Gemini":
+                            client = genai.Client(api_key=api_key_input)
+                            aktualna_historia_db = pobierz_historie_czatu_z_db(uzytkownik)
+                            contents = [item["raw_content"] for item in aktualna_historia_db if "raw_content" in item]
+                            if not contents:
+                                contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
 
-                        response = client.models.generate_content(
-                            model=wybrany_model,
-                            contents=contents,
-                            config=types.GenerateContentConfig(
-                                tools=[cretai_tools],
-                                system_instruction=system_prompt
-                            )
-                        )
-
-                        assistant_reply = ""
-                        candidate = response.candidates[0] if response.candidates else None
-                        has_fc = False
-                        if candidate and candidate.content and candidate.content.parts:
-                            for p in candidate.content.parts:
-                                if p.function_call:
-                                    has_fc = True
-                                    break
-
-                        if has_fc or response.function_calls:
-                            model_content = candidate.content
-                            calls = response.function_calls if response.function_calls else [p.function_call for p in model_content.parts if p.function_call]
-                            
-                            for call in calls:
-                                args = call.args
-                                call_name = call.name
-                                
-                                if call_name == "edytuj_wycieczke" and "planowana_data" in args:
-                                    p_data = args["planowana_data"]
-                                    try:
-                                        d_obj = datetime.strptime(p_data, "%Y-%m-%d").date()
-                                        if d_obj < date.today():
-                                            wynik_bazy = f"BŁĄD: Planowana data nie może być z przeszłości (dzisiaj jest {date.today()})!"
-                                            continue
-                                    except:
-                                        pass
-
-                                if call_name == "dodaj_notatke":
-                                    wynik_bazy = dodaj_notatke(**args)
-                                elif call_name == "dodaj_miejsce":
-                                    wynik_bazy = dodaj_miejsce(**args)
-                                elif call_name == "edytuj_wycieczke":
-                                    wynik_bazy = edytuj_wycieczke(**args)
-                                elif call_name == "dodaj_krok_do_wycieczki":
-                                    wynik_bazy = dodaj_krok_do_wycieczki(**args)
-                                elif call_name == "aktualizuj_miejsce":
-                                    wynik_bazy = aktualizuj_miejsce(**args)
-                                elif call_name == "usun_miejsce":
-                                    wynik_bazy = usun_miejsce(**args)
-                                elif call_name == "utworz_nowa_wycieczke":
-                                    wynik_bazy = utworz_nowa_wycieczke(**args)
-                                elif call_name == "usun_wycieczke":
-                                    wynik_bazy = usun_wycieczke(**args)
-                                elif call_name == "edytuj_krok_w_wycieczce":
-                                    wynik_bazy = edytuj_krok_w_wycieczce(**args)
-                                elif call_name == "usun_krok_z_wycieczki":
-                                    wynik_bazy = usun_krok_z_wycieczki(**args)
-                                elif call_name == "dodaj_element_checklisty":
-                                    wynik_bazy = dodaj_element_checklisty(**args)
-                                elif call_name == "edytuj_element_checklisty":
-                                    wynik_bazy = edytuj_element_checklisty(**args)
-                                elif call_name == "usun_element_checklisty":
-                                    wynik_bazy = usun_element_checklisty(**args)
-                                else:
-                                    wynik_bazy = "Wykonano."
-                                
-                                follow_up = client.models.generate_content(
-                                    model=wybrany_model,
-                                    contents=contents + [
-                                        model_content,
-                                        types.Content(role="user", parts=[types.Part.from_function_response(name=call_name, response={"result": wynik_bazy})])
-                                    ],
-                                    config=types.GenerateContentConfig(tools=[cretai_tools])
+                            response = client.models.generate_content(
+                                model=wybrany_model,
+                                contents=contents,
+                                config=types.GenerateContentConfig(
+                                    tools=[cretai_tools],
+                                    system_instruction=system_prompt
                                 )
-                                fu_cand = follow_up.candidates[0] if follow_up.candidates else None
-                                if fu_cand and fu_cand.content and fu_cand.content.parts:
-                                    text_parts = [p.text for p in fu_cand.content.parts if hasattr(p, "text") and p.text]
-                                    assistant_reply = "".join(text_parts) if text_parts else "Operacja zakończona."
+                            )
+
+                            candidate = response.candidates[0] if response.candidates else None
+                            has_fc = False
+                            if candidate and candidate.content and candidate.content.parts:
+                                for p in candidate.content.parts:
+                                    if p.function_call:
+                                        has_fc = True
+                                        break
+
+                            if has_fc or response.function_calls:
+                                model_content = candidate.content
+                                calls = response.function_calls if response.function_calls else [p.function_call for p in model_content.parts if p.function_call]
+                                
+                                for call in calls:
+                                    args = call.args
+                                    call_name = call.name
+                                    wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
+                                    
+                                    follow_up = client.models.generate_content(
+                                        model=wybrany_model,
+                                        contents=contents + [
+                                            model_content,
+                                            types.Content(role="user", parts=[types.Part.from_function_response(name=call_name, response={"result": wynik_bazy})])
+                                        ],
+                                        config=types.GenerateContentConfig(tools=[cretai_tools])
+                                    )
+                                    fu_cand = follow_up.candidates[0] if follow_up.candidates else None
+                                    if fu_cand and fu_cand.content and fu_cand.content.parts:
+                                        text_parts = [p.text for p in fu_cand.content.parts if hasattr(p, "text") and p.text]
+                                        assistant_reply = "".join(text_parts) if text_parts else "Operacja zakończona."
+                                    else:
+                                        assistant_reply = "Zaktualizowano bazę."
+                            else:
+                                text_parts = [p.text for p in candidate.content.parts if hasattr(p, "text") and p.text] if candidate and candidate.content and candidate.content.parts else []
+                                assistant_reply = "".join(text_parts) if text_parts else (response.text if hasattr(response, "text") else "Brak odpowiedzi.")
+
+                        else:  # --- ANTHROPIC CLAUDE ---
+                            if not ANTHROPIC_AVAILABLE:
+                                assistant_reply = "Błąd: Pakiet `anthropic` nie jest zainstalowany w środowisku. Zainstaluj go poleceniem `pip install anthropic`."
+                            else:
+                                client_c = anthropic.Anthropic(api_key=api_key_input)
+                                
+                                # Konwersja historii do formatu Claude Messages API
+                                claude_messages = []
+                                conn = sqlite3.connect('cretai.db')
+                                cursor = conn.cursor()
+                                cursor.execute('SELECT rola, tresc FROM czat_historia WHERE uzytkownik = ? ORDER BY id ASC', (uzytkownik,))
+                                rows = cursor.fetchall()
+                                conn.close()
+                                
+                                for rola, tresc in rows:
+                                    c_role = "user" if rola == "user" else "assistant"
+                                    claude_messages.append({"role": c_role, "content": tresc})
+
+                                response = client_c.messages.create(
+                                    model=wybrany_model,
+                                    max_tokens=2048,
+                                    system=system_prompt,
+                                    messages=claude_messages
+                                )
+                                
+                                if response.content:
+                                    text_blocks = [block.text for block in response.content if hasattr(block, "text")]
+                                    assistant_reply = "".join(text_blocks)
                                 else:
-                                    assistant_reply = "Zaktualizowano bazę."
-                        else:
-                            text_parts = [p.text for p in candidate.content.parts if hasattr(p, "text") and p.text] if candidate and candidate.content and candidate.content.parts else []
-                            assistant_reply = "".join(text_parts) if text_parts else (response.text if hasattr(response, "text") else "Brak odpowiedzi.")
+                                    assistant_reply = "Brak odpowiedzi od Claude."
 
                         zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
                     except Exception as e:
-                        assistant_reply = f"Błąd: {e}"
+                        assistant_reply = f"Błąd komunikacji z AI: {e}"
                         zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
 
                     st.markdown(assistant_reply)
-                    st.session_state["flash_toast"] = "✨ Asystent zaktualizował dane!"
+                    st.session_state["flash_toast"] = "✨ Asystent odpowiedział!"
                     st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)
@@ -1679,7 +1737,6 @@ def renderuj_zadania_dzieci_expander(tekst_zadan, unikalny_klucz):
     for i, zadanie in enumerate(zadania_lista):
         st.checkbox(f"{zadanie}", key=f"zad_dziecko_exp_{unikalny_klucz}_{i}")
 
-# --- BEZPIECZNY KOMPONENT MELTDOWN / ADHD (Czysty Streamlit zamiast surowego HTML) ---
 def renderuj_karty_meltdown_ux(p):
     adhd_val = p.get('trudnosc_adhd', 'Niski')
     meltdown_val = p.get('potencjal_meltdownu', 'Brak danych')
@@ -2084,7 +2141,6 @@ if st.session_state.active_tab == "zabytek":
                 </div>
                 """, unsafe_allow_html=True)
 
-            # Wywołanie bezpiecznego komponentu meltdownów
             renderuj_karty_meltdown_ux(p)
             
             if pd.notna(p['zadania_dla_dzieci']) and str(p['zadania_dla_dzieci']).strip() != "":
@@ -2199,5 +2255,5 @@ elif st.session_state.active_tab == "route":
     else:
         renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False, pokaz_pogode=True)
 
-# Globalny asystent AI z uwzględnieniem wybranego użytkownika
+# Globalny asystent AI z uwzględnieniem wybranego użytkownika i dostawcy
 renderuj_globalny_czat_ai(aktualny_uzytkownik)
