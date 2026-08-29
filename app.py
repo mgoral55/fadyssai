@@ -112,7 +112,7 @@ input[type="date"] {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-bottom: 14px;
+    margin-bottom: 8px;
     box-shadow: 0 6px 18px rgba(46, 37, 30, 0.15);
 }
 .adventure-title-text {
@@ -665,14 +665,14 @@ DOMEK_LON = 24.0918
 SKLEP_LAT = 35.586222
 SKLEP_LON = 24.091861
 
-# --- NORMALIZACJA KATEGORII I KOLORÓW ---
+# --- NORMALIZACJA KATEGORII I KOLORÓW (STONOWANA PALETA SAGE & TERRACOTTA) ---
 CATEGORIES_CONFIG = {
-    "Must have": {"color": "#E84393", "slug": "must_have"},
-    "Nice to have": {"color": "#E67E22", "slug": "nice_to_have"},
-    "Plaża": {"color": "#0984E3", "slug": "plaza"},
-    "Activity": {"color": "#F1C40F", "slug": "activity"},
-    "Shop": {"color": "#8E44AD", "slug": "shop"},
-    "Other": {"color": "#27AE60", "slug": "other"}
+    "Must have": {"color": "#B35446", "slug": "must_have"},
+    "Nice to have": {"color": "#C47C48", "slug": "nice_to_have"},
+    "Plaża": {"color": "#4A7C8F", "slug": "plaza"},
+    "Activity": {"color": "#C6934B", "slug": "activity"},
+    "Shop": {"color": "#7D5871", "slug": "shop"},
+    "Other": {"color": "#5D7A60", "slug": "other"}
 }
 
 def kategoryzuj_typ(typ_str):
@@ -1949,22 +1949,32 @@ elif st.session_state.active_tab == "zabytek":
 </div>
 """, unsafe_allow_html=True)
     
-    # --- JEDNOLITE PRZYCISKI FILTRÓW (UKŁAD 2x3 POD EKRANY MOBILNE & DESKTOP) ---
+    # --- JEDNOLITE PRZYCISKI FILTRÓW (UKŁAD 2x3 W STONOWANEJ PALECIE Z MINIMALNYM ODSTĘPEM) ---
     all_cats = list(CATEGORIES_CONFIG.keys())
     active_cat = st.session_state.selected_category
     
-    # CSS wymuszający 3 kolumny w wierszu oraz precyzyjne kolorowanie każdego przycisku
+    # CSS wymuszający 3 kolumny w wierszu oraz zredukowany do minimum margines pionowy
     button_styles = ["""
     div[data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: nowrap !important;
         gap: 6px !important;
-        margin-bottom: 6px !important;
+        margin-bottom: 0px !important;
+        padding-bottom: 0px !important;
     }
     div[data-testid="stHorizontalBlock"] > div {
         flex: 1 1 0px !important;
         min-width: 0 !important;
+        margin-bottom: 0px !important;
+        padding-bottom: 0px !important;
+    }
+    div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] {
+        margin-bottom: 0px !important;
+        padding-bottom: 0px !important;
+    }
+    .st-key-row2_filter_container {
+        margin-top: -10px !important;
     }
     """]
 
@@ -1978,16 +1988,18 @@ elif st.session_state.active_tab == "zabytek":
             border_col = conf["color"]
             opacity = "1.0"
             border_width = "2px" if is_selected else "1.5px"
+            text_col = "#FAF8F2"
         else:
             bg_col = "#E0DCCE"
             border_col = "#C8C2B0"
             opacity = "0.45"
             border_width = "1.5px"
+            text_col = "#2F241D"
         
         button_styles.append(f"""
         div.st-key-btn_cat_filter_{slug} button {{
             background-color: {bg_col} !important;
-            color: #2F241D !important;
+            color: {text_col} !important;
             border: {border_width} solid {border_col} !important;
             opacity: {opacity} !important;
             padding: 0px 2px !important;
@@ -2001,9 +2013,10 @@ elif st.session_state.active_tab == "zabytek":
             text-align: center !important;
             box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
             width: 100% !important;
+            margin-bottom: 0px !important;
         }}
         div.st-key-btn_cat_filter_{slug} button p {{
-            color: #2F241D !important;
+            color: {text_col} !important;
             font-size: 8pt !important;
             font-weight: 800 !important;
             line-height: 1.0 !important;
@@ -2032,19 +2045,20 @@ elif st.session_state.active_tab == "zabytek":
                     st.session_state.selected_category = cat_name
                 st.rerun()
 
-    # Rząd 2 (Activity, Shop, Other)
+    # Rząd 2 (Activity, Shop, Other) z minimalnym odstępem
     row2_cats = all_cats[3:]
-    cols_row2 = st.columns(3, gap="small")
-    for idx, cat_name in enumerate(row2_cats):
-        slug = CATEGORIES_CONFIG[cat_name]["slug"]
-        with cols_row2[idx]:
-            btn_label = f"✓ {cat_name}" if active_cat == cat_name else cat_name
-            if st.button(btn_label, key=f"btn_cat_filter_{slug}", use_container_width=True):
-                if st.session_state.selected_category == cat_name:
-                    st.session_state.selected_category = None
-                else:
-                    st.session_state.selected_category = cat_name
-                st.rerun()
+    with st.container(key="row2_filter_container"):
+        cols_row2 = st.columns(3, gap="small")
+        for idx, cat_name in enumerate(row2_cats):
+            slug = CATEGORIES_CONFIG[cat_name]["slug"]
+            with cols_row2[idx]:
+                btn_label = f"✓ {cat_name}" if active_cat == cat_name else cat_name
+                if st.button(btn_label, key=f"btn_cat_filter_{slug}", use_container_width=True):
+                    if st.session_state.selected_category == cat_name:
+                        st.session_state.selected_category = None
+                    else:
+                        st.session_state.selected_category = cat_name
+                    st.rerun()
 
     # Filtrowanie miejsc
     df_miejsca_filtrowane = df_miejsca.copy()
@@ -2134,7 +2148,7 @@ elif st.session_state.active_tab == "zabytek":
         "",
         options=[None] + miejsca_opcje_lista,
         index=domyslny_indeks,
-        format_func=lambda x: "🔍 Wybierz atrakcję ze szczegółami..." if x is None else x,
+        format_func=lambda x: "🔍 Wybierz z listy..." if x is None else x,
         key="place_selectbox_selector",
         label_visibility="collapsed"
     )
@@ -2161,7 +2175,7 @@ elif st.session_state.active_tab == "zabytek":
             <div class="overview-card" style="margin-top: 10px;">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
                     <div style="font-size: 15pt; font-weight: 900; color: #2B2118; line-height: 1.2;">{pelny_tytul}</div>
-                    <span style="background-color: {kolor_p}; color: #000000; font-size: 8.5pt; font-weight: 800; padding: 3px 10px; border-radius: 12px; white-space: nowrap;">{kat_p}</span>
+                    <span style="background-color: {kolor_p}; color: #FAF8F2; font-size: 8.5pt; font-weight: 800; padding: 3px 10px; border-radius: 12px; white-space: nowrap;">{kat_p}</span>
                 </div>
                 <div class="overview-card-text">{p.get('opis', '')}</div>
             </div>
