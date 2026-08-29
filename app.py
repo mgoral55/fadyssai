@@ -258,20 +258,20 @@ input[type="date"] {
     color: #2B2118;
 }
 
-/* GŁÓWNA KARTA PLANu DNIA */
+/* GŁÓWNA KARTA PLANu DNIA - ZMNIEJSZONA RAMKA */
 .day-plan-container {
     background-color: #F6F0DD;
-    border-radius: 36px 36px 28px 28px;
-    padding: 24px 18px 20px 18px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
-    margin-bottom: 16px;
-    margin-top: 14px;
+    border-radius: 24px;
+    padding: 14px 12px 10px 12px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.04);
+    margin-bottom: 12px;
+    margin-top: 10px;
 }
 .day-plan-heading {
-    font-size: 16pt;
+    font-size: 14pt;
     font-weight: 900;
     color: #2B2118;
-    margin-bottom: 20px;
+    margin-bottom: 12px;
 }
 
 /* TIMELINE WRAPPER */
@@ -539,12 +539,14 @@ input[type="date"] {
 .step-action-vertical-btn span:first-child { font-size: 13pt; }
 .step-action-vertical-btn span:last-child { font-size: 9.5pt; font-weight: 800; color: #2B2118; }
 
+/* PRZYCISK NAWIGUJ BEZ TŁA I RAMKI */
 .timeline-nav-btn {
     flex-shrink: 0;
-    width: 60px;
+    width: auto;
+    min-width: 50px;
     height: 48px;
-    background-color: #EFE4CA;
-    border: 1.5px solid #D8C8A6;
+    background-color: transparent !important;
+    border: none !important;
     border-radius: 14px;
     text-align: center;
     text-decoration: none !important;
@@ -554,14 +556,15 @@ input[type="date"] {
     justify-content: center;
     gap: 1px;
     margin-left: 8px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+    padding: 0 4px;
+    box-shadow: none !important;
     z-index: 3;
 }
 .timeline-nav-btn:hover {
-    background-color: #E5D8B8;
+    background-color: rgba(0,0,0,0.03) !important;
 }
 .timeline-nav-btn span:first-child {
-    font-size: 12pt;
+    font-size: 13pt;
     color: #8C5338;
     line-height: 1;
 }
@@ -1213,7 +1216,7 @@ def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df):
         "Znajdź najciekawszy kształt chmury podczas jazdy samochodem.",
         "Kto pierwszy zauważy morze na horyzoncie, zdobywa punkt nawigatora!"
     ]
-    grupy.append(("🚗 Zadania na Drogę", zadania_w_drodze, f"w_{wycieczka_id}_droga"))
+    grupy.append(("🚗 Zadania na drogę", zadania_w_drodze, f"w_{wycieczka_id}_droga"))
 
     for _, k in kroki_df.iterrows():
         nazwa = str(k['nazwa'])
@@ -1242,7 +1245,7 @@ def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df):
 def renderuj_grupy_zadan_wycieczki(grupy_zadan):
     if not grupy_zadan:
         return
-    with st.expander("🎯 ZADANIA DLA DZIECI / MISJE", expanded=False):
+    with st.expander("🎯 Zadania dla dzieci", expanded=False):
         for tytul_grupy, lista_zadan, prefix in grupy_zadan:
             if not lista_zadan:
                 continue
@@ -1257,11 +1260,9 @@ def renderuj_grupy_zadan_wycieczki(grupy_zadan):
                     )
                     if nowy_stan != stan:
                         zapisz_status_zadania(klucz, nowy_stan)
-                        if nowy_stan:
-                            st.toast(f"🌟 Brawo! Ukończono misję!", icon="🎯")
                         st.rerun()
 
-def renderuj_zwijana_sekcje_zadan(zadania, prefix_klucza, tytul_naglowka="🎯 ZADANIA DLA DZIECI / MISJE"):
+def renderuj_zwijana_sekcje_zadan(zadania, prefix_klucza, tytul_naglowka="🎯 Zadania dla dzieci"):
     if not zadania:
         return
     with st.expander(tytul_naglowka, expanded=False):
@@ -1275,8 +1276,6 @@ def renderuj_zwijana_sekcje_zadan(zadania, prefix_klucza, tytul_naglowka="🎯 Z
             )
             if nowy_stan != aktualny_stan:
                 zapisz_status_zadania(klucz, nowy_stan)
-                if nowy_stan:
-                    st.toast(f"🌟 Brawo! Ukończono misję!", icon="🎯")
                 st.rerun()
 
 def pobierz_ustawienia_z_db(uzytkownik):
@@ -2097,9 +2096,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             )
             st.markdown(details_html, unsafe_allow_html=True)
 
-            zadania_kroku = pobierz_zadania_dla_kroku(krok_num, nazwa, opis_glowny)
-            renderuj_zwijana_sekcje_zadan(zadania_kroku, f"krok_{krok_row_id}", tytul_naglowka="🎯 ZADANIA DLA DZIECI / MISJE")
-
             with st.expander("➕ Dodaj pozycję zakupową"):
                 with st.form(key=f"form_inline_zakup_{krok_row_id}"):
                     p_nazwa = st.text_input("Nazwa produktu", placeholder="np. Woda, owoce")
@@ -2540,7 +2536,16 @@ elif st.session_state.active_tab == "zabytek":
             """, unsafe_allow_html=True)
 
             zadania_miejsca = sparsuj_liste_zadan(p.get('zadania_dla_dzieci', ''))
-            renderuj_zwijana_sekcje_zadan(zadania_miejsca, f"miejsce_{docelowy_nr}", tytul_naglowka="🎯 ZADANIA DLA DZIECI / MISJE")
+            if zadania_miejsca:
+                zadania_html_list = "".join([f"<div style='font-size: 9.5pt; color: #2B2118; margin-bottom: 6px;'>• {z}</div>" for z in zadania_miejsca])
+                st.markdown(f"""
+                <details class="overview-details-card">
+                    <summary><b>🎯 Zadania dla dzieci</b></summary>
+                    <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
+                        {zadania_html_list}
+                    </div>
+                </details>
+                """, unsafe_allow_html=True)
 
             if coords_p and ',' in coords_p:
                 st.markdown(f"""
