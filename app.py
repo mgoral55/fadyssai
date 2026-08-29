@@ -105,12 +105,22 @@ div[data-baseweb="select"] > div {
     padding: 12px 14px !important;
 }
 
+/* Agresywne zmniejszenie odstępów pionowych w blokach zawierających expandery */
+div[data-testid="stVerticalBlock"] div[data-testid="stExpander"] {
+    margin-bottom: -10px !important;
+}
+
+/* Zmniejszenie odstępu dla samych kontenerów elementów */
+div[data-testid="element-container"]:has(> div[data-testid="stExpander"]) {
+    margin-bottom: 0px !important;
+}
+
 /* Zagnieżdżone expandery */
 [data-testid="stExpander"] [data-testid="stExpander"] {
     border: 1.5px solid #D6CEBA !important;
     border-radius: 18px !important;
     background-color: #EFE8D6 !important;
-    margin-bottom: 8px !important;
+    margin-bottom: 6px !important;
 }
 [data-testid="stExpander"] [data-testid="stExpander"] [data-testid="stExpanderDetails"] {
     background-color: #EFE8D6 !important;
@@ -745,7 +755,7 @@ div[data-testid="stCheckbox"] span[data-baseweb="checkbox"] svg {
 }
 
 .note-card {
-    background-color: #FAF8F2;
+    background-color: #F4EFE6;
     border: 1.5px solid #D8D2BC;
     border-radius: 18px;
     padding: 14px;
@@ -1269,7 +1279,9 @@ def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df):
 def renderuj_grupy_zadan_wycieczki(grupy_zadan):
     if not grupy_zadan:
         return
-    with st.expander("🎯 Zadania dla dzieci", expanded=False):
+    st.markdown("### 🎯 Zadania dla dzieci")
+    with st.container():
+        st.markdown('<div class="tasks-group-marker"></div>', unsafe_allow_html=True)
         for tytul_grupy, lista_zadan, prefix in grupy_zadan:
             if not lista_zadan:
                 continue
@@ -1504,10 +1516,14 @@ def pobierz_notatki(id_wycieczki=None, id_miejsca=None):
     return df
 
 def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
-    st.markdown("### 📌 Notatki i Zadania")
+    st.markdown("### 📌 Notatki")
     df_notatki = pobierz_notatki(id_wycieczki=id_wycieczki, id_miejsca=id_miejsca)
-    
-    with st.expander("➕ Dodaj nową notatkę"):
+
+    if not df_notatki.empty:
+        for _, note in df_notatki.iterrows():
+            st.markdown(f'<div class="note-card"><div style="font-weight: 800; font-size: 10.5pt; color: #2B2118; margin-bottom: 4px;">📌 {note.get("tytul") or "Notatka"}</div><div style="font-size: 9.5pt; color: #4A3E36;">{note["zawartosc"]}</div></div>', unsafe_allow_html=True)
+
+    with st.expander("➕ Dodaj nową notatkę", expanded=False):
         with st.form(key=f"form_add_note_{id_wycieczki}_{id_miejsca}", clear_on_submit=True):
             nt_tytul = st.text_input("Tytuł (opcjonalnie)")
             nt_typ = st.selectbox(
@@ -1521,10 +1537,6 @@ def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
                 dodaj_notatke(zawartosc=nt_zawartosc, typ_notatki=nt_typ, id_wycieczki=id_wycieczki, id_miejsca=id_miejsca, tytul=nt_tytul)
                 st.session_state["flash_toast"] = "💾 Dodano notatkę!"
                 st.rerun()
-
-    if not df_notatki.empty:
-        for _, note in df_notatki.iterrows():
-            st.markdown(f'<div class="note-card"><div style="font-weight: 800; font-size: 10.5pt; color: #2B2118; margin-bottom: 4px;">📌 {note.get("tytul") or "Notatka"}</div><div style="font-size: 9.5pt; color: #4A3E36;">{note["zawartosc"]}</div></div>', unsafe_allow_html=True)
 
 def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, 
                      calkowity_czas_wycieczki_godziny=None, szacowana_godzina_powrotu=None, 
@@ -1763,21 +1775,23 @@ cretai_tools = types.Tool(function_declarations=[
     )
 ])
 
-def renderuj_globalny_czat_ai(uzytkownik):
-    st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
+def renderuj_globalny_czat_ai(uzytkownik, inline=False):
+    if not inline:
+        st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
     with st.expander(f"💬 Asystent AI ({uzytkownik})", expanded=False):
         col1, col2 = st.columns([3, 1])
         with col1:
             st.markdown(f"<span style='font-size: 9pt; font-weight: 800;'>🧠 TRYB ADHD • {uzytkownik}</span>", unsafe_allow_html=True)
         with col2:
-            if st.button("🗑️ Wyczyść", key=f"btn_clear_{uzytkownik}", use_container_width=True):
+            if st.button("🗑️ Wyczyść", key=f"btn_clear_{uzytkownik}_{'inline' if inline else 'float'}", use_container_width=True):
                 wyczysc_historie_czatu_w_db(uzytkownik)
                 st.session_state["flash_toast"] = "🗑️ Wyczyszczono czat."
                 st.rerun()
 
         if not api_key_input:
             st.warning(f"Wprowadź klucz API w menu bocznym.")
-            st.markdown('</div>', unsafe_allow_html=True)
+            if not inline:
+                st.markdown('</div>', unsafe_allow_html=True)
             return
 
         dzisiaj_str = date.today().strftime("%Y-%m-%d")
@@ -1791,7 +1805,7 @@ def renderuj_globalny_czat_ai(uzytkownik):
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"] if isinstance(message["content"], str) else "")
 
-        prompt = st.chat_input(f"Pytanie do AI...", key=f"chat_input_{uzytkownik}")
+        prompt = st.chat_input(f"Pytanie do AI...", key=f"chat_input_{uzytkownik}_{'inline' if inline else 'float'}")
         if prompt:
             zapisz_wiadomosc_w_db(uzytkownik, "user", prompt)
             with chat_container:
@@ -1824,7 +1838,8 @@ def renderuj_globalny_czat_ai(uzytkownik):
                         st.error(f"Błąd: {e}")
             st.rerun()
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    if not inline:
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # Sprawdzenie parametrów URL
 if "tab" in st.query_params:
@@ -1949,9 +1964,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             </div>
         </details>
         """, unsafe_allow_html=True)
-
-    grupy_zadan = pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df)
-    renderuj_grupy_zadan_wycieczki(grupy_zadan)
 
     st.markdown('<div class="day-plan-container"><div class="day-plan-heading">Plan na dzień</div><div class="timeline-wrapper">', unsafe_allow_html=True)
     
@@ -2167,7 +2179,34 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
             st_folium(m_trasa, width=None, height=260, returned_objects=[], key=f"map_route_{wycieczka_id}")
 
+    # 1. SEKCJA: ZADANIA DLA DZIECI (Nagłówek + bezpośrednie expandery zadań w dedykowanym kontenerze)
+    st.markdown("### 🎯 Zadania dla dzieci")
+    with st.container():
+        st.markdown('<div class="tasks-group-marker"></div>', unsafe_allow_html=True)
+        grupy_zadan = pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df)
+        if grupy_zadan:
+            for tytul_grupy, lista_zadan, prefix in grupy_zadan:
+                if not lista_zadan:
+                    continue
+                with st.expander(tytul_grupy, expanded=False):
+                    for idx, zad in enumerate(lista_zadan):
+                        klucz = f"{prefix}_task_{idx}"
+                        stan = pobierz_status_zadania(klucz)
+                        nowy_stan = st.checkbox(
+                            zad,
+                            value=stan,
+                            key=f"cb_{klucz}"
+                        )
+                        if nowy_stan != stan:
+                            zapisz_status_zadania(klucz, nowy_stan)
+                            st.rerun()
+
+    # 2. SEKCJA: NOTATKI (Nagłówek + Karty notatek + Expander dodawania)
     renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
+
+    # 3. SEKCJA: ASYSTENT AI (Nagłówek + Czat Asystenta)
+    st.markdown("### 🤖 Asystent AI")
+    renderuj_globalny_czat_ai(aktualny_uzytkownik, inline=True)
 
 active_zabytek = "active" if st.session_state.active_tab == "zabytek" else ""
 active_map = "active" if st.session_state.active_tab == "map" else ""
@@ -2586,4 +2625,5 @@ elif st.session_state.active_tab == "zabytek":
 
             renderuj_sekcje_notatek(id_miejsca=str(docelowy_nr))
 
-renderuj_globalny_czat_ai(aktualny_uzytkownik)
+if st.session_state.active_tab != "route":
+    renderuj_globalny_czat_ai(aktualny_uzytkownik)
