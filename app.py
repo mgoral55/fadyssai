@@ -1603,6 +1603,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         kroki_df = kroki_df.sort_values(by='sort_key').drop(columns=['sort_key'])
 
     w_gen = wycieczka_row.iloc[0]
+    tytul_wycieczki = w_gen.get('tytul_wycieczki', 'Wycieczka')
     planowana_data_val = w_gen.get('planowana_data', '')
     
     dzisiaj = date.today()
@@ -1613,7 +1614,8 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
     formatted_date_str = formatuj_date_pl(parsed_date)
 
-    st.markdown(f'<div class="trip-top-section"><div class="trip-main-title">Twoja wycieczka</div><div class="trip-date-subtitle"><span>{formatted_date_str}</span><span style="font-size: 10pt;">▼</span></div></div>', unsafe_allow_html=True)
+    # Zastąpienie "Twoja wycieczka" tytułem wycieczki
+    st.markdown(f'<div class="trip-top-section"><div class="trip-main-title">{tytul_wycieczki}</div><div class="trip-date-subtitle"><span>{formatted_date_str}</span><span style="font-size: 10pt;">▼</span></div></div>', unsafe_allow_html=True)
 
     with st.expander("📅 Zmień datę wycieczki", expanded=False):
         def zapisz_date_callback():
@@ -1630,6 +1632,29 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             label_visibility="collapsed",
             on_change=zapisz_date_callback
         )
+
+    # MAPA NA GÓRZE (pod datą, przed logistyką)
+    if pokaz_mape:
+        punkty_trasy, surowe_wspolrzedne = [], []
+        for _, k in kroki_df.iterrows():
+            lat, lon = sparsuj_wspolrzedne(k['wspolrzedne'])
+            if lat is not None and lon is not None:
+                punkty_trasy.append((lat, lon, str(k['krok_wycieczki']), str(k['nazwa'])))
+                surowe_wspolrzedne.append((lat, lon))
+        if punkty_trasy:
+            srodek_lat = sum([p[0] for p in punkty_trasy]) / len(punkty_trasy)
+            srodek_lon = sum([p[1] for p in punkty_trasy]) / len(punkty_trasy)
+            m_trasa = folium.Map(location=[srodek_lat, srodek_lon], zoom_start=10, tiles="CartoDB positron")
+            for lat, lon, krok, nazwa in punkty_trasy:
+                is_d = "Domek" in nazwa
+                icon_bg = "#2E251E" if is_d else "#C06C4E"
+                icon_sym = "🏠" if is_d else krok
+                icon_html = f'<div style="background-color:{icon_bg};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:2px solid white;">{icon_sym}</div>'
+                folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13)), tooltip=nazwa).add_to(m_trasa)
+            trasa_po_drogach = pobierz_trase_osrm(surowe_wspolrzedne)
+            if trasa_po_drogach:
+                folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
+            st_folium(m_trasa, width=None, height=260, returned_objects=[], key=f"map_route_{wycieczka_id}")
 
     if pokaz_pogode:
         renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data_val)
@@ -1680,28 +1705,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             </div>
         </details>
         """, unsafe_allow_html=True)
-
-    if pokaz_mape:
-        punkty_trasy, surowe_wspolrzedne = [], []
-        for _, k in kroki_df.iterrows():
-            lat, lon = sparsuj_wspolrzedne(k['wspolrzedne'])
-            if lat is not None and lon is not None:
-                punkty_trasy.append((lat, lon, str(k['krok_wycieczki']), str(k['nazwa'])))
-                surowe_wspolrzedne.append((lat, lon))
-        if punkty_trasy:
-            srodek_lat = sum([p[0] for p in punkty_trasy]) / len(punkty_trasy)
-            srodek_lon = sum([p[1] for p in punkty_trasy]) / len(punkty_trasy)
-            m_trasa = folium.Map(location=[srodek_lat, srodek_lon], zoom_start=10, tiles="CartoDB positron")
-            for lat, lon, krok, nazwa in punkty_trasy:
-                is_d = "Domek" in nazwa
-                icon_bg = "#2E251E" if is_d else "#C06C4E"
-                icon_sym = "🏠" if is_d else krok
-                icon_html = f'<div style="background-color:{icon_bg};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:2px solid white;">{icon_sym}</div>'
-                folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13)), tooltip=nazwa).add_to(m_trasa)
-            trasa_po_drogach = pobierz_trase_osrm(surowe_wspolrzedne)
-            if trasa_po_drogach:
-                folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
-            st_folium(m_trasa, width=None, height=220, returned_objects=[], key=f"map_route_{wycieczka_id}")
 
     st.markdown('<div class="day-plan-container"><div class="day-plan-heading">Plan na dzień</div><div class="timeline-wrapper">', unsafe_allow_html=True)
     
@@ -1910,6 +1913,12 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 if st.session_state.active_tab == "route":
+    st.markdown("""
+<div class="adventure-header">
+<div style="font-size:24px;">🚗</div>
+<div><div class="adventure-title-text">CretAi • Aktualna Wycieczka</div></div>
+</div>
+""", unsafe_allow_html=True)
     aktualne_id = pobierz_aktywna_wycieczke_id()
     renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False, pokaz_pogode=True)
 
@@ -1917,7 +1926,7 @@ elif st.session_state.active_tab == "map":
     st.markdown("""
 <div class="adventure-header">
 <div style="font-size:24px;">🗺️</div>
-<div><div class="adventure-title-text">CretAi • Mapa Trasy</div></div>
+<div><div class="adventure-title-text">CretAi • Nasze wycieczki</div></div>
 </div>
 """, unsafe_allow_html=True)
     
