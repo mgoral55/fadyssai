@@ -152,7 +152,7 @@ input[type="date"] {
 
 /* NAGŁÓWEK WYCIECZKI */
 .trip-top-section {
-    padding: 4px 4px 14px 4px;
+    padding: 4px 4px 6px 4px;
     margin-top: 4px;
 }
 .trip-main-title {
@@ -163,14 +163,38 @@ input[type="date"] {
     line-height: 1.15;
     margin-bottom: 4px;
 }
-.trip-date-subtitle {
-    font-size: 14pt;
-    font-weight: 700;
-    color: #8C5338;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 12px;
+
+/* STYL DLA KLIKALNEGO KAFELKA DATY */
+div.st-key-btn_date_picker {
+    margin-bottom: 12px !important;
+}
+div.st-key-btn_date_picker button {
+    background-color: #FAF8F2 !important;
+    color: #2B2118 !important;
+    border: 1.5px solid #D8D2BC !important;
+    border-radius: 20px !important;
+    padding: 12px 16px !important;
+    min-height: 48px !important;
+    font-size: 1.02rem !important;
+    font-weight: 800 !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    transition: all 0.15s ease-in-out !important;
+}
+div.st-key-btn_date_picker button:hover {
+    background-color: #F4EFE6 !important;
+    border-color: #C8C0AC !important;
+    color: #8C5338 !important;
+    transform: translateY(-1px) !important;
+}
+div.st-key-btn_date_picker button p {
+    font-size: 1.02rem !important;
+    font-weight: 800 !important;
+    color: inherit !important;
+    margin: 0 !important;
 }
 
 /* SEKCJA LOGISTYKI I OPISÓW WYCIECZKI */
@@ -1826,6 +1850,21 @@ if "selected_category" not in st.session_state:
 df_miejsca = pobierz_wszystkie_miejsca()
 wycieczki_options = pobierz_skrocone_opcje_wycieczek()
 
+@st.dialog("Wybierz nową datę")
+def edit_date_dialog(wycieczka_id, aktualna_data):
+    dzisiaj = date.today()
+    nowa_data = st.date_input("Wybierz nową datę wycieczki", value=aktualna_data, min_value=dzisiaj)
+    col_save, col_cancel = st.columns(2)
+    with col_save:
+        if st.button("💾 Zapisz", use_container_width=True):
+            str_data = nowa_data.strftime("%Y-%m-%d")
+            edytuj_wycieczke(wycieczka_id, planowana_data=str_data)
+            st.session_state["flash_toast"] = f"📅 Zmieniono datę: {str_data}"
+            st.rerun()
+    with col_cancel:
+        if st.button("Anuluj", use_container_width=True):
+            st.rerun()
+
 def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False):
     conn = sqlite3.connect('cretai.db')
     wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
@@ -1851,25 +1890,15 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
     except:
         parsed_date = dzisiaj
 
-    formatted_date_str = formatuj_date_pl(parsed_date)
+    dzien_val = parsed_date.day
+    miesiac_val = MIESIACE_PL[parsed_date.month - 1]
+    dzien_tyg_val = DNI_TYGODNIA_PL[parsed_date.weekday()]
+    
+    st.markdown(f'<div class="trip-top-section"><div class="trip-main-title">{tytul_wycieczki}</div></div>', unsafe_allow_html=True)
 
-    st.markdown(f'<div class="trip-top-section"><div class="trip-main-title">{tytul_wycieczki}</div><div class="trip-date-subtitle"><span>{formatted_date_str}</span><span style="font-size: 10pt;">▼</span></div></div>', unsafe_allow_html=True)
-
-    with st.expander("📅 Zmień datę wycieczki", expanded=False):
-        def zapisz_date_callback():
-            wybrana_data = st.session_state[f"date_input_{wycieczka_id}"]
-            str_data = wybrana_data.strftime("%Y-%m-%d")
-            edytuj_wycieczke(wycieczka_id, planowana_data=str_data)
-            st.session_state["flash_toast"] = f"📅 Zmieniono datę: {str_data}"
-
-        st.date_input(
-            "Wybierz inną datę", 
-            value=parsed_date, 
-            min_value=dzisiaj, 
-            key=f"date_input_{wycieczka_id}", 
-            label_visibility="collapsed",
-            on_change=zapisz_date_callback
-        )
+    data_label = f"📅 Planowana data: {dzien_val} {miesiac_val} ({dzien_tyg_val}) ▾"
+    if st.button(data_label, key="btn_date_picker", use_container_width=True):
+        edit_date_dialog(wycieczka_id, parsed_date)
 
     if pokaz_pogode:
         renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data_val)
