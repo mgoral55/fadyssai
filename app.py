@@ -92,6 +92,9 @@ div[data-baseweb="select"] > div {
     font-weight: 800 !important;
     color: #2B2118 !important;
 }
+[data-testid="stExpander"] summary:hover {
+    color: #8C5338 !important;
+}
 [data-testid="stExpander"] summary svg {
     fill: #8C5338 !important;
     color: #8C5338 !important;
@@ -99,7 +102,19 @@ div[data-baseweb="select"] > div {
 [data-testid="stExpander"] [data-testid="stExpanderDetails"] {
     background-color: #F6F0DD !important;
     border-top: 1px solid #D1C7AE !important;
-    padding-top: 10px !important;
+    padding: 12px 14px !important;
+}
+
+/* Zagnieżdżone expandery */
+[data-testid="stExpander"] [data-testid="stExpander"] {
+    border: 1.5px solid #D6CEBA !important;
+    border-radius: 18px !important;
+    background-color: #EFE8D6 !important;
+    margin-bottom: 8px !important;
+}
+[data-testid="stExpander"] [data-testid="stExpander"] [data-testid="stExpanderDetails"] {
+    background-color: #EFE8D6 !important;
+    border-top: 1px solid #D6CEBA !important;
 }
 
 div[data-baseweb="calendar"] {
@@ -575,13 +590,14 @@ input[type="date"] {
     z-index: -1;
 }
 
-/* STYLIZACJA BIAŁYCH CHECKBOXÓW I ETYKIET */
+/* CAŁKOWITE USUNIĘCIE CZERNI Z CHECKBOXÓW - BIAŁY ŚRODEK */
 div[data-testid="stCheckbox"] {
     margin-bottom: 6px !important;
     background-color: #FAF8F2 !important;
     border: 1.2px solid #E2DEC8 !important;
     border-radius: 14px !important;
     padding: 8px 12px !important;
+    accent-color: #8C5338 !important;
 }
 div[data-testid="stCheckbox"] label {
     font-size: 9.5pt !important;
@@ -589,24 +605,33 @@ div[data-testid="stCheckbox"] label {
     color: #2B2118 !important;
     line-height: 1.35 !important;
 }
-/* Wymuszenie czystej bieli wewnątrz kwadracika */
+/* Natywny input checkbox */
+div[data-testid="stCheckbox"] input[type="checkbox"] {
+    background-color: #FFFFFF !important;
+    border: 2px solid #8C5338 !important;
+    border-radius: 6px !important;
+    accent-color: #8C5338 !important;
+    width: 18px !important;
+    height: 18px !important;
+}
+/* Streamlit BaseWeb checkbox */
 div[data-testid="stCheckbox"] span[role="checkbox"],
+div[data-testid="stCheckbox"] div[data-baseweb="checkbox"] > span,
 div[data-testid="stCheckbox"] span[data-baseweb="checkbox"] {
     background-color: #FFFFFF !important;
     border: 2px solid #8C5338 !important;
     border-radius: 6px !important;
+    box-shadow: none !important;
 }
 div[data-testid="stCheckbox"] span[role="checkbox"][aria-checked="true"],
-div[data-testid="stCheckbox"] span[data-baseweb="checkbox"][aria-checked="true"],
-div[data-testid="stCheckbox"] input:checked + div,
-div[data-testid="stCheckbox"] input:checked + span {
+div[data-testid="stCheckbox"] span[data-baseweb="checkbox"][aria-checked="true"] {
     background-color: #8C5338 !important;
     border-color: #8C5338 !important;
 }
 div[data-testid="stCheckbox"] span[role="checkbox"] svg,
 div[data-testid="stCheckbox"] span[data-baseweb="checkbox"] svg {
-    fill: #FFFFFF !important;
-    color: #FFFFFF !important;
+    fill: #FAF8F2 !important;
+    color: #FAF8F2 !important;
 }
 
 /* Pasek nawigacji dolnej */
@@ -1221,20 +1246,20 @@ def renderuj_grupy_zadan_wycieczki(grupy_zadan):
         for tytul_grupy, lista_zadan, prefix in grupy_zadan:
             if not lista_zadan:
                 continue
-            st.markdown(f'<div style="font-size: 10pt; font-weight: 800; color: #8C5338; margin-top: 10px; margin-bottom: 6px; padding-bottom: 2px; border-bottom: 1.5px solid #E2DEC8;">{tytul_grupy}</div>', unsafe_allow_html=True)
-            for idx, zad in enumerate(lista_zadan):
-                klucz = f"{prefix}_task_{idx}"
-                stan = pobierz_status_zadania(klucz)
-                nowy_stan = st.checkbox(
-                    zad,
-                    value=stan,
-                    key=f"cb_{klucz}"
-                )
-                if nowy_stan != stan:
-                    zapisz_status_zadania(klucz, nowy_stan)
-                    if nowy_stan:
-                        st.toast(f"🌟 Brawo! Ukończono misję!", icon="🎯")
-                    st.rerun()
+            with st.expander(tytul_grupy, expanded=False):
+                for idx, zad in enumerate(lista_zadan):
+                    klucz = f"{prefix}_task_{idx}"
+                    stan = pobierz_status_zadania(klucz)
+                    nowy_stan = st.checkbox(
+                        zad,
+                        value=stan,
+                        key=f"cb_{klucz}"
+                    )
+                    if nowy_stan != stan:
+                        zapisz_status_zadania(klucz, nowy_stan)
+                        if nowy_stan:
+                            st.toast(f"🌟 Brawo! Ukończono misję!", icon="🎯")
+                        st.rerun()
 
 def renderuj_zwijana_sekcje_zadan(zadania, prefix_klucza, tytul_naglowka="🎯 ZADANIA DLA DZIECI / MISJE"):
     if not zadania:
