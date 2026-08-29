@@ -248,7 +248,7 @@ input[type="date"] {
     margin-bottom: 20px;
 }
 
-/* TIMELINE WRAPPER Z CIĄGŁĄ LINIĄ W TLE */
+/* TIMELINE WRAPPER Z GRUBSZĄ I WYRAŹNĄ LINIĄ W TLE */
 .timeline-wrapper {
     position: relative;
 }
@@ -258,8 +258,8 @@ input[type="date"] {
     top: 24px;
     bottom: 24px;
     left: 83px;
-    width: 2.5px;
-    background-color: #BCC8A4;
+    width: 4px;
+    background-color: #7A9060;
     z-index: 1;
 }
 
@@ -267,7 +267,7 @@ input[type="date"] {
 .timeline-row {
     position: relative;
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     min-height: 64px;
     padding-bottom: 16px;
     z-index: 2;
@@ -277,7 +277,7 @@ input[type="date"] {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    padding-top: 4px;
+    justify-content: center;
     z-index: 2;
 }
 .timeline-time-start {
@@ -353,7 +353,9 @@ input[type="date"] {
 
 .timeline-content-col {
     flex: 1;
-    padding-top: 2px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     z-index: 2;
 }
 .timeline-item-title {
@@ -361,7 +363,7 @@ input[type="date"] {
     font-weight: 900;
     color: #2B2118;
     line-height: 1.25;
-    margin-bottom: 3px;
+    margin-bottom: 2px;
 }
 .timeline-item-desc {
     font-size: 9.5pt;
@@ -512,22 +514,22 @@ input[type="date"] {
 .step-action-vertical-btn span:first-child { font-size: 13pt; }
 .step-action-vertical-btn span:last-child { font-size: 9.5pt; font-weight: 800; color: #2B2118; }
 
-/* PRZYCISK NAWIGUJ W WIERSZU */
+/* MNIEJSZY, PERFEKCYJNIE WYRÓWNANY PRZYCISK NAWIGUJ W WIERSZU */
 .timeline-nav-btn {
     flex-shrink: 0;
+    width: 60px;
+    height: 48px;
     background-color: #EFE4CA;
     border: 1.5px solid #D8C8A6;
     border-radius: 14px;
-    padding: 6px 10px;
     text-align: center;
     text-decoration: none !important;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
+    gap: 1px;
     margin-left: 8px;
-    margin-top: 2px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.03);
     z-index: 3;
 }
@@ -535,22 +537,34 @@ input[type="date"] {
     background-color: #E5D8B8;
 }
 .timeline-nav-btn span:first-child {
-    font-size: 14pt;
+    font-size: 12pt;
     color: #8C5338;
+    line-height: 1;
 }
 .timeline-nav-btn span:last-child {
-    font-size: 8.5pt;
+    font-size: 7.5pt;
     font-weight: 800;
     color: #2B2118;
+    line-height: 1;
 }
 
-/* DOSTĘP DO DROGI I PRZEJAZDÓW */
+/* DOSTĘP DO DROGI I PRZEJAZDÓW Z CIĄGŁĄ, WYRAŹNĄ LINIĄ */
 .timeline-transit-row {
     position: relative;
     display: flex;
     justify-content: center;
     margin: -6px 0 10px 0;
     z-index: 3;
+}
+.timeline-transit-row::before {
+    content: "";
+    position: absolute;
+    top: -10px;
+    bottom: -10px;
+    left: 83px;
+    width: 4px;
+    background-color: #7A9060;
+    z-index: -1;
 }
 
 /* Pasek nawigacji dolnej */
@@ -751,7 +765,7 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki):
         if lat1 is not None and lon1 is not None and lat2 is not None and lon2 is not None:
             tekst_dojazdu, minuty_przejazdu = oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2)
             
-        szacowany_postoj = 15 # Domyślny postój w minutach
+        szacowany_postoj = 15
         
         cursor.execute('''
             INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
@@ -1016,21 +1030,6 @@ def init_db():
 
 init_db()
 
-# --- FUNKCJE OBSŁUGI ZAKUPÓW PRZEZ QUERY PARAMS ---
-if "action" in st.query_params and st.query_params["action"] == "add_zakup":
-    k_id = st.query_params.get("krok_id")
-    p_name = st.query_params.get("prod_name")
-    p_qty = st.query_params.get("prod_qty", "1")
-    if k_id and p_name:
-        dodaj_produkt_zakupow(int(k_id), str(p_name), str(p_qty))
-        st.session_state["flash_toast"] = f"🛒 Dodano: {p_name}"
-    st.query_params.clear()
-    st.query_params["tab"] = "route"
-    if k_id:
-        st.query_params["expand"] = str(k_id)
-    st.rerun()
-
-# --- FUNKCJE ZARZĄDZANIA USTAWIENIAMI I KLUCZAMI API ---
 def pobierz_ustawienia_z_db(uzytkownik):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
@@ -1051,31 +1050,40 @@ def zapisz_ustawienia_w_db(uzytkownik, api_key, dostawca_ai, model_ai):
     conn.commit()
     conn.close()
 
-def sprawdź_pogodę_w_locie(szerokosc_geograficzna, dlugosc_geograficzna, data_wspolrzedne="dzisiaj"):
-    try:
-        lat = float(szerokosc_geograficzna)
-        lon = float(dlugosc_geograficzna)
-    except:
-        return "Błąd: Niepoprawne współrzędne geograficzne."
+with st.sidebar:
+    st.markdown("### 👤 Profil Użytkownika")
+    dostepni_uzytkownicy = ["Rodzic 1", "Rodzic 2", "Rodzic 3", "Rodzic 4"]
+    aktualny_uzytkownik = st.selectbox("Wybierz swój profil", options=dostepni_uzytkownicy, index=0)
+    st.markdown("---")
     
-    docelowa_data = str(data_wspolrzedne).strip()
-    if docelowa_data.lower() in ["dzisiaj", "today", ""]:
-        docelowa_data = date.today().strftime("%Y-%m-%d")
-
-    prognoza = pobierz_prognoze_pogody(lat, lon, docelowa_data)
-    if not prognoza:
-        return f"Nie udało się pobrać pogody dla współrzędnych {lat}, {lon} na dzień {docelowa_data}."
+    st.header("⚙️ Ustawienia Asystenta")
+    zapisany_klucz, zapisany_dostawca, zapisany_model = pobierz_ustawienia_z_db(aktualny_uzytkownik)
     
-    max_t = prognoza.get('maxtempC', 'brak')
-    min_t = prognoza.get('mintempC', 'brak')
-    hourly = prognoza.get('hourly', [])
-    opis = "Brak szczegółów"
-    if hourly:
-        opis = hourly[0].get('weatherDesc', [{}])[0].get('value', 'Brak opisu')
+    dostawcy_ai = ["Google Gemini", "Anthropic Claude"]
+    dostawca_index = dostawcy_ai.index(zapisany_dostawca) if zapisany_dostawca in dostawcy_ai else 0
+    wybrany_dostawca = st.selectbox("Dostawca AI", options=dostawcy_ai, index=dostawca_index)
+    
+    if wybrany_dostawca == "Google Gemini":
+        dostepne_modele = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash"]
+    else:
+        dostepne_modele = ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"]
+    
+    model_index = dostepne_modele.index(zapisany_model) if zapisany_model in dostepne_modele else 0
+    wybrany_model = st.selectbox("Model AI", options=dostepne_modele, index=model_index)
+    
+    api_key_input = st.text_input(f"Klucz API ({wybrany_dostawca})", value=zapisany_klucz, type="password", key=f"api_key_{aktualny_uzytkownik}")
+    if api_key_input != zapisany_klucz or wybrany_dostawca != zapisany_dostawca or wybrany_model != zapisany_model:
+        zapisz_ustawienia_w_db(aktualny_uzytkownik, api_key_input, wybrany_dostawca, wybrany_model)
 
-    return f"Prognoza pogody dla współrzędnych ({lat}, {lon}) na dzień {docelowa_data}: Maks: {max_t}°C, Min: {min_t}°C, Stan: {opis}."
+    st.markdown("---")
+    st.markdown("### 🧭 Szybka Nawigacja")
+    st.markdown(f"""
+<div class="custom-nav-bar">
+<a href="https://www.google.com/maps/search/?api=1&query={SKLEP_LAT},{SKLEP_LON}" target="_blank" class="custom-nav-btn"><span>🛒</span><span>Sklep</span></a>
+<a href="https://www.google.com/maps/search/?api=1&query={DOMEK_LAT},{DOMEK_LON}" target="_blank" class="custom-nav-btn"><span>🏠</span><span>Domek</span></a>
+</div>
+""", unsafe_allow_html=True)
 
-@st.cache_data(ttl=3600)
 def pobierz_prognoze_pogody(lat, lon, data_docelowa):
     try:
         url = f"https://wttr.in/{lat},{lon}?format=j1"
@@ -1183,7 +1191,6 @@ def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
         for ost in ostrzezenia:
             st.markdown(f'<div style="color: #DC5050; font-weight: 800; font-size: 9.5pt; margin-top: 2px;">{ost}</div>', unsafe_allow_html=True)
 
-# --- FUNKCJE OBSŁUGI BAZY CZATU ---
 def pobierz_historie_czatu_z_db(uzytkownik):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
@@ -1211,7 +1218,6 @@ def wyczysc_historie_czatu_w_db(uzytkownik):
     conn.commit()
     conn.close()
 
-# --- FUNKCJE OBSŁUGI NOTATEK, MIEJSC, WYCIECZEK, KROKÓW I ZAKUPÓW ---
 def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=None, tytul=None):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
@@ -1222,27 +1228,6 @@ def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=N
     conn.commit()
     conn.close()
     return "Dodano nową notatkę!"
-
-def edytuj_notatke(notatka_id, zawartosc=None, tytul=None, typ_notatki=None):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    if zawartosc:
-        cursor.execute('UPDATE notatki SET zawartosc = ? WHERE id = ?', (zawartosc, notatka_id))
-    if tytul is not None:
-        cursor.execute('UPDATE notatki SET tytul = ? WHERE id = ?', (tytul, notatka_id))
-    if typ_notatki:
-        cursor.execute('UPDATE notatki SET typ_notatki = ? WHERE id = ?', (typ_notatki, notatka_id))
-    conn.commit()
-    conn.close()
-    return f"Zaktualizowano notatkę nr {notatka_id}."
-
-def usun_notatke(notatka_id):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM notatki WHERE id = ?', (notatka_id,))
-    conn.commit()
-    conn.close()
-    return f"Usunięto notatkę nr {notatka_id}."
 
 def pobierz_notatki(id_wycieczki=None, id_miejsca=None):
     conn = sqlite3.connect('cretai.db')
@@ -1321,34 +1306,6 @@ def dodaj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne="35.3,
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
     return f"Dodano krok {nazwa} do wycieczki."
 
-def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa=None, wspolrzedne=None,
-                          okienko_zwiedzania=None, godzina_ewakuacji=None, czerwona_strefa_ostrzezenie=None, 
-                          strefa_luzu_i_regeneracji=None, podsumowanie_taktyki=None, 
-                          potencjal_meltdownu=None, strategie_meltdown=None, opis=None):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? AND (krok_wycieczki = ? OR nazwa LIKE ?)', (str(id_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%"))
-    res = cursor.fetchone()
-    if not res:
-        conn.close()
-        return "Nie znaleziono kroku wycieczki."
-    krok_row_id = res[0]
-    
-    pola = {
-        "nazwa": nazwa, "wspolrzedne": wspolrzedne, "okienko_zwiedzania": okienko_zwiedzania,
-        "godzina_ewakuacji": godzina_ewakuacji, "czerwona_strefa_ostrzezenie": czerwona_strefa_ostrzezenie,
-        "strefa_luzu_i_regeneracji": strefa_luzu_i_regeneracji, "podsumowanie_taktyki": podsumowanie_taktyki,
-        "potencjal_meltdownu": potencjal_meltdownu, "strategie_meltdown": strategie_meltdown, "opis": opis
-    }
-    for col, val in pola.items():
-        if val is not None:
-            cursor.execute(f'UPDATE krok_wycieczki SET {col} = ? WHERE id = ?', (val, krok_row_id))
-            
-    conn.commit()
-    conn.close()
-    przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
-    return f"Zaktualizowano krok wycieczki #{id_wycieczki}."
-
 def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
@@ -1376,25 +1333,6 @@ def pobierz_posilki_dla_kroku(id_kroku):
     conn.close()
     return df
 
-def dodaj_posilek_do_kroku(id_kroku, rodzaj_posilku, miejsce="w kroku", opis=""):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, opis)
-        VALUES (?, ?, ?, ?)
-    ''', (str(id_kroku), str(rodzaj_posilku), str(miejsce), str(opis)))
-    conn.commit()
-    conn.close()
-    return f"Dodano posiłek ({rodzaj_posilku}) do kroku."
-
-def usun_posilek_kroku(posilek_id):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM posilki_kroku WHERE id = ?', (posilek_id,))
-    conn.commit()
-    conn.close()
-    return "Usunięto posiłek."
-
 def pobierz_zakupy_dla_kroku(id_kroku):
     conn = sqlite3.connect('cretai.db')
     df = pd.read_sql('SELECT * FROM zakupy WHERE id_kroku = ?', conn, params=(str(id_kroku),))
@@ -1408,20 +1346,6 @@ def dodaj_produkt_zakupow(id_kroku, nazwa_produktu, ilosc="1"):
     conn.commit()
     conn.close()
     return f"Dodano produkt '{nazwa_produktu}'."
-
-def zmien_status_zakupu(zakup_id, kupione):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('UPDATE zakupy SET kupione = ? WHERE id = ?', (1 if kupione else 0, zakup_id))
-    conn.commit()
-    conn.close()
-
-def usun_produkt_zakupow(zakup_id):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM zakupy WHERE id = ?', (zakup_id,))
-    conn.commit()
-    conn.close()
 
 def pobierz_wszystkie_miejsca():
     conn = sqlite3.connect('cretai.db')
@@ -1499,7 +1423,6 @@ def dodaj_marker_domku(m):
     domek_icon = folium.DivIcon(html=domek_icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=domek_icon, tooltip="Nasz Domek").add_to(m)
 
-# --- FUNCTION CALLING DLA ASYSTENTA AI ---
 cretai_tools = types.Tool(function_declarations=[
     types.FunctionDeclaration(
         name="dodaj_notatke",
@@ -1565,53 +1488,6 @@ cretai_tools = types.Tool(function_declarations=[
     )
 ])
 
-def wykonaj_narzedzie_bazy(call_name, args):
-    if call_name == "dodaj_notatke":
-        return dodaj_notatke(**args)
-    elif call_name == "edytuj_wycieczke":
-        return edytuj_wycieczke(**args)
-    elif call_name == "dodaj_krok_wycieczki":
-        return dodaj_krok_wycieczki(**args)
-    elif call_name == "usun_krok_wycieczki":
-        return usun_krok_wycieczki(**args)
-    return "Wykonano."
-
-# --- W PANELU BOCZNYM: USTAWIENIA I PROFILE ---
-with st.sidebar:
-    st.markdown("### 👤 Profil Użytkownika")
-    dostepni_uzytkownicy = ["Rodzic 1", "Rodzic 2", "Rodzic 3", "Rodzic 4"]
-    aktualny_uzytkownik = st.selectbox("Wybierz swój profil", options=dostepni_uzytkownicy, index=0)
-    st.markdown("---")
-    
-    st.header("⚙️ Ustawienia Asystenta")
-    zapisany_klucz, zapisany_dostawca, zapisany_model = pobierz_ustawienia_z_db(aktualny_uzytkownik)
-    
-    dostawcy_ai = ["Google Gemini", "Anthropic Claude"]
-    dostawca_index = dostawcy_ai.index(zapisany_dostawca) if zapisany_dostawca in dostawcy_ai else 0
-    wybrany_dostawca = st.selectbox("Dostawca AI", options=dostawcy_ai, index=dostawca_index)
-    
-    if wybrany_dostawca == "Google Gemini":
-        dostepne_modele = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash"]
-    else:
-        dostepne_modele = ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"]
-    
-    model_index = dostepne_modele.index(zapisany_model) if zapisany_model in dostepne_modele else 0
-    wybrany_model = st.selectbox("Model AI", options=dostepne_modele, index=model_index)
-    
-    api_key_input = st.text_input(f"Klucz API ({wybrany_dostawca})", value=zapisany_klucz, type="password", key=f"api_key_{aktualny_uzytkownik}")
-    if api_key_input != zapisany_klucz or wybrany_dostawca != zapisany_dostawca or wybrany_model != zapisany_model:
-        zapisz_ustawienia_w_db(aktualny_uzytkownik, api_key_input, wybrany_dostawca, wybrany_model)
-
-    st.markdown("---")
-    st.markdown("### 🧭 Szybka Nawigacja")
-    st.markdown(f"""
-<div class="custom-nav-bar">
-<a href="https://www.google.com/maps/search/?api=1&query={SKLEP_LAT},{SKLEP_LON}" target="_blank" class="custom-nav-btn"><span>🛒</span><span>Sklep</span></a>
-<a href="https://www.google.com/maps/search/?api=1&query={DOMEK_LAT},{DOMEK_LON}" target="_blank" class="custom-nav-btn"><span>🏠</span><span>Domek</span></a>
-</div>
-""", unsafe_allow_html=True)
-
-# --- GLOBALNY ASYSTENT AI ---
 def renderuj_globalny_czat_ai(uzytkownik):
     st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
     with st.expander(f"💬 Asystent AI ({uzytkownik})", expanded=False):
@@ -1687,15 +1563,9 @@ if "place" in st.query_params:
 if "active_place_id" not in st.session_state:
     st.session_state.active_place_id = None
 
-COLORS = {'must have': '#DC5050', 'nice to have': '#E28C32', 'others': '#5B8FB9', 'activity': '#6D8257', 'shop': '#9D79BC', 'plaża': '#4EA8A8'}
-DEFAULT_COLOR = '#8A7B70'
-
 df_miejsca = pobierz_wszystkie_miejsca()
 wycieczki_options = pobierz_skrocone_opcje_wycieczek()
 
-# ==========================================
-# GŁÓWNY WIDOK WYCIECZKI (Z PEŁNĄ LOGISTYKĄ I TIMELINE)
-# ==========================================
 def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False):
     conn = sqlite3.connect('cretai.db')
     wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
@@ -1845,7 +1715,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             badge_symbol = "🚩"
             tytul_wyswietlany = "Powrót / Zakończenie"
             badge_class = "badge-powrot"
-            # Zgodnie z wymaganiem: nawigacja do domku na kafelku powrót
             has_nav = True
             coords_clean = f"{DOMEK_LAT}, {DOMEK_LON}"
         elif "obiad" in nazwa.lower() or "lunch" in nazwa.lower() or "jedzenie" in nazwa.lower() or "przerwa" in nazwa.lower():
@@ -1872,7 +1741,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             if posiłki_str:
                 opis_tekst = f"<span style='color:#8C5338; font-weight:700;'>🍲 {' / '.join(posiłki_str)}</span>"
 
-        # Pobudka i powrót mają być nieinteraktywne (brak rozwinięcia po kliknięciu w badge)
         if is_first or is_last:
             badge_html = f'<div class="timeline-icon-badge-static {badge_class}">{badge_symbol}</div>'
         else:
@@ -2013,7 +1881,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
     st.markdown('</div></div>', unsafe_allow_html=True)
     renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
 
-# --- DOLNY PASEK NAWIGACJI: Miejsca / Wycieczki / Trasa Dnia ---
 active_zabytek = "active" if st.session_state.active_tab == "zabytek" else ""
 active_map = "active" if st.session_state.active_tab == "map" else ""
 active_route = "active" if st.session_state.active_tab == "route" else ""
@@ -2026,7 +1893,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# --- ROUTING ZAKŁADEK ---
 if st.session_state.active_tab == "route":
     aktualne_id = pobierz_aktywna_wycieczke_id()
     renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False, pokaz_pogode=True)
