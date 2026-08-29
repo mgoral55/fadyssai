@@ -19,303 +19,595 @@ try:
 except ImportError:
     ANTHROPIC_AVAILABLE = False
 
-# --- 1. KONFIGURACJA STRONY I DESIGN SYSTEM: PASTEL & SLATE (INSP. YAZIO/NOOM) ---
+# --- 1. KONFIGURACJA STRONY I DESIGN SYSTEM: SAGE & TERRACOTTA TIMELINE ---
 st.set_page_config(page_title="CretAi - Kreta", layout="centered", page_icon="🧭")
 
 st.markdown("""
-    <style>
-    /* OCZYSZCZENIE GÓRNEJ BELKI STREAMLIT */
-    header[data-testid="stHeader"] {
-        background-color: transparent !important;
-        box-shadow: none !important;
-    }
-    [data-testid="stHeaderActionElements"] {
-        display: none !important; 
-    }
-    
-    /* BAZA: Jasny szaro-niebieski i głęboki grafit */
-    .block-container {
-        padding-top: 1rem !important;
-        padding-bottom: 150px !important;
-        max-width: 600px;
-    }
-    .stApp {
-        background-color: #F5F7FA !important;
-        color: #1D2A36 !important;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    }
-    
-    /* Pasek boczny */
-    [data-testid="stSidebar"] {
-        background-color: #FFFFFF !important;
-        border-right: 1.5px solid #E4E9F2;
-    }
-    [data-testid="stSidebar"] * {
-        color: #1D2A36 !important;
-    }
-    
-    /* Nagłówki */
-    h1, h2, h3, h4, h5 {
-        color: #1D2A36 !important;
-        font-weight: 800;
-    }
-    h3 {
-        font-size: 1.25rem;
-        margin-top: 0.75rem;
-        margin-bottom: 0.35rem;
-    }
+<style>
+/* OCZYSZCZENIE GÓRNEJ BELKI STREAMLIT */
+header[data-testid="stHeader"] {
+    background-color: transparent !important;
+    box-shadow: none !important;
+}
+[data-testid="stHeaderActionElements"] {
+    display: none !important; 
+}
 
-    /* NAPRAWA INPUTÓW I COMBOBOXÓW */
-    input, textarea, .stChatInput textarea {
-        background-color: #F5F7FA !important;
-        color: #1D2A36 !important;
-        border: 1.5px solid #E4E9F2 !important;
-        border-radius: 16px !important;
-    }
-    ::placeholder {
-        color: #8492A6 !important;
-    }
-    
-    /* Streamlit Selectbox (BaseWeb) Override */
-    div[data-baseweb="select"] > div {
-        background-color: #F5F7FA !important;
-        border-color: #E4E9F2 !important;
-        border-radius: 16px !important;
-        color: #1D2A36 !important;
-    }
-    
-    /* Belka tytułowa z logiem */
-    .adventure-header {
-        background: #1D2A36;
-        border: none;
-        border-radius: 20px;
-        padding: 12px 16px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 12px;
-        box-shadow: 0 8px 20px rgba(29, 42, 54, 0.12);
-    }
-    .adventure-title-text {
-        font-size: 1.15rem;
-        font-weight: 900;
-        color: #FFFFFF;
-        letter-spacing: 0.02em;
-        text-transform: uppercase;
-    }
+/* BAZA MOTYWU OLIVE/CREAM */
+.block-container {
+    padding-top: 1.5rem !important;
+    padding-bottom: 140px !important;
+    max-width: 540px;
+}
+.stApp {
+    background-color: #B4C29D !important;
+    color: #2F241D !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
 
-    /* Pasek nawigacji dolnej */
-    .bottom-nav-container {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        background-color: rgba(255, 255, 255, 0.98);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border-top: 1px solid #E4E9F2;
-        padding: 10px 12px;
-        display: flex;
-        justify-content: space-around;
-        gap: 6px;
-        z-index: 99999;
-        box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.03);
-    }
-    .bottom-nav-btn {
-        flex: 1;
-        background-color: transparent;
-        color: #8492A6;
-        padding: 8px 0;
-        text-align: center;
-        border-radius: 14px;
-        font-size: 12px;
-        font-weight: 700;
-        text-decoration: none;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 4px;
-    }
-    .bottom-nav-btn:hover {
-        background-color: #F5F7FA;
-    }
-    .bottom-nav-btn.active {
-        color: #1D2A36;
-        font-weight: 900;
-    }
-    .bottom-nav-btn.active span:first-child {
-        transform: scale(1.15);
-    }
+/* Pasek boczny */
+[data-testid="stSidebar"] {
+    background-color: #F8F6F0 !important;
+    border-right: 1.5px solid #D1D9C5;
+}
+[data-testid="stSidebar"] * {
+    color: #2F241D !important;
+}
 
-    /* Pływający kontener globalnego AI */
-    .floating-ai-container {
-        position: fixed;
-        bottom: 75px;
-        left: 8px;
-        right: 8px;
-        max-width: 580px;
-        margin: 0 auto;
-        z-index: 999998;
-    }
+/* Nagłówki */
+h1, h2, h3, h4, h5 {
+    color: #2F241D !important;
+    font-weight: 800;
+}
 
-    .custom-nav-bar {
-        display: flex;
-        justify-content: space-between;
-        gap: 8px;
-        width: 100%;
-        margin-bottom: 0.4rem;
-    }
-    .custom-nav-btn {
-        flex: 1;
-        background-color: #FFFFFF;
-        border: 1.5px solid #E4E9F2;
-        color: #1D2A36;
-        padding: 8px 4px;
-        text-align: center;
-        border-radius: 16px;
-        font-size: 11px;
-        font-weight: 800;
-        text-decoration: none;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 3px;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.02);
-    }
-    .custom-nav-btn:hover {
-        border-color: #1D2A36;
-        background-color: #F5F7FA;
-    }
+/* INPUTY I COMBOBOXY */
+input, textarea, .stChatInput textarea {
+    background-color: #FAF8F2 !important;
+    color: #2F241D !important;
+    border: 1.5px solid #D6D2C4 !important;
+    border-radius: 16px !important;
+}
+::placeholder {
+    color: #8C827A !important;
+}
 
-    /* Karty interfejsu */
-    .logistics-card {
-        background-color: #FFFFFF;
-        border: 1.5px solid #E4E9F2;
-        border-radius: 16px;
-        padding: 10px 12px;
-        text-align: left;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
-        margin-bottom: 4px;
-    }
-    .logistics-title {
-        font-size: 9pt;
-        font-weight: 800;
-        color: #8492A6;
-        margin-bottom: 3px;
-        text-transform: uppercase;
-    }
-    .logistics-value {
-        font-size: 11.5pt;
-        font-weight: 900;
-        color: #1D2A36;
-    }
+div[data-baseweb="select"] > div {
+    background-color: #FAF8F2 !important;
+    border-color: #D6D2C4 !important;
+    border-radius: 16px !important;
+    color: #2F241D !important;
+}
 
-    .net-box {
-        background-color: #F5F7FA;
-        border: 1.5px solid #E4E9F2;
-        border-radius: 16px;
-        padding: 10px;
-        margin-bottom: 6px;
-    }
-    .net-box-evac {
-        background-color: rgba(255, 107, 107, 0.05);
-        border: 1.5px solid rgba(255, 107, 107, 0.2);
-        border-radius: 16px;
-        padding: 10px;
-        margin-bottom: 6px;
-    }
-    .net-box-regen {
-        background-color: rgba(101, 208, 132, 0.05);
-        border: 1.5px solid rgba(101, 208, 132, 0.2);
-        border-radius: 16px;
-        padding: 10px;
-        margin-bottom: 6px;
-    }
-    .net-box-warn {
-        background-color: rgba(255, 168, 0, 0.05);
-        border: 1.5px solid rgba(255, 168, 0, 0.25);
-        border-radius: 16px;
-        padding: 10px;
-        margin-bottom: 6px;
-    }
-    .net-title {
-        font-size: 9pt;
-        font-weight: 800;
-        color: #8492A6;
-        margin-bottom: 2px;
-        text-transform: uppercase;
-    }
-    .net-title-evac {
-        font-size: 9pt;
-        font-weight: 800;
-        color: #FF6B6B;
-        margin-bottom: 2px;
-        text-transform: uppercase;
-    }
-    .net-title-regen {
-        font-size: 9pt;
-        font-weight: 800;
-        color: #65D084;
-        margin-bottom: 2px;
-        text-transform: uppercase;
-    }
-    .net-title-warn {
-        font-size: 9pt;
-        font-weight: 800;
-        color: #FFA800;
-        margin-bottom: 2px;
-        text-transform: uppercase;
-    }
-    .net-text {
-        font-size: 10.5pt;
-        color: #1D2A36;
-        font-weight: 600;
-        line-height: 1.4;
-    }
-    
-    /* Przyciski globalne */
-    .stButton > button {
-        background-color: #1D2A36 !important;
-        color: #FFFFFF !important;
-        border: none !important;
-        font-weight: 800 !important;
-        border-radius: 24px !important;
-        padding: 0.5rem 1rem !important;
-        min-height: 48px !important;
-        font-size: 11pt !important;
-        box-shadow: 0 4px 10px rgba(29, 42, 54, 0.2) !important;
-    }
-    .stButton > button:hover {
-        background-color: #314252 !important;
-    }
-    
-    [data-testid="stExpander"] {
-        border: 1.5px solid #E4E9F2 !important;
-        border-radius: 20px !important;
-        background-color: #FFFFFF !important;
-        margin-bottom: 8px !important;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.02) !important;
-    }
-    [data-testid="stExpander"] * {
-        color: #1D2A36 !important;
-    }
-    
-    .note-card {
-        background-color: #FFFFFF;
-        border: 1.5px solid #E4E9F2;
-        border-radius: 20px;
-        padding: 16px;
-        margin-bottom: 12px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
-    }
-    .note-title {
-        font-size: 12pt;
-        font-weight: 800;
-        color: #1D2A36;
-    }
-    </style>
+/* Belka nagłówkowa aplikacji */
+.adventure-header {
+    background: #2E251E;
+    border: none;
+    border-radius: 20px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+    box-shadow: 0 6px 18px rgba(46, 37, 30, 0.15);
+}
+.adventure-title-text {
+    font-size: 1.15rem;
+    font-weight: 900;
+    color: #F9F7F1;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+/* NAGŁÓWEK WYCIECZKI */
+.trip-top-section {
+    padding: 4px 4px 14px 4px;
+    margin-top: 4px;
+}
+.trip-main-title {
+    font-size: 26pt;
+    font-weight: 900;
+    color: #2B2118;
+    letter-spacing: -0.5px;
+    line-height: 1.15;
+    margin-bottom: 4px;
+}
+.trip-date-subtitle {
+    font-size: 14pt;
+    font-weight: 700;
+    color: #8C5338;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+/* SEKCJA LOGISTYKI I OPISÓW WYCIECZKI */
+.overview-card {
+    background-color: #F6F0DD;
+    border: 1.5px solid #E2DEC8;
+    border-radius: 24px;
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+}
+.overview-card-title {
+    font-size: 10pt;
+    font-weight: 800;
+    color: #2B2118;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.overview-card-text {
+    font-size: 9.5pt;
+    color: #2B2118;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+/* ZWIJANA KARTA TAKTYKI DNIA (GŁÓWNA WYCIECZKA) */
+.overview-details-card {
+    background-color: #F6F0DD;
+    border: 1.5px solid #E2DEC8;
+    border-radius: 24px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+}
+.overview-details-card summary {
+    font-size: 10pt;
+    font-weight: 800;
+    color: #2B2118;
+    cursor: pointer;
+    outline: none;
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.overview-details-card summary::-webkit-details-marker {
+    display: none;
+}
+.overview-details-card summary::after {
+    content: "▼";
+    font-size: 8pt;
+    color: #8C5338;
+    transition: transform 0.2s;
+}
+.overview-details-card[open] summary::after {
+    transform: rotate(180deg);
+}
+
+.logistics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+.logistics-pill {
+    background-color: #FAF8F2;
+    border: 1.5px solid #E2DEC8;
+    border-radius: 16px;
+    padding: 10px 12px;
+}
+.logistics-pill-title {
+    font-size: 8pt;
+    font-weight: 800;
+    color: #8C5338;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.logistics-pill-value {
+    font-size: 11pt;
+    font-weight: 900;
+    color: #2B2118;
+}
+
+/* GŁÓWNA KARTA PLANU DNIA */
+.day-plan-container {
+    background-color: #F6F0DD;
+    border-radius: 36px 36px 28px 28px;
+    padding: 24px 18px 20px 18px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+    margin-bottom: 16px;
+    margin-top: 14px;
+}
+.day-plan-heading {
+    font-size: 16pt;
+    font-weight: 900;
+    color: #2B2118;
+    margin-bottom: 20px;
+}
+
+/* TIMELINE WRAPPER Z CIĄGŁĄ LINIĄ W TLE */
+.timeline-wrapper {
+    position: relative;
+}
+.timeline-wrapper::before {
+    content: "";
+    position: absolute;
+    top: 24px;
+    bottom: 24px;
+    left: 83px;
+    width: 2.5px;
+    background-color: #BCC8A4;
+    z-index: 1;
+}
+
+/* TIMELINE CONTAINER & ITEMS */
+.timeline-row {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    min-height: 64px;
+    padding-bottom: 16px;
+    z-index: 2;
+}
+.timeline-time {
+    width: 62px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    padding-top: 4px;
+    z-index: 2;
+}
+.timeline-time-start {
+    font-size: 11pt;
+    font-weight: 900;
+    color: #2B2118;
+    line-height: 1.1;
+}
+.timeline-time-end {
+    font-size: 8.5pt;
+    font-weight: 700;
+    color: #8C5338;
+    margin-top: 2px;
+    line-height: 1.1;
+}
+
+.timeline-center-col {
+    position: relative;
+    width: 44px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-right: 10px;
+    z-index: 2;
+}
+
+.timeline-icon-badge {
+    position: relative;
+    z-index: 3;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13pt;
+    font-weight: 900;
+    color: #FFFFFF !important;
+    text-decoration: none !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+    border: 2px solid #FFFFFF;
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+.timeline-icon-badge:hover {
+    transform: scale(1.08);
+}
+.badge-pobudka { background-color: #94A77E; }
+.badge-miejsce { background-color: #C06C4E; }
+.badge-obiad { background-color: #B56749; }
+.badge-powrot { background-color: #DDAE92; }
+
+.timeline-content-col {
+    flex: 1;
+    padding-top: 2px;
+    z-index: 2;
+}
+.timeline-item-title {
+    font-size: 12.5pt;
+    font-weight: 900;
+    color: #2B2118;
+    line-height: 1.25;
+    margin-bottom: 3px;
+}
+.timeline-item-desc {
+    font-size: 9.5pt;
+    color: #4A3E36;
+    line-height: 1.35;
+    font-weight: 500;
+}
+
+/* KAFLEK SZCZEGÓŁÓW KROKU */
+.step-details-card {
+    background-color: #EDE8D6;
+    border: 1.5px solid #D6CEBA;
+    border-radius: 24px;
+    padding: 16px;
+    margin: 4px 0 18px 0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    position: relative;
+    z-index: 3;
+}
+
+.step-desc-bubble {
+    background-color: #E2DAC4;
+    border-radius: 16px;
+    padding: 12px 14px;
+    font-size: 10pt;
+    color: #2B2118;
+    line-height: 1.4;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+/* KAFLEK EWAKUACJI I OSTRZEŻENIA */
+.step-evac-pill {
+    background-color: rgba(220, 80, 80, 0.08);
+    border: 1.5px solid rgba(220, 80, 80, 0.3);
+    border-radius: 16px;
+    padding: 10px 14px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.step-evac-pill-title {
+    font-size: 9pt;
+    font-weight: 800;
+    color: #DC5050;
+    text-transform: uppercase;
+}
+.step-evac-pill-val {
+    font-size: 11pt;
+    font-weight: 900;
+    color: #DC5050;
+}
+
+.step-warn-box {
+    background-color: rgba(226, 140, 50, 0.1);
+    border: 1.5px solid rgba(226, 140, 50, 0.35);
+    border-radius: 16px;
+    padding: 10px 14px;
+    margin-bottom: 10px;
+}
+.step-warn-title {
+    font-size: 8.5pt;
+    font-weight: 800;
+    color: #C06C4E;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+}
+.step-warn-text {
+    font-size: 9pt;
+    font-weight: 700;
+    color: #2B2118;
+    line-height: 1.35;
+}
+
+/* ZWIJANA KARTA WEWNĄTRZ KROKU */
+.step-combined-card {
+    background-color: #E2DAC4;
+    border-radius: 18px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+}
+.step-combined-card summary {
+    font-size: 10pt;
+    font-weight: 800;
+    color: #8C5338;
+    cursor: pointer;
+    outline: none;
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.step-combined-card summary::-webkit-details-marker {
+    display: none;
+}
+.step-combined-card summary::after {
+    content: "▼";
+    font-size: 8pt;
+    color: #8C5338;
+    transition: transform 0.2s;
+}
+.step-combined-card[open] summary::after {
+    transform: rotate(180deg);
+}
+
+.step-subitem-title {
+    font-size: 9.5pt;
+    font-weight: 800;
+    margin-bottom: 3px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.step-subitem-body {
+    font-size: 9pt;
+    color: #2B2118;
+    line-height: 1.35;
+    font-weight: 600;
+}
+
+/* PIONOWA LISTA PRZYCISKÓW NA DOLE KARTY */
+.step-action-vertical-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 14px;
+    margin-bottom: 10px;
+}
+
+.step-action-vertical-btn {
+    background-color: #C3CBB5;
+    border: 1.5px solid #ACB79C;
+    border-radius: 16px;
+    padding: 10px 14px;
+    text-align: center;
+    text-decoration: none !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    transition: background-color 0.15s ease;
+}
+.step-action-vertical-btn:hover {
+    background-color: #B5BEA5;
+}
+.step-action-vertical-btn span:first-child { font-size: 13pt; }
+.step-action-vertical-btn span:last-child { font-size: 9.5pt; font-weight: 800; color: #2B2118; }
+
+/* PRZYCISK NAWIGUJ W WIERSZU */
+.timeline-nav-btn {
+    flex-shrink: 0;
+    background-color: #EFE4CA;
+    border: 1.5px solid #D8C8A6;
+    border-radius: 14px;
+    padding: 6px 10px;
+    text-align: center;
+    text-decoration: none !important;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    margin-left: 8px;
+    margin-top: 2px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+    z-index: 3;
+}
+.timeline-nav-btn:hover {
+    background-color: #E5D8B8;
+}
+.timeline-nav-btn span:first-child {
+    font-size: 14pt;
+    color: #8C5338;
+}
+.timeline-nav-btn span:last-child {
+    font-size: 8.5pt;
+    font-weight: 800;
+    color: #2B2118;
+}
+
+/* DOSTĘP DO DROGI I PRZEJAZDÓW */
+.timeline-transit-row {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    margin: -6px 0 10px 0;
+    z-index: 3;
+}
+
+/* Pasek nawigacji dolnej */
+.bottom-nav-container {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: #EFE8D6;
+    border-top: 1.5px solid #D6CEBC;
+    padding: 10px 16px;
+    display: flex;
+    justify-content: space-around;
+    gap: 12px;
+    z-index: 99999;
+    box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.05);
+}
+.bottom-nav-btn {
+    flex: 1;
+    background-color: transparent;
+    color: #8A7B70;
+    padding: 6px 0;
+    text-align: center;
+    border-radius: 14px;
+    font-size: 11px;
+    font-weight: 800;
+    text-decoration: none;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+.bottom-nav-btn.active {
+    color: #8C5338;
+    font-weight: 900;
+}
+
+/* Pływający kontener AI */
+.floating-ai-container {
+    position: fixed;
+    bottom: 75px;
+    left: 8px;
+    right: 8px;
+    max-width: 520px;
+    margin: 0 auto;
+    z-index: 999998;
+}
+
+.custom-nav-bar {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 0.4rem;
+}
+.custom-nav-btn {
+    flex: 1;
+    background-color: #FAF8F2;
+    border: 1.5px solid #D6D2C4;
+    color: #2B2118;
+    padding: 8px 4px;
+    text-align: center;
+    border-radius: 16px;
+    font-size: 11px;
+    font-weight: 800;
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+}
+
+/* Przyciski globalne */
+.stButton > button {
+    background-color: #2E251E !important;
+    color: #FFFFFF !important;
+    border: none !important;
+    font-weight: 800 !important;
+    border-radius: 20px !important;
+    padding: 0.5rem 1rem !important;
+    min-height: 44px !important;
+    font-size: 10.5pt !important;
+}
+
+[data-testid="stExpander"] {
+    border: 1.5px solid #D8D2BC !important;
+    border-radius: 18px !important;
+    background-color: #FAF8F2 !important;
+    margin-bottom: 8px !important;
+}
+[data-testid="stExpander"] * {
+    color: #2B2118 !important;
+}
+
+.note-card {
+    background-color: #FAF8F2;
+    border: 1.5px solid #D8D2BC;
+    border-radius: 18px;
+    padding: 14px;
+    margin-bottom: 10px;
+}
+</style>
 """, unsafe_allow_html=True)
 
 if "flash_toast" in st.session_state and st.session_state["flash_toast"]:
@@ -330,7 +622,6 @@ SKLEP_LON = 24.091861
 # --- FUNKCJA POBIERANIA CZASÓW DOJAZDU PRZEZ OSRM ---
 @st.cache_data(ttl=86400)
 def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
-    """Odpytuje OSRM i zwraca sformatowany tekst oraz liczbę minut."""
     url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
@@ -366,11 +657,23 @@ def sparsuj_godzine_minuty(czas_str):
     return None
 
 def klucz_sortowania_okienka(okienko_str):
-    """Zwraca liczbę minut od północy dla startu okienka, np. '08:00 - 09:45' -> 480"""
     res = sparsuj_godzine_minuty(okienko_str)
     if res:
         return res[0] * 60 + res[1]
     return 9999
+
+# --- FORMATOWANIE DATY PO POLSKU ---
+DNI_TYGODNIA_PL = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"]
+MIESIACE_PL = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia"]
+
+def formatuj_date_pl(data_obj):
+    if not isinstance(data_obj, (date, datetime)):
+        return str(data_obj)
+    dzien = data_obj.day
+    miesiac = MIESIACE_PL[data_obj.month - 1]
+    rok = data_obj.year
+    dzien_tyg = DNI_TYGODNIA_PL[data_obj.weekday()]
+    return f"{dzien} {miesiac} {rok} ({dzien_tyg})"
 
 # --- AUTOMATYCZNY SILNIK PRZELICZANIA I SYNCHRONIZACJI LOGISTYKI ---
 def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki):
@@ -384,10 +687,8 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki):
         conn.close()
         return
 
-    # Chronologiczne posortowanie kroków po godzinie rozpoczęcia
     kroki.sort(key=lambda x: klucz_sortowania_okienka(x[3]))
 
-    # 1. Przeliczenie czasów dojazdu OSRM między kolejnymi krokami
     czasy_dojazdu_krokow = []
     for idx in range(len(kroki) - 1):
         k1_id, _, k1_wsp, _, _ = kroki[idx]
@@ -404,26 +705,21 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki):
             cursor.execute('UPDATE krok_wycieczki SET czas_dojazdu_z_poprzedniego_kroku = ? WHERE id = ?', ("~25 min", k1_id))
             czasy_dojazdu_krokow.append(25)
 
-    # Ostatni krok ma pusty dojazd dalej
     cursor.execute('UPDATE krok_wycieczki SET czas_dojazdu_z_poprzedniego_kroku = NULL WHERE id = ?', (kroki[-1][0],))
 
-    # 2. Przeliczenie pobudki, wyjazdu, godziny dojazdu do domku i całkowitego czasu trwania
     pierwsze_okienko = kroki[0][3] or "07:00 - 07:30"
     ostatnie_okienko = kroki[-1][3] or "18:00 - 18:30"
 
-    # Wyjazd: koniec pierwszego kroku przygotowawczego w domku (lub jego początek jeśli nie ma zakresu)
     if "-" in pierwsze_okienko:
         start_1 = sparsuj_godzine_minuty(pierwsze_okienko.split('-')[1]) or (7, 30)
     else:
         start_1 = sparsuj_godzine_minuty(pierwsze_okienko) or (7, 30)
 
-    # Powrót: GODZINA WEJŚCIA DO DOMKU (początek okienka ostatniego kroku w domku)
     koniec_n = sparsuj_godzine_minuty(ostatnie_okienko.split('-')[0]) or (18, 0)
 
     dt_start = datetime(2026, 1, 1, start_1[0], start_1[1])
     dt_wyjazd = dt_start
     dt_pobudka = dt_wyjazd - timedelta(minutes=90)
-    
     dt_powrot = datetime(2026, 1, 1, koniec_n[0], koniec_n[1])
 
     roznica_sek = (dt_powrot - dt_wyjazd).total_seconds()
@@ -631,10 +927,10 @@ def init_db():
         ))
 
         kroki_w1 = [
-            ("1", "0", "Nasz Domek (Start)", f"{DOMEK_LAT}, {DOMEK_LON}", "07:00 - 07:30", "07:30", "Brak", "Spokojna baza", "Przygotowanie i stabilizacja poranna przed wyjazdem.", "Niski", "Ciepła atmosfera w domku", "Nasz domek wypadowy w Stavros."),
-            ("1", "1", "Pałac w Knossos", "35.2980, 25.1631", "09:52 - 11:37", "11:37", "BEZWZGLĘDNIE EWAKUOWAĆ SIĘ PRZED 12:00! Tłumy i upał.", "Brak - rygor czasowy.", "Szybkie wejście bez zbędnych kolejek.", "Wysoki (tłumy, brak cienia, duchota)", "Użycie aplikacji 3D na iPadzie jako kotwica uwagi, szybka ewakuacja w razie buntu.", "Legendarska stolica minojskiej Krety z ruinami pałacu króla Minosa."),
-            ("1", "2", "Cretaquarium", "35.3326, 25.2825", "13:36 - 15:36", "15:36", "Unikać godzin szczytu.", "Średnia - kawiarnia obok.", "Wyciszenie sensoryczne w klimatyzowanym półmroku.", "Średni (pogłos w halach, tłum)", "Słuchawki wygłuszające, powolne tempo, półmrok przy akwariach.", "Jedno z największych oceanariów w basenie Morza Śródziemnego."),
-            ("1", "3", "Nasz Domek (Powrót)", f"{DOMEK_LAT}, {DOMEK_LON}", "17:33 - 20:00", "20:00", "Brak", "Pełny relaks", "Bezpieczny powrót i wyciszenie dnia.", "Niski", "Kolacja domowa i odpoczynek", "Koniec wyprawy w naszej bazie.")
+            ("1", "0", "Nasz Domek (Start)", f"{DOMEK_LAT}, {DOMEK_LON}", "07:00 - 07:30", "07:30", "Brak", "Spokojna baza", "Poziom energii, prosta rada (np. 'Światło dzienne, spokojna muzyka').", "Niski", "Ciepła atmosfera w domku", "Nasz domek wypadowy w Stavros."),
+            ("1", "1", "Pałac w Knossos", "35.2980, 25.1631", "09:00 - 11:30", "11:30", "BEZWZGLĘDNIE EWAKUOWAĆ SIĘ PRZED 12:00! Tłumy i upał.", "Brak - rygor czasowy.", "Poziom tłumu (Niski), szacowany czas zwiedzania.", "Wysoki (tłumy, brak cienia, duchota)", "Użycie aplikacji 3D na iPadzie jako kotwica uwagi, szybka ewakuacja w razie buntu.", "Legendarska stolica minojskiej Krety z ruinami pałacu króla Minosa."),
+            ("1", "2", "Cretaquarium", "35.3326, 25.2825", "13:30 - 15:30", "15:30", "Unikać godzin szczytu.", "Kawiarnia obok", "Poziom stymulacji sensorycznej (Umiarkowany - półmrok, chłód).", "Średni (pogłos w halach, tłum)", "Słuchawki wygłuszające, powolne tempo, półmrok przy akwariach.", "Jedno z największych oceanariów w basenie Morza Śródziemnego."),
+            ("1", "3", "Nasz Domek (Powrót)", f"{DOMEK_LAT}, {DOMEK_LON}", "16:00 - 19:00", "19:00", "Brak", "Pełny relaks", "Poziom energii na koniec dnia, prosta rada (np. 'Wyciszenie w drodze').", "Niski", "Kolacja domowa i odpoczynek", "Koniec wyprawy w naszej bazie.")
         ]
         cursor.executemany('''
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis)
@@ -645,7 +941,7 @@ def init_db():
         db_krok_ids = [r[0] for r in cursor.fetchall()]
         if len(db_krok_ids) >= 4:
             cursor.execute("INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, opis) VALUES (?, 'śniadanie', 'w domku', 'Domowe śniadanie')", (db_krok_ids[0],))
-            cursor.execute("INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, opis) VALUES (?, 'obiad', 'w kroku', 'Obiad w kawiarni')", (db_krok_ids[2],))
+            cursor.execute("INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, opis) VALUES (?, 'obiad', 'w kroku', 'Poziom regeneracji (Wysoki), dostępność strefy wyciszenia, czas dojazdu do restauracji (np. 5 min spacerem).')", (db_krok_ids[1],))
             cursor.execute("INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, opis) VALUES (?, 'kolacja', 'w domku', 'Kolacja po powrocie')", (db_krok_ids[3],))
 
         conn.commit()
@@ -654,7 +950,21 @@ def init_db():
 
 init_db()
 
-# --- FUNKCJE ZARZĄDZANIA USTAWIENIAMI I KLUCZAMI API PER UŻYTKOWNIK ---
+# --- FUNKCJE OBSŁUGI ZAKUPÓW PRZEZ QUERY PARAMS ---
+if "action" in st.query_params and st.query_params["action"] == "add_zakup":
+    k_id = st.query_params.get("krok_id")
+    p_name = st.query_params.get("prod_name")
+    p_qty = st.query_params.get("prod_qty", "1")
+    if k_id and p_name:
+        dodaj_produkt_zakupow(int(k_id), str(p_name), str(p_qty))
+        st.session_state["flash_toast"] = f"🛒 Dodano: {p_name}"
+    st.query_params.clear()
+    st.query_params["tab"] = "route"
+    if k_id:
+        st.query_params["expand"] = str(k_id)
+    st.rerun()
+
+# --- FUNKCJE ZARZĄDZANIA USTAWIENIAMI I KLUCZAMI API ---
 def pobierz_ustawienia_z_db(uzytkownik):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
@@ -701,6 +1011,52 @@ def pobierz_prognoze_pogody(lat, lon, data_docelowa):
         pass
     return None
 
+def pobierz_szczegoly_pogody_dla_godziny(wspolrzedne, planowana_data, okienko_czasowe):
+    if not planowana_data or not str(planowana_data).strip():
+        return None
+    try:
+        parts = str(wspolrzedne).split(',')
+        lat = float(parts[0].strip())
+        lon = float(parts[1].strip())
+    except:
+        return None
+
+    prognoza_dnia = pobierz_prognoze_pogody(lat, lon, str(planowana_data))
+    if not prognoza_dnia:
+        return None
+
+    hourly_list = prognoza_dnia.get('hourly', [])
+    target_hour = 12
+    if okienko_czasowe and "-" in okienko_czasowe:
+        try:
+            start_str = okienko_czasowe.split("-")[0].strip()
+            target_hour = int(start_str.split(":")[0])
+        except:
+            pass
+
+    dopasowana_godzina = None
+    min_diff = 999
+    for h in hourly_list:
+        try:
+            time_val = int(h.get('time', '0')) // 100
+            diff = abs(time_val - target_hour)
+            if diff < min_diff:
+                min_diff = diff
+                dopasowana_godzina = h
+        except:
+            pass
+
+    if dopasowana_godzina:
+        return {
+            "temp": dopasowana_godzina.get('tempC', '—'),
+            "feel": dopasowana_godzina.get('FeelsLikeC', '—'),
+            "desc": dopasowana_godzina.get('weatherDesc', [{}])[0].get('value', 'Sunny'),
+            "wind": dopasowana_godzina.get('windspeedKmph', '—'),
+            "uv": dopasowana_godzina.get('uvIndex', '—'),
+            "data": planowana_data
+        }
+    return None
+
 def sprawdź_pogodę_w_locie(szerokosc_geograficzna, dlugosc_geograficzna, data_wspolrzedne="dzisiaj"):
     try:
         lat = float(szerokosc_geograficzna)
@@ -724,66 +1080,6 @@ def sprawdź_pogodę_w_locie(szerokosc_geograficzna, dlugosc_geograficzna, data_
         opis = hourly[0].get('weatherDesc', [{}])[0].get('value', 'Brak opisu')
 
     return f"Prognoza pogody dla współrzędnych ({lat}, {lon}) na dzień {docelowa_data}: Maks: {max_t}°C, Min: {min_t}°C, Stan: {opis}."
-
-def renderuj_pogode_dla_kroku(wspolrzedne, planowana_data, okienko_czasowe):
-    if not planowana_data or not str(planowana_data).strip():
-        return
-    
-    try:
-        parts = wspolrzedne.split(',')
-        lat = float(parts[0].strip())
-        lon = float(parts[1].strip())
-    except:
-        return
-
-    prognoza_dnia = pobierz_prognoze_pogody(lat, lon, str(planowana_data))
-    if not prognoza_dnia:
-        return
-
-    st.markdown(f"""
-        <div style="background-color: rgba(101, 208, 132, 0.05); border: 1.5px solid rgba(101, 208, 132, 0.3); border-radius: 12px; padding: 10px; margin: 6px 0;">
-            <div style="font-size: 9pt; font-weight: 800; color: #65D084; text-transform: uppercase; margin-bottom: 4px;">
-                🌤️ Prognoza pogody ({planowana_data})
-            </div>
-    """, unsafe_allow_html=True)
-
-    hourly_list = prognoza_dnia.get('hourly', [])
-    
-    target_hour = 12
-    if okienko_czasowe and "-" in okienko_czasowe:
-        try:
-            start_str = okienko_czasowe.split("-")[0].strip()
-            target_hour = int(start_str.split(":")[0])
-        except:
-            pass
-
-    dopasowana_godzina = None
-    min_diff = 999
-    for h in hourly_list:
-        try:
-            time_val = int(h.get('time', '0')) // 100
-            diff = abs(time_val - target_hour)
-            if diff < min_diff:
-                min_diff = diff
-                dopasowana_godzina = h
-        except:
-            pass
-
-    if dopasowana_godzina:
-        temp = dopasowana_godzina.get('tempC', '—')
-        feel = dopasowana_godzina.get('FeelsLikeC', '—')
-        desc = dopasowana_godzina.get('weatherDesc', [{}])[0].get('value', 'Brak opisu')
-        wind = dopasowana_godzina.get('windspeedKmph', '—')
-        uv = dopasowana_godzina.get('uvIndex', '—')
-        
-        st.markdown(f"""
-            <div style="font-size: 10.5pt; color: #1D2A36; font-weight: 700; display: flex; justify-content: space-between; align-items: center;">
-                <span><b>{temp}°C</b> (odczuwalna {feel}°C), {desc}</span>
-                <span>💨 {wind} km/h | ☀️ UV {uv}</span>
-            </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("</div>", unsafe_allow_html=True)
 
 def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
     if not planowana_data or not str(planowana_data).strip() or kroki_df.empty:
@@ -819,28 +1115,16 @@ def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
             ostrzezenia.append("⚡ Ryzyko burz na trasie wycieczki!")
 
     if max_temp >= 32:
-        ostrzezenia.append(f"🔥 Ekstremalny upał! Maksymalna temperatura sięgnie {max_temp}°C. Bezwzględnie zadbaj o nawodnienie i ochronę przed słońcem.")
+        ostrzezenia.append(f"🔥 Ekstremalny upał! Maksymalna temperatura sięgnie {max_temp}°C.")
 
-    border_col = '#FF6B6B' if ostrzezenia else '#E4E9F2'
-    title_col = '#FF6B6B' if ostrzezenia else '#8492A6'
+    border_col = '#DC5050' if ostrzezenia else '#D8D2BC'
+    title_col = '#DC5050' if ostrzezenia else '#8A7B70'
 
-    st.markdown(f"""
-        <div style="background-color: #FFFFFF; border: 1.5px solid {border_col}; border-radius: 20px; padding: 16px; margin-bottom: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.02);">
-            <div style="font-size: 9.5pt; font-weight: 900; color: {title_col}; margin-bottom: 6px; text-transform: uppercase;">
-                📊 Podsumowanie pogody dla całej wycieczki ({planowana_data})
-            </div>
-            <div style="font-size: 11pt; color: #1D2A36; font-weight: 700; margin-bottom: 6px;">
-                Temperatury w przedziale: <b>{min_temp}°C do {max_temp}°C</b>
-            </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div style="background-color: #FAF8F2; border: 1.5px solid {border_col}; border-radius: 20px; padding: 14px; margin-bottom: 12px;"><div style="font-size: 9pt; font-weight: 900; color: {title_col}; margin-bottom: 4px; text-transform: uppercase;">🌤️ Pogoda na trasie ({planowana_data})</div><div style="font-size: 10.5pt; color: #2B2118; font-weight: 700;">Temperatura: <b>{min_temp}°C do {max_temp}°C</b></div></div>', unsafe_allow_html=True)
 
     if ostrzezenia:
         for ost in ostrzezenia:
-            st.markdown(f'<div style="color: #FF6B6B; font-weight: 800; font-size: 10.5pt; margin-top: 4px;">{ost}</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div style="color: #65D084; font-weight: 800; font-size: 10.5pt;">✨ Brak ekstremów pogodowych. Warunki sprzyjające wyprawie!</div>', unsafe_allow_html=True)
-
-    st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown(f'<div style="color: #DC5050; font-weight: 800; font-size: 9.5pt; margin-top: 2px;">{ost}</div>', unsafe_allow_html=True)
 
 # --- FUNKCJE OBSŁUGI BAZY CZATU ---
 def pobierz_historie_czatu_z_db(uzytkownik):
@@ -915,103 +1199,31 @@ def pobierz_notatki(id_wycieczki=None, id_miejsca=None):
     return df
 
 def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
-    st.markdown("---")
-    st.markdown("### 📌 Notatki i Linki")
-    
+    st.markdown("### 📌 Notatki i Zadania")
     df_notatki = pobierz_notatki(id_wycieczki=id_wycieczki, id_miejsca=id_miejsca)
     
     with st.expander("➕ Dodaj nową notatkę"):
         with st.form(key=f"form_add_note_{id_wycieczki}_{id_miejsca}", clear_on_submit=True):
-            nt_tytul = st.text_input("Tytuł notatki (opcjonalnie)")
+            nt_tytul = st.text_input("Tytuł (opcjonalnie)")
             nt_typ = st.selectbox(
                 "Typ notatki", 
                 options=["text", "link", "list"], 
-                format_func=lambda x: {"text": "📝 Zwykły tekst", "link": "🔗 Link / URL", "list": "📋 Punkty listy"}[x]
+                format_func=lambda x: {"text": "📝 Tekst", "link": "🔗 Link", "list": "📋 Checklista"}[x]
             )
-            nt_zawartosc = st.text_area("Treść / URL / Elementy (każdy w nowej linii)")
-            submitted = st.form_submit_button("💾 Zapisz nową notatkę", use_container_width=True)
+            nt_zawartosc = st.text_area("Treść notatki")
+            submitted = st.form_submit_button("💾 Zapisz notatkę", use_container_width=True)
             if submitted and nt_zawartosc:
                 dodaj_notatke(zawartosc=nt_zawartosc, typ_notatki=nt_typ, id_wycieczki=id_wycieczki, id_miejsca=id_miejsca, tytul=nt_tytul)
-                st.session_state["flash_toast"] = "💾 Dodano nową notatkę!"
+                st.session_state["flash_toast"] = "💾 Dodano notatkę!"
                 st.rerun()
 
-    if df_notatki.empty:
-        st.markdown("<p style='color: #8492A6; font-size: 10pt; font-style: italic;'>Brak notatek. Dodaj pierwszą powyżej.</p>", unsafe_allow_html=True)
-        return
+    if not df_notatki.empty:
+        for _, note in df_notatki.iterrows():
+            st.markdown(f'<div class="note-card"><div style="font-weight: 800; font-size: 10.5pt; color: #2B2118; margin-bottom: 4px;">📌 {note.get("tytul") or "Notatka"}</div><div style="font-size: 9.5pt; color: #4A3E36;">{note["zawartosc"]}</div></div>', unsafe_allow_html=True)
 
-    if "editing_note_id" not in st.session_state:
-        st.session_state.editing_note_id = None
-
-    for _, note in df_notatki.iterrows():
-        note_id = note['id']
-        tytul = note['tytul']
-        zawartosc = note['zawartosc']
-        typ = note['typ_notatki']
-        
-        is_editing_this = (st.session_state.editing_note_id == note_id)
-        
-        st.markdown(f'<div class="note-card">', unsafe_allow_html=True)
-        
-        col_t1, col_t2 = st.columns([5, 1])
-        with col_t1:
-            if tytul and str(tytul).strip():
-                st.markdown(f'<div style="font-size: 11.5pt; font-weight: 800; color: #1D2A36; margin-bottom: 4px;">📌 {tytul}</div>', unsafe_allow_html=True)
-        with col_t2:
-            edit_icon = "❌" if is_editing_this else "✏️"
-            subcol1, subcol2 = st.columns(2)
-            with subcol1:
-                if st.button(edit_icon, key=f"btn_toggle_edit_{note_id}", help="Edytuj"):
-                    st.session_state.editing_note_id = None if is_editing_this else note_id
-                    st.rerun()
-            with subcol2:
-                if st.button("🗑️", key=f"btn_del_{note_id}", help="Usuń"):
-                    usun_notatke(note_id)
-                    if st.session_state.editing_note_id == note_id:
-                        st.session_state.editing_note_id = None
-                    st.session_state["flash_toast"] = "🗑️ Usunięto notatkę!"
-                    st.rerun()
-
-        if tytul and str(tytul).strip():
-            st.markdown("<hr style='border: none; border-top: 1.5px solid #E4E9F2; margin: 6px 0 8px 0;'>", unsafe_allow_html=True)
-
-        if not is_editing_this:
-            if typ == 'text':
-                st.markdown(f"<div style='color: #1D2A36; font-weight: 600; font-size: 10.5pt; line-height: 1.4; word-break: break-word;'>{zawartosc}</div>", unsafe_allow_html=True)
-            elif typ == 'link':
-                st.markdown(f'<a href="{zawartosc}" target="_blank" style="color: #65D084; text-decoration: underline; font-weight: 800; word-break: break-all; font-size: 10.5pt;">🔗 {zawartosc}</a>', unsafe_allow_html=True)
-            elif typ == 'list':
-                punkty = [p.strip() for p in zawartosc.split('\n') if p.strip()]
-                for idx_p, punkt in enumerate(punkty):
-                    st.checkbox(punkt, key=f"note_item_{note_id}_{idx_p}")
-        else:
-            with st.form(key=f"form_edit_note_{note_id}"):
-                nowy_tytul_ed = st.text_input("Tytuł", value=tytul if tytul else "")
-                nowa_tresc_ed = st.text_area("Treść", value=zawartosc)
-                col_save, col_cancel = st.columns(2)
-                with col_save:
-                    if st.form_submit_button("💾 Zapisz", use_container_width=True):
-                        edytuj_notatke(note_id, zawartosc=nowa_tresc_ed, tytul=nowy_tytul_ed)
-                        st.session_state.editing_note_id = None
-                        st.session_state["flash_toast"] = "💾 Zaktualizowano notatkę!"
-                        st.rerun()
-                with col_cancel:
-                    if st.form_submit_button("Anuluj", use_container_width=True):
-                        st.session_state.editing_note_id = None
-                        st.rerun()
-
-        st.markdown('</div>', unsafe_allow_html=True)
-
-def edytuj_wycieczke(
-    id, 
-    tytul_wycieczki=None, 
-    calosciowy_opis_wycieczki=None, 
-    calosciowa_taktyka_dnia=None, 
-    calkowity_czas_wycieczki_godziny=None,
-    szacowana_godzina_powrotu=None, 
-    pobudka=None, 
-    czas_wyjazdu=None, 
-    planowana_data=None
-):
+def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, 
+                     calkowity_czas_wycieczki_godziny=None, szacowana_godzina_powrotu=None, 
+                     pobudka=None, czas_wyjazdu=None, planowana_data=None):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     if tytul_wycieczki is not None:
@@ -1020,29 +1232,18 @@ def edytuj_wycieczke(
         cursor.execute('UPDATE wycieczka SET calosciowy_opis_wycieczki = ? WHERE id = ?', (calosciowy_opis_wycieczki, str(id)))
     if calosciowa_taktyka_dnia is not None:
         cursor.execute('UPDATE wycieczka SET calosciowa_taktyka_dnia = ? WHERE id = ?', (calosciowa_taktyka_dnia, str(id)))
-    if calkowity_czas_wycieczki_godziny is not None:
-        cursor.execute('UPDATE wycieczka SET calkowity_czas_wycieczki_godziny = ? WHERE id = ?', (str(calkowity_czas_wycieczki_godziny), str(id)))
-    if szacowana_godzina_powrotu is not None:
-        cursor.execute('UPDATE wycieczka SET szacowana_godzina_powrotu = ? WHERE id = ?', (szacowana_godzina_powrotu, str(id)))
-    if pobudka is not None:
-        cursor.execute('UPDATE wycieczka SET pobudka = ? WHERE id = ?', (pobudka, str(id)))
-    if czas_wyjazdu is not None:
-        cursor.execute('UPDATE wycieczka SET czas_wyjazdu = ? WHERE id = ?', (czas_wyjazdu, str(id)))
     if planowana_data is not None:
         cursor.execute('UPDATE wycieczka SET planowana_data = ? WHERE id = ?', (planowana_data, str(id)))
     conn.commit()
     conn.close()
-    
     przelicz_i_zsynchronizuj_wycieczke(str(id))
-    return f"Wycieczka #{id} została pomyślnie zaktualizowana i przeliczona."
+    return f"Wycieczka #{id} została zaktualizowana."
 
-def dodaj_krok_wycieczki(
-    id_wycieczki, krok_wycieczki, nazwa, wspolrzedne="35.3,24.5", 
-    okienko_zwiedzania="10:00 - 12:00", godzina_ewakuacji="12:00", 
-    czerwona_strefa_ostrzezenie="Unikać upału", strefa_luzu_i_regeneracji="Cień", 
-    podsumowanie_taktyki="Spokojne tempo", potencjal_meltdownu="Średni", 
-    strategie_meltdown="Okulary i woda", opis="Brak opisu"
-):
+def dodaj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne="35.3,24.5", 
+                         okienko_zwiedzania="10:00 - 12:00", godzina_ewakuacji="12:00", 
+                         czerwona_strefa_ostrzezenie="Unikać upału", strefa_luzu_i_regeneracji="Cień", 
+                         podsumowanie_taktyki="Spokojne tempo", potencjal_meltdownu="Średni", 
+                         strategie_meltdown="Okulary i woda", opis="Brak opisu"):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('''
@@ -1060,16 +1261,13 @@ def dodaj_krok_wycieczki(
     ))
     conn.commit()
     conn.close()
-
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
-    return f"Dodano krok nr {krok_wycieczki} ({nazwa}) i automatycznie przeliczono harmonogram wycieczki #{id_wycieczki}!"
+    return f"Dodano krok {nazwa} do wycieczki."
 
-def edytuj_krok_wycieczki(
-    id_wycieczki, krok_wycieczki, nazwa=None, wspolrzedne=None,
-    okienko_zwiedzania=None, godzina_ewakuacji=None, czerwona_strefa_ostrzezenie=None, 
-    strefa_luzu_i_regeneracji=None, podsumowanie_taktyki=None, 
-    potencjal_meltdownu=None, strategie_meltdown=None, opis=None
-):
+def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa=None, wspolrzedne=None,
+                          okienko_zwiedzania=None, godzina_ewakuacji=None, czerwona_strefa_ostrzezenie=None, 
+                          strefa_luzu_i_regeneracji=None, podsumowanie_taktyki=None, 
+                          potencjal_meltdownu=None, strategie_meltdown=None, opis=None):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? AND (krok_wycieczki = ? OR nazwa LIKE ?)', (str(id_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%"))
@@ -1080,16 +1278,10 @@ def edytuj_krok_wycieczki(
     krok_row_id = res[0]
     
     pola = {
-        "nazwa": nazwa,
-        "wspolrzedne": wspolrzedne,
-        "okienko_zwiedzania": okienko_zwiedzania,
-        "godzina_ewakuacji": godzina_ewakuacji,
-        "czerwona_strefa_ostrzezenie": czerwona_strefa_ostrzezenie,
-        "strefa_luzu_i_regeneracji": strefa_luzu_i_regeneracji,
-        "podsumowanie_taktyki": podsumowanie_taktyki,
-        "potencjal_meltdownu": potencjal_meltdownu,
-        "strategie_meltdown": strategie_meltdown,
-        "opis": opis
+        "nazwa": nazwa, "wspolrzedne": wspolrzedne, "okienko_zwiedzania": okienko_zwiedzania,
+        "godzina_ewakuacji": godzina_ewakuacji, "czerwona_strefa_ostrzezenie": czerwona_strefa_ostrzezenie,
+        "strefa_luzu_i_regeneracji": strefa_luzu_i_regeneracji, "podsumowanie_taktyki": podsumowanie_taktyki,
+        "potencjal_meltdownu": potencjal_meltdownu, "strategie_meltdown": strategie_meltdown, "opis": opis
     }
     for col, val in pola.items():
         if val is not None:
@@ -1097,15 +1289,12 @@ def edytuj_krok_wycieczki(
             
     conn.commit()
     conn.close()
-
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
-    return f"Zaktualizowano krok wycieczki i przeliczono czasy dla wycieczki #{id_wycieczki}."
+    return f"Zaktualizowano krok wycieczki #{id_wycieczki}."
 
-# --- TWARDA OCHRONA DOMKU PRZED USUNIĘCIEM ---
 def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
-    
     cursor.execute('SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? AND (krok_wycieczki = ? OR nazwa LIKE ?)', 
                    (str(id_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%"))
     krok_to_del = cursor.fetchone()
@@ -1114,19 +1303,16 @@ def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
         return "Nie znaleziono takiego kroku w harmonogramie wycieczki."
     
     krok_id, nazwa = krok_to_del
-    
     if "domek" in nazwa.lower():
         conn.close()
-        return f"BLOKADA: Krok '{nazwa}' to baza wypadowa (Domek) i jest nieusuwalny! Możesz usuwać wyłącznie atrakcje pośrednie na trasie."
+        return f"BLOKADA: Krok '{nazwa}' to baza wypadowa (Domek) i jest nieusuwalny!"
 
     cursor.execute('DELETE FROM krok_wycieczki WHERE id = ?', (krok_id,))
     conn.commit()
     conn.close()
-
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
-    return f"Pomyślnie usunięto krok '{nazwa}' i automatycznie zaktualizowano harmonogram wycieczki #{id_wycieczki}."
+    return f"Usunięto krok '{nazwa}'."
 
-# --- ZARZĄDZANIE POSIŁKAMI W KROKU ---
 def pobierz_posilki_dla_kroku(id_kroku):
     conn = sqlite3.connect('cretai.db')
     df = pd.read_sql('SELECT * FROM posilki_kroku WHERE id_kroku = ?', conn, params=(str(id_kroku),))
@@ -1152,7 +1338,6 @@ def usun_posilek_kroku(posilek_id):
     conn.close()
     return "Usunięto posiłek."
 
-# --- ZAKUPY ---
 def pobierz_zakupy_dla_kroku(id_kroku):
     conn = sqlite3.connect('cretai.db')
     df = pd.read_sql('SELECT * FROM zakupy WHERE id_kroku = ?', conn, params=(str(id_kroku),))
@@ -1162,13 +1347,10 @@ def pobierz_zakupy_dla_kroku(id_kroku):
 def dodaj_produkt_zakupow(id_kroku, nazwa_produktu, ilosc="1"):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO zakupy (id_kroku, nazwa_produktu, ilosc, kupione)
-        VALUES (?, ?, ?, 0)
-    ''', (str(id_kroku), nazwa_produktu, str(ilosc)))
+    cursor.execute('INSERT INTO zakupy (id_kroku, nazwa_produktu, ilosc, kupione) VALUES (?, ?, ?, 0)', (str(id_kroku), nazwa_produktu, str(ilosc)))
     conn.commit()
     conn.close()
-    return f"Dodano produkt '{nazwa_produktu}' do listy zakupów kroku."
+    return f"Dodano produkt '{nazwa_produktu}'."
 
 def zmien_status_zakupu(zakup_id, kupione):
     conn = sqlite3.connect('cretai.db')
@@ -1216,58 +1398,27 @@ def pobierz_skrocone_opcje_wycieczek():
 
 def wczytaj_kontekst_zewnetrzny():
     tekst = f"Jesteś asystentem podróży CretAi na Kretę.\n"
-    tekst += f"- Lokalizacja naszego DOMEK (baza wypadowa): {DOMEK_LAT}, {DOMEK_LON}\n"
-    tekst += f"- Lokalizacja SKLEP obok domku: {SKLEP_LAT}, {SKLEP_LON}\n"
-    tekst += "--- BAZA DANYCH SQLITE ---\n"
+    tekst += f"- Lokalizacja naszego DOMEK: {DOMEK_LAT}, {DOMEK_LON}\n"
+    tekst += f"- Lokalizacja SKLEP: {SKLEP_LAT}, {SKLEP_LON}\n"
     conn = sqlite3.connect('cretai.db')
     try:
-        miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, typ, czas_dojazdu, orientacyjny_czas, koszt, konieczna_akcja, odwiedzone, Base FROM miejsca', conn)
-        wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, planowana_data, odbyta FROM wycieczka', conn)
-        kroki_df = pd.read_sql('SELECT id, id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, czas_dojazdu_z_poprzedniego_kroku, okienko_zwiedzania, godzina_ewakuacji FROM krok_wycieczki', conn)
-        posilki_df = pd.read_sql('SELECT id, id_kroku, rodzaj_posilku, miejsce, opis FROM posilki_kroku', conn)
-        zakupy_df = pd.read_sql('SELECT id, id_kroku, nazwa_produktu, ilosc, kupione FROM zakupy', conn)
-        notatki_df = pd.read_sql('SELECT id, id_wycieczki, id_miejsca, tytul, zawartosc, typ_notatki FROM notatki', conn)
+        miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, typ, czas_dojazdu FROM miejsca', conn)
+        wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, pobudka, czas_wyjazdu, szacowana_godzina_powrotu, planowana_data FROM wycieczka', conn)
+        kroki_df = pd.read_sql('SELECT id, id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji FROM krok_wycieczki', conn)
     except:
-        miejsca_df = pd.DataFrame()
-        wycieczki_df = pd.DataFrame()
-        kroki_df = pd.DataFrame()
-        posilki_df = pd.DataFrame()
-        zakupy_df = pd.DataFrame()
-        notatki_df = pd.DataFrame()
+        miejsca_df, wycieczki_df, kroki_df = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     conn.close()
 
     if not kroki_df.empty:
         kroki_df['sort_key'] = kroki_df['okienko_zwiedzania'].apply(klucz_sortowania_okienka)
         kroki_df = kroki_df.sort_values(by='sort_key').drop(columns=['sort_key'])
 
-    if not miejsca_df.empty:
-        tekst += "Miejsca:\n"
-        for _, r in miejsca_df.iterrows():
-            tekst += f"- Nr {r['numer_miejsca']}: {r['nazwa']} (Typ: {r['typ']}, Odwiedzone: {r['odwiedzone']}, Dojazd: {r['czas_dojazdu']}, Base: {r['Base']})\n"
     if not wycieczki_df.empty:
-        tekst += "\nWycieczki:\n"
         for _, w in wycieczki_df.iterrows():
-            if int(w.get('odbyta', 0)) == 1:
-                continue
-            tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Pobudka: {w.get('pobudka', '')} | Wyjazd: {w.get('czas_wyjazdu', '')} | Powrót: {w.get('szacowana_godzina_powrotu', '')} | Czas: {w.get('calkowity_czas_wycieczki_godziny', '')}h | Data: {w.get('planowana_data', 'brak')} | Opis: {w['calosciowy_opis_wycieczki']}\n"
+            tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Data: {w.get('planowana_data', '')}\n"
     if not kroki_df.empty:
-        tekst += "\nMapa Kroków Wycieczek (Kroki są automatycznie sortowane chronologicznie po godzinach):\n"
         for _, k in kroki_df.iterrows():
-            tekst += f"- Krok DB_ID: {k['id']} (Wycieczka #{k['id_wycieczki']}, Krok #{k['krok_wycieczki']}): {k['nazwa']} [{k['wspolrzedne']}] | Czas: {k['okienko_zwiedzania']} (Ewakuacja: {k['godzina_ewakuacji']}) | Dojazd do nast.: {k.get('czas_dojazdu_z_poprzedniego_kroku', 'brak')}\n"
-    if not posilki_df.empty:
-        tekst += "\nPosiłki w krokach:\n"
-        for _, p in posilki_df.iterrows():
-            tekst += f"- Posiłek ID {p['id']} (Krok DB_ID {p['id_kroku']}): {p['rodzaj_posilku']} - {p['opis']}\n"
-    if not zakupy_df.empty:
-        tekst += "\nZakupy zaplanowane na trasie:\n"
-        for _, z in zakupy_df.iterrows():
-            tekst += f"- ID Zakupu {z['id']} (Krok DB_ID {z['id_kroku']}): {z['nazwa_produktu']} (ilość: {z['ilosc']}, kupione: {z['kupione']})\n"
-    if not notatki_df.empty:
-        tekst += "\nNotatki użytkownika:\n"
-        for _, n in notatki_df.iterrows():
-            t_tytul = f"[{n['tytul']}] " if pd.notna(n['tytul']) and str(n['tytul']).strip() != "" else ""
-            tekst += f"- ID {n['id']}: {t_tytul}{n['zawartosc']}\n"
-
+            tekst += f"- Krok (W#{k['id_wycieczki']}): {k['nazwa']} | Czas: {k['okienko_zwiedzania']}\n"
     return tekst
 
 def pobierz_trase_osrm(punkty):
@@ -1287,245 +1438,88 @@ def pobierz_trase_osrm(punkty):
     return [[p[0], p[1]] for p in punkty]
 
 def dodaj_marker_domku(m):
-    domek_icon_html = '<div style="background-color:#1D2A36;color:#FFFFFF;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.2);">🏠</div>'
+    domek_icon_html = '<div style="background-color:#2E251E;color:#FFFFFF;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.2);">🏠</div>'
     domek_icon = folium.DivIcon(html=domek_icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=domek_icon, tooltip="Nasz Domek").add_to(m)
 
-# --- NARZĘDZIA FUNCTION CALLING DLA LLM ---
-dodaj_notatke_tool = types.FunctionDeclaration(
-    name="dodaj_notatke",
-    description="Dodaje nową notatkę, link lub listę do wycieczki lub miejsca.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "zawartosc": types.Schema(type=types.Type.STRING, description="Treść notatki, URL lub elementy listy"),
-            "typ_notatki": types.Schema(type=types.Type.STRING, description="Typ: 'text', 'link' lub 'list'"),
-            "id_wycieczki": types.Schema(type=types.Type.STRING, description="Opcjonalne ID wycieczki"),
-            "id_miejsca": types.Schema(type=types.Type.STRING, description="Opcjonalny numer miejsca"),
-            "tytul": types.Schema(type=types.Type.STRING, description="Tytuł notatki"),
-        },
-        required=["zawartosc"]
-    ),
-)
-
-edytuj_notatke_tool = types.FunctionDeclaration(
-    name="edytuj_notatke",
-    description="Edytuje treść lub tytuł istniejącej notatki.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "notatka_id": types.Schema(type=types.Type.INTEGER, description="ID notatki do edycji"),
-            "zawartosc": types.Schema(type=types.Type.STRING, description="Nowa treść notatki"),
-            "tytul": types.Schema(type=types.Type.STRING, description="Nowy tytuł notatki"),
-        },
-        required=["notatka_id"]
-    ),
-)
-
-usun_notatke_tool = types.FunctionDeclaration(
-    name="usun_notatke",
-    description="Usuwa wskazaną notatkę po jej ID.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "notatka_id": types.Schema(type=types.Type.INTEGER, description="ID notatki do usunięcia"),
-        },
-        required=["notatka_id"]
-    ),
-)
-
-edytuj_wycieczke_tool = types.FunctionDeclaration(
-    name="edytuj_wycieczke",
-    description="Aktualizuje opisy i parametry wycieczki w bazie. Backend automatycznie przelicza i synchronizuje czasy.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "id": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-            "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Tytuł wycieczki"),
-            "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Zwięzły opis celu i programu wycieczki"),
-            "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Taktyka dnia (ADHD, ochrona przed słońcem, posiłki)"),
-            "planowana_data": types.Schema(type=types.Type.STRING, description="Planowana data w formacie RRRR-MM-DD"),
-        },
-        required=["id"]
-    ),
-)
-
-dodaj_posilek_tool = types.FunctionDeclaration(
-    name="dodaj_posilek_do_kroku",
-    description="Dodaje zaplanowany posiłek (śniadanie, obiad, kolacja, przekąska) do wybranego kroku wycieczki.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "id_kroku": types.Schema(type=types.Type.STRING, description="ID kroku wycieczki w bazie (DB_ID)"),
-            "rodzaj_posilku": types.Schema(type=types.Type.STRING, description="Rodzaj: 'śniadanie', 'obiad', 'kolacja', 'przekąska'"),
-            "opis": types.Schema(type=types.Type.STRING, description="Szczegóły posiłku lub rekomendacja menu"),
-        },
-        required=["id_kroku", "rodzaj_posilku"]
-    ),
-)
-
-usun_posilek_tool = types.FunctionDeclaration(
-    name="usun_posilek_kroku",
-    description="Usuwa zaplanowany posiłek po jego ID.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "posilek_id": types.Schema(type=types.Type.INTEGER, description="ID posiłku do usunięcia"),
-        },
-        required=["posilek_id"]
-    ),
-)
-
-dodaj_zakup_tool = types.FunctionDeclaration(
-    name="dodaj_produkt_zakupow",
-    description="Dodaje nowy produkt do checklisty zakupowej powiązanej z konkretnym krokiem wycieczki.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "id_kroku": types.Schema(type=types.Type.STRING, description="ID kroku wycieczki w bazie (DB_ID)"),
-            "nazwa_produktu": types.Schema(type=types.Type.STRING, description="Nazwa produktu zakupowego"),
-            "ilosc": types.Schema(type=types.Type.STRING, description="Ilość lub opakowanie, np. '2 szt', '1 litr'"),
-        },
-        required=["id_kroku", "nazwa_produktu"]
-    ),
-)
-
-usun_zakup_tool = types.FunctionDeclaration(
-    name="usun_produkt_zakupow",
-    description="Usuwa produkt z listy zakupów.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "zakup_id": types.Schema(type=types.Type.INTEGER, description="ID pozycji zakupowej do usunięcia"),
-        },
-        required=["zakup_id"]
-    ),
-)
-
-dodaj_krok_wycieczki_tool = types.FunctionDeclaration(
-    name="dodaj_krok_wycieczki",
-    description="Dodaje nowy krok do wycieczki. Czasy dojazdów, pobudka i powrót zostaną automatycznie przeliczone i posortowane chronologicznie po godzinach!",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki (np. '1')"),
-            "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer kolejny kroku (np. '1', '2')"),
-            "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca / kroku"),
-            "wspolrzedne": types.Schema(type=types.Type.STRING, description="Współrzędne GPS (np. '35.2980, 25.1631')"),
-            "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Godziny np. '10:00 - 12:00'"),
-            "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="Godzina bezwzględnej ewakuacji np. '12:00'"),
-            "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Ostrzeżenie o upale/tłumie"),
-            "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING, description="Miejsce wyciszenia sensorycznego"),
-            "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka zwiedzania dla ADHD"),
-            "potencjal_meltdownu": types.Schema(type=types.Type.STRING, description="Poziom ryzyka meltdownu: Niski/Średni/Wysoki"),
-            "strategie_meltdown": types.Schema(type=types.Type.STRING, description="Strategia natychmiastowa na meltdown"),
-            "opis": types.Schema(type=types.Type.STRING, description="Krótki, czytelny opis atrakcji"),
-        },
-        required=["id_wycieczki", "krok_wycieczki", "nazwa"]
-    ),
-)
-
-edytuj_krok_wycieczki_tool = types.FunctionDeclaration(
-    name="edytuj_krok_wycieczki",
-    description="Edytuje parametry kroku wycieczki. Backend automatycznie przeliczy czasy przejazdów i posortuje chronologicznie.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-            "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer kroku lub nazwa"),
-            "nazwa": types.Schema(type=types.Type.STRING, description="Nowa nazwa"),
-            "wspolrzedne": types.Schema(type=types.Type.STRING, description="Nowe współrzędne GPS"),
-            "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Nowe godziny okienka zwiedzania"),
-            "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="Nowa godzina ewakuacji"),
-            "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Nowe ostrzeżenie"),
-            "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING, description="Strefa regeneracji"),
-            "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Nowa taktyka"),
-            "potencjal_meltdownu": types.Schema(type=types.Type.STRING, description="Poziom meltdownu"),
-            "strategie_meltdown": types.Schema(type=types.Type.STRING, description="Strategia meltdownu"),
-            "opis": types.Schema(type=types.Type.STRING, description="Nowy opis"),
-        },
-        required=["id_wycieczki", "krok_wycieczki"]
-    ),
-)
-
-usun_krok_wycieczki_tool = types.FunctionDeclaration(
-    name="usun_krok_wycieczki",
-    description="Usuwa krok z wycieczki i automatycznie przelicza harmonogram (UWAGA: Baza Domek jest chroniona i nieusuwalna!).",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-            "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer lub dokładna nazwa kroku do usunięcia"),
-        },
-        required=["id_wycieczki", "krok_wycieczki"]
-    ),
-)
-
-sprawdz_pogode_w_locie_tool = types.FunctionDeclaration(
-    name="sprawdz_pogode_w_locie",
-    description="Pobiera aktualną prognozę pogody online dla podanych współrzędnych i daty w formacie RRRR-MM-DD.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "szerokosc_geograficzna": types.Schema(type=types.Type.STRING, description="Szerokość geograficzna np. '35.2980'"),
-            "dlugosc_geograficzna": types.Schema(type=types.Type.STRING, description="Długość geograficzna np. '25.1631'"),
-            "data_wspolrzedne": types.Schema(type=types.Type.STRING, description="Data w formacie RRRR-MM-DD lub słowo 'dzisiaj'"),
-        },
-        required=["szerokosc_geograficzna", "dlugosc_geograficzna"]
-    ),
-)
-
-sprawdz_czas_dojazdu_tool = types.FunctionDeclaration(
-    name="sprawdz_czas_dojazdu_w_locie",
-    description="Pobiera dokładny czas przejazdu samochodem między dwoma punktami GPS na Krecie.",
-    parameters=types.Schema(
-        type=types.Type.OBJECT,
-        properties={
-            "punkt_a_gps": types.Schema(type=types.Type.STRING, description="Współrzędne punktu początkowego 'lat, lon'"),
-            "punkt_b_gps": types.Schema(type=types.Type.STRING, description="Współrzędne punktu docelowego 'lat, lon'"),
-        },
-        required=["punkt_a_gps", "punkt_b_gps"]
-    ),
-)
-
+# --- FUNCTION CALLING DLA ASYSTENTA AI ---
 cretai_tools = types.Tool(function_declarations=[
-    dodaj_notatke_tool, edytuj_notatke_tool, usun_notatke_tool, 
-    edytuj_wycieczke_tool, dodaj_posilek_tool, usun_posilek_tool,
-    dodaj_zakup_tool, usun_zakup_tool, 
-    dodaj_krok_wycieczki_tool, edytuj_krok_wycieczki_tool, usun_krok_wycieczki_tool,
-    sprawdz_pogode_w_locie_tool, sprawdz_czas_dojazdu_tool
+    types.FunctionDeclaration(
+        name="dodaj_notatke",
+        description="Dodaje notatkę do wycieczki lub miejsca.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "zawartosc": types.Schema(type=types.Type.STRING, description="Treść notatki"),
+                "typ_notatki": types.Schema(type=types.Type.STRING, description="'text', 'link' lub 'list'"),
+                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                "id_miejsca": types.Schema(type=types.Type.STRING, description="Numer miejsca"),
+                "tytul": types.Schema(type=types.Type.STRING, description="Tytuł"),
+            },
+            required=["zawartosc"]
+        ),
+    ),
+    types.FunctionDeclaration(
+        name="edytuj_wycieczke",
+        description="Aktualizuje parametry wycieczki.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "id": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Tytuł"),
+                "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Opis"),
+                "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Taktyka"),
+                "planowana_data": types.Schema(type=types.Type.STRING, description="RRRR-MM-DD"),
+            },
+            required=["id"]
+        ),
+    ),
+    types.FunctionDeclaration(
+        name="dodaj_krok_wycieczki",
+        description="Dodaje krok do wycieczki.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer kroku"),
+                "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca"),
+                "wspolrzedne": types.Schema(type=types.Type.STRING, description="GPS"),
+                "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="np. '10:00 - 12:00'"),
+                "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="np. '12:00'"),
+                "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Ostrzeżenie o upale/tłumie"),
+                "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING, description="Strefa wyciszenia"),
+                "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
+                "opis": types.Schema(type=types.Type.STRING, description="Opis"),
+            },
+            required=["id_wycieczki", "krok_wycieczki", "nazwa"]
+        ),
+    ),
+    types.FunctionDeclaration(
+        name="usun_krok_wycieczki",
+        description="Usuwa krok z wycieczki.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku"),
+            },
+            required=["id_wycieczki", "krok_wycieczki"]
+        ),
+    )
 ])
 
 def wykonaj_narzedzie_bazy(call_name, args):
     if call_name == "dodaj_notatke":
         return dodaj_notatke(**args)
-    elif call_name == "edytuj_notatke":
-        return edytuj_notatke(**args)
-    elif call_name == "usun_notatke":
-        return usun_notatke(**args)
     elif call_name == "edytuj_wycieczke":
         return edytuj_wycieczke(**args)
-    elif call_name == "dodaj_posilek_do_kroku":
-        return dodaj_posilek_do_kroku(**args)
-    elif call_name == "usun_posilek_kroku":
-        return usun_posilek_kroku(**args)
-    elif call_name == "dodaj_produkt_zakupow":
-        return dodaj_produkt_zakupow(**args)
-    elif call_name == "usun_produkt_zakupow":
-        return usun_produkt_zakupow(**args)
     elif call_name == "dodaj_krok_wycieczki":
         return dodaj_krok_wycieczki(**args)
-    elif call_name == "edytuj_krok_wycieczki":
-        return edytuj_krok_wycieczki(**args)
     elif call_name == "usun_krok_wycieczki":
         return usun_krok_wycieczki(**args)
-    elif call_name == "sprawdz_pogode_w_locie":
-        return sprawdź_pogodę_w_locie(**args)
-    elif call_name == "sprawdz_czas_dojazdu_w_locie":
-        return sprawdz_czas_dojazdu_w_locie(**args)
     return "Wykonano."
 
-# --- W PANELU BOCZNYM: WYBÓR UŻYTKOWNIKA, DOSTAWCY AI I KLUCZA ---
+# --- W PANELU BOCZNYM: USTAWIENIA I PROFILE ---
 with st.sidebar:
     st.markdown("### 👤 Profil Użytkownika")
     dostepni_uzytkownicy = ["Rodzic 1", "Rodzic 2", "Rodzic 3", "Rodzic 4"]
@@ -1533,12 +1527,11 @@ with st.sidebar:
     st.markdown("---")
     
     st.header("⚙️ Ustawienia Asystenta")
-    
     zapisany_klucz, zapisany_dostawca, zapisany_model = pobierz_ustawienia_z_db(aktualny_uzytkownik)
     
     dostawcy_ai = ["Google Gemini", "Anthropic Claude"]
     dostawca_index = dostawcy_ai.index(zapisany_dostawca) if zapisany_dostawca in dostawcy_ai else 0
-    wybrany_dostawca = st.selectbox("Wybierz dostawcę AI", options=dostawcy_ai, index=dostawca_index)
+    wybrany_dostawca = st.selectbox("Dostawca AI", options=dostawcy_ai, index=dostawca_index)
     
     if wybrany_dostawca == "Google Gemini":
         dostepne_modele = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash"]
@@ -1546,187 +1539,89 @@ with st.sidebar:
         dostepne_modele = ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"]
     
     model_index = dostepne_modele.index(zapisany_model) if zapisany_model in dostepne_modele else 0
-    wybrany_model = st.selectbox("Wybierz model AI", options=dostepne_modele, index=model_index)
+    wybrany_model = st.selectbox("Model AI", options=dostepne_modele, index=model_index)
     
-    klucz_label = f"Klucz API ({wybrany_dostawca})"
-    api_key_input = st.text_input(klucz_label, value=zapisany_klucz, type="password", key=f"api_key_{aktualny_uzytkownik}")
-    
+    api_key_input = st.text_input(f"Klucz API ({wybrany_dostawca})", value=zapisany_klucz, type="password", key=f"api_key_{aktualny_uzytkownik}")
     if api_key_input != zapisany_klucz or wybrany_dostawca != zapisany_dostawca or wybrany_model != zapisany_model:
         zapisz_ustawienia_w_db(aktualny_uzytkownik, api_key_input, wybrany_dostawca, wybrany_model)
 
     st.markdown("---")
     st.markdown("### 🧭 Szybka Nawigacja")
     st.markdown(f"""
-        <div class="custom-nav-bar">
-            <a href="https://www.google.com/maps/search/?api=1&query={SKLEP_LAT},{SKLEP_LON}" target="_blank" class="custom-nav-btn" title="Sklep"><span>🛒</span><span>Sklep</span></a>
-            <a href="https://www.google.com/maps/search/?api=1&query={DOMEK_LAT},{DOMEK_LON}" target="_blank" class="custom-nav-btn" title="Domek"><span>🏠</span><span>Domek</span></a>
-        </div>
-    """, unsafe_allow_html=True)
+<div class="custom-nav-bar">
+<a href="https://www.google.com/maps/search/?api=1&query={SKLEP_LAT},{SKLEP_LON}" target="_blank" class="custom-nav-btn"><span>🛒</span><span>Sklep</span></a>
+<a href="https://www.google.com/maps/search/?api=1&query={DOMEK_LAT},{DOMEK_LON}" target="_blank" class="custom-nav-btn"><span>🏠</span><span>Domek</span></a>
+</div>
+""", unsafe_allow_html=True)
 
-# --- GLOBALNY, PŁYWAJĄCY ASYSTENT AI ---
+# --- GLOBALNY ASYSTENT AI ---
 def renderuj_globalny_czat_ai(uzytkownik):
     st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
-    
-    with st.expander(f"💬 Asystent AI ({uzytkownik}) [{wybrany_dostawca}]", expanded=False):
-        col_h1, col_h2, col_h3 = st.columns([3, 1, 1])
-        with col_h1:
-            st.markdown(f"<span style='font-size: 9.5pt; color: #1D2A36; font-weight: 800;'>🧠 TRYB ADHD • {uzytkownik}</span>", unsafe_allow_html=True)
-        with col_h2:
-            if st.button("🔄 Odśwież", key=f"btn_refresh_{uzytkownik}", use_container_width=True, help="Odśwież widok"):
-                st.session_state["flash_toast"] = "🔄 Widok odświeżony!"
-                st.rerun()
-        with col_h3:
-            if st.button("🗑️ Nowy", key=f"btn_new_chat_{uzytkownik}", use_container_width=True, help="Wyczyść historię"):
+    with st.expander(f"💬 Asystent AI ({uzytkownik})", expanded=False):
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown(f"<span style='font-size: 9pt; font-weight: 800;'>🧠 TRYB ADHD • {uzytkownik}</span>", unsafe_allow_html=True)
+        with col2:
+            if st.button("🗑️ Wyczyść", key=f"btn_clear_{uzytkownik}", use_container_width=True):
                 wyczysc_historie_czatu_w_db(uzytkownik)
-                st.session_state["flash_toast"] = "🗑️ Historia wyczyszczona."
+                st.session_state["flash_toast"] = "🗑️ Wyczyszczono czat."
                 st.rerun()
 
         if not api_key_input:
-            st.warning(f"Wprowadź klucz API dla {wybrany_dostawca} w menu bocznym.")
+            st.warning(f"Wprowadź klucz API w menu bocznym.")
             st.markdown('</div>', unsafe_allow_html=True)
             return
 
         dzisiaj_str = date.today().strftime("%Y-%m-%d")
         zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
+        system_prompt = f"Jesteś asystentem CretAi na Krecie. Dziś: {dzisiaj_str}.\n{zewnetrzny_kontekst}"
         
-        system_prompt = f"""Jesteś inteligentnym asystentem podróży CretAi na Kretę, pomagającym rodzicom dzieci z ADHD w pełnym słońcu.
-Dzisiejsza data to: {dzisiaj_str}.
-{zewnetrzny_kontekst}
-- Lokalizacja bazy wypadowej DOMEK: {DOMEK_LAT}, {DOMEK_LON} (Domek jest pierwszym krokiem 0 oraz ostatnim krokiem mety i jest BEZWZGLĘDNIE NIEUSUWALNY!).
-- Gdy użytkownik prosi o usunięcie atrakcji, usuwasz DOKŁADNIE ten krok atrakcji, NIGDY krok Domku!
-- Wszystkie kroki wycieczki są automatycznie sortowane chronologicznie po godzinie z `okienko_zwiedzania`.
-- Upewnij się, że okienka czasowe kolejnych kroków następują logicznie po sobie, uwzględniając czasy przejazdów OSRM!
-- Pamiętaj: Godzina wyjazdu to koniec kroku Start w domku, a Godzina powrotu to POCZĄTEK okienka ostatniego kroku w domku (moment powrotu do bazy)!
-- Możesz dodawać posiłki do konkretnych kroków za pomocą `dodaj_posilek_do_kroku`."""
-
         chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
-
-        chat_container = st.container(height=240)
-        ostatnia_wiadomosc_modelu = ""
+        chat_container = st.container(height=200)
         with chat_container:
             for message in chat_historia_z_db:
-                role = message["role"]
-                content = message["content"]
-                if role == "model":
-                    ostatnia_wiadomosc_modelu = content if isinstance(content, str) else "".join([p.text for p in content.parts if hasattr(p, "text") and p.text])
-                
-                with st.chat_message(role):
-                    if isinstance(content, str):
-                        st.markdown(content)
-                    elif hasattr(content, "parts"):
-                        for p in content.parts:
-                            if hasattr(p, "text") and p.text:
-                                st.markdown(p.text)
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"] if isinstance(message["content"], str) else "")
 
-        if ostatnia_wiadomosc_modelu:
-            czysty_tekst = json.dumps(ostatnia_wiadomosc_modelu)
-            st.components.v1.html(f"""
-                <div style="text-align: right; margin-bottom: 6px;">
-                    <button onclick="navigator.clipboard.writeText({czysty_tekst}); alert('Skopiowano odpowiedź do schowka!');" 
-                            style="background-color: #F5F7FA; color: #1D2A36; border: 1.5px solid #1D2A36; padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 800; cursor: pointer;">
-                        📋 Kopiuj odpowiedź
-                    </button>
-                </div>
-            """, height=35)
-
-        prompt = st.chat_input(f"Pytanie do AI ({uzytkownik})...", key=f"chat_input_{uzytkownik}")
+        prompt = st.chat_input(f"Pytanie do AI...", key=f"chat_input_{uzytkownik}")
         if prompt:
             zapisz_wiadomosc_w_db(uzytkownik, "user", prompt)
-            
             with chat_container:
                 with st.chat_message("user"):
                     st.markdown(prompt)
-
                 with st.chat_message("assistant"):
-                    assistant_reply = ""
                     try:
                         if wybrany_dostawca == "Google Gemini":
                             client = genai.Client(api_key=api_key_input)
                             aktualna_historia_db = pobierz_historie_czatu_z_db(uzytkownik)
                             contents = [item["raw_content"] for item in aktualna_historia_db if "raw_content" in item]
-                            if not contents:
-                                contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
-
-                            for _ in range(5):
-                                response = client.models.generate_content(
-                                    model=wybrany_model,
-                                    contents=contents,
-                                    config=types.GenerateContentConfig(
-                                        tools=[cretai_tools],
-                                        system_instruction=system_prompt
-                                    )
-                                )
-
-                                candidate = response.candidates[0] if response.candidates else None
-                                has_fc = False
-                                if candidate and candidate.content and candidate.content.parts:
-                                    for p in candidate.content.parts:
-                                        if p.function_call:
-                                            has_fc = True
-                                            break
-
-                                if has_fc or response.function_calls:
-                                    model_content = candidate.content
-                                    contents.append(model_content)
-                                    calls = response.function_calls if response.function_calls else [p.function_call for p in model_content.parts if p.function_call]
-                                    
-                                    function_responses_parts = []
-                                    for call in calls:
-                                        args = call.args
-                                        call_name = call.name
-                                        wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
-                                        function_responses_parts.append(
-                                            types.Part.from_function_response(name=call_name, response={"result": wynik_bazy})
-                                        )
-                                    contents.append(types.Content(role="user", parts=function_responses_parts))
-                                else:
-                                    text_parts = [p.text for p in candidate.content.parts if hasattr(p, "text") and p.text] if candidate and candidate.content and candidate.content.parts else []
-                                    assistant_reply = "".join(text_parts) if text_parts else (response.text if hasattr(response, "text") else "Wykonano operację.")
-                                    break
-
-                        else:  # --- ANTHROPIC CLAUDE ---
-                            if not ANTHROPIC_AVAILABLE:
-                                assistant_reply = "Błąd: Pakiet `anthropic` nie jest zainstalowany."
-                            else:
-                                client_c = anthropic.Anthropic(api_key=api_key_input)
-                                claude_messages = []
-                                conn = sqlite3.connect('cretai.db')
-                                cursor = conn.cursor()
-                                cursor.execute('SELECT rola, tresc FROM czat_historia WHERE uzytkownik = ? ORDER BY id ASC', (uzytkownik,))
-                                rows = cursor.fetchall()
-                                conn.close()
-                                
-                                for rola, tresc in rows:
-                                    c_role = "user" if rola == "user" else "assistant"
-                                    claude_messages.append({"role": c_role, "content": tresc})
-
-                                response = client_c.messages.create(
-                                    model=wybrany_model,
-                                    max_tokens=2048,
-                                    system=system_prompt,
-                                    messages=claude_messages
-                                )
-                                text_blocks = [block.text for block in response.content if hasattr(block, "text")]
-                                assistant_reply = "".join(text_blocks)
-
-                        if not assistant_reply:
-                            assistant_reply = "Operacja wykonana i zsynchronizowana."
-
+                            response = client.models.generate_content(
+                                model=wybrany_model,
+                                contents=contents,
+                                config=types.GenerateContentConfig(tools=[cretai_tools], system_instruction=system_prompt)
+                            )
+                            assistant_reply = response.text if hasattr(response, "text") and response.text else "Zaktualizowano."
+                        else:
+                            client_c = anthropic.Anthropic(api_key=api_key_input)
+                            resp = client_c.messages.create(
+                                model=wybrany_model,
+                                max_tokens=1024,
+                                system=system_prompt,
+                                messages=[{"role": "user", "content": prompt}]
+                            )
+                            assistant_reply = "".join([b.text for b in resp.content if hasattr(b, "text")])
                         zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
+                        st.markdown(assistant_reply)
                     except Exception as e:
-                        assistant_reply = f"Błąd komunikacji z AI: {e}"
-                        zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
-
-                    st.markdown(assistant_reply)
-                    st.session_state["flash_toast"] = "✨ Zaktualizowano i posortowano harmonogram!"
-                    st.rerun()
+                        st.error(f"Błąd: {e}")
+            st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)
 
 if "tab" in st.query_params:
     st.session_state.active_tab = st.query_params["tab"]
 elif "active_tab" not in st.session_state:
-    st.session_state.active_tab = "zabytek"
+    st.session_state.active_tab = "route"
 
 if "place" in st.query_params:
     st.session_state.active_place_id = st.query_params["place"]
@@ -1735,90 +1630,53 @@ if "place" in st.query_params:
 if "active_place_id" not in st.session_state:
     st.session_state.active_place_id = None
 
-COLORS = {
-    'must have': '#FF6B6B',
-    'nice to have': '#FFA800',
-    'others': '#4DA8DA',
-    'activity': '#65D084',
-    'shop': '#A084D1',
-    'plaża': '#59C3C3'
-}
-DEFAULT_COLOR = '#8492A6'
+COLORS = {'must have': '#DC5050', 'nice to have': '#E28C32', 'others': '#5B8FB9', 'activity': '#6D8257', 'shop': '#9D79BC', 'plaża': '#4EA8A8'}
+DEFAULT_COLOR = '#8A7B70'
 
 df_miejsca = pobierz_wszystkie_miejsca()
 wycieczki_options = pobierz_skrocone_opcje_wycieczek()
 
-def renderuj_zadania_dzieci_expander(tekst_zadan, unikalny_klucz):
-    zadania_lista = [z.strip() for z in str(tekst_zadan).split('.') if z.strip()]
-    if not zadania_lista:
-        zadania_lista = [str(tekst_zadan)]
-    for i, zadanie in enumerate(zadania_lista):
-        st.checkbox(f"{zadanie}", key=f"zad_dziecko_exp_{unikalny_klucz}_{i}")
-
-def renderuj_karty_meltdown_ux(p):
-    adhd_val = p.get('trudnosc_adhd', 'Niski')
-    meltdown_val = p.get('potencjal_meltdownu', 'Brak danych')
-    strategie_val = p.get('strategie_meltdown', 'Brak strategii')
-
-    is_high_risk = "wysok" in str(meltdown_val).lower()
-    
-    st.markdown("---")
-    if is_high_risk:
-        st.error("**🚨 STREFA RATUNKOWA ADHD & MELTDOWN**")
-    else:
-        st.info("**🛡️ STREFA RATUNKOWA ADHD & MELTDOWN**")
-        
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown(f"**🧠 Trudność ADHD:**\n{adhd_val}")
-    with col2:
-        st.markdown(f"**⚡ Potencjał meltdownu:**\n{meltdown_val}")
-        
-    st.success(f"**🛡️ Natychmiastowa Strategia Ratunkowa:**\n{strategie_val}")
-
-def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
+# ==========================================
+# GŁÓWNY WIDOK WYCIECZKI (Z PEŁNĄ LOGISTYKĄ I TIMELINE)
+# ==========================================
+def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False):
     conn = sqlite3.connect('cretai.db')
     wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
     kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
     conn.close()
     
-    # Chronologiczne posortowanie kroków po godzinie rozpoczęcia
+    if wycieczka_row.empty:
+        st.info("Brak danych wycieczki.")
+        return
+
+    # Chronologiczne posortowanie kroków
     if not kroki_df.empty:
         kroki_df['sort_key'] = kroki_df['okienko_zwiedzania'].apply(klucz_sortowania_okienka)
         kroki_df = kroki_df.sort_values(by='sort_key').drop(columns=['sort_key'])
 
-    if not wycieczka_row.empty:
-        w_gen = wycieczka_row.iloc[0]
-        tytul_w = str(w_gen['tytul_wycieczki'])
-        planowana_data_val = w_gen.get('planowana_data', '')
-        if not pd.notna(planowana_data_val):
-            planowana_data_val = ""
-        
-        st.markdown(f"""
-        <div style="background-color:#FFFFFF; padding:14px; border:1.5px solid #E4E9F2; border-radius:20px; text-align:center; font-size:12pt; font-weight:900; text-transform:uppercase; margin-bottom:12px; color:#1D2A36; box-shadow: 0 4px 12px rgba(29, 42, 54, 0.03);">
-            {tytul_w}
-        </div>
-        """, unsafe_allow_html=True)
+    w_gen = wycieczka_row.iloc[0]
+    planowana_data_val = w_gen.get('planowana_data', '')
+    
+    dzisiaj = date.today()
+    try:
+        parsed_date = datetime.strptime(str(planowana_data_val), "%Y-%m-%d").date() if planowana_data_val else dzisiaj
+    except:
+        parsed_date = dzisiaj
 
-        st.markdown(f'<div style="font-size: 9.5pt; font-weight: 800; color: #8492A6; text-transform: uppercase; margin-bottom: 4px;">📅 Planowana data wycieczki</div>', unsafe_allow_html=True)
-        
-        dzisiaj = date.today()
-        try:
-            parsed_date = datetime.strptime(planowana_data_val, "%Y-%m-%d").date() if planowana_data_val else dzisiaj
-            if parsed_date < dzisiaj:
-                parsed_date = dzisiaj
-        except:
-            parsed_date = dzisiaj
+    formatted_date_str = formatuj_date_pl(parsed_date)
 
+    # 1. GÓRNA SEKCJA: Tytuł i Data
+    st.markdown(f'<div class="trip-top-section"><div class="trip-main-title">Twoja wycieczka</div><div class="trip-date-subtitle"><span>{formatted_date_str}</span><span style="font-size: 10pt;">▼</span></div></div>', unsafe_allow_html=True)
+
+    with st.expander("📅 Zmień datę wycieczki", expanded=False):
         def zapisz_date_callback():
             wybrana_data = st.session_state[f"date_input_{wycieczka_id}"]
-            if wybrana_data >= dzisiaj:
-                str_data = wybrana_data.strftime("%Y-%m-%d")
-                edytuj_wycieczke(wycieczka_id, planowana_data=str_data)
-                st.session_state["flash_toast"] = f"📅 Zapisano datę: {str_data}"
+            str_data = wybrana_data.strftime("%Y-%m-%d")
+            edytuj_wycieczke(wycieczka_id, planowana_data=str_data)
+            st.session_state["flash_toast"] = f"📅 Zmieniono datę: {str_data}"
 
         st.date_input(
-            "Planowana data", 
+            "Wybierz inną datę", 
             value=parsed_date, 
             min_value=dzisiaj, 
             key=f"date_input_{wycieczka_id}", 
@@ -1826,450 +1684,297 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=True, pokaz_pogode=False):
             on_change=zapisz_date_callback
         )
 
-        st.markdown("<div style='margin-bottom: 12px;'></div>", unsafe_allow_html=True)
+    if pokaz_pogode:
+        renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data_val)
 
-        if pokaz_pogode:
-            renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data_val)
+    # 2. LOGISTYKA DNIA, CEL WYCIECZKI I ZWIJANA TAKTYKA DNIA
+    pobudka_val = w_gen.get('pobudka', '06:00') if pd.notna(w_gen.get('pobudka')) else '06:00'
+    wyjazd_val = w_gen.get('czas_wyjazdu', '07:30') if pd.notna(w_gen.get('czas_wyjazdu')) else '07:30'
+    powrot_val = w_gen.get('szacowana_godzina_powrotu', '17:33') if pd.notna(w_gen.get('szacowana_godzina_powrotu')) else '17:33'
+    czas_trwania = f"{w_gen['calkowity_czas_wycieczki_godziny']} godz." if pd.notna(w_gen.get('calkowity_czas_wycieczki_godziny')) else "—"
 
-        if pokaz_mape:
-            punkty_trasy = []
-            surowe_wspolrzedne = []
-            
-            for _, k in kroki_df.iterrows():
-                coords = str(k['wspolrzedne'])
-                if ',' in coords:
-                    try:
-                        parts = coords.split(',')
-                        lat = float(parts[0].strip())
-                        lon = float(parts[1].strip())
-                        punkty_trasy.append((lat, lon, str(k['krok_wycieczki']), str(k['nazwa'])))
-                        surowe_wspolrzedne.append((lat, lon))
-                    except:
-                        pass
+    st.markdown(f"""
+    <div class="overview-card">
+        <div class="overview-card-title"><span>🧭</span> LOGISTYKA DNIA</div>
+        <div class="logistics-grid">
+            <div class="logistics-pill">
+                <div class="logistics-pill-title">⏰ Pobudka</div>
+                <div class="logistics-pill-value">{pobudka_val}</div>
+            </div>
+            <div class="logistics-pill">
+                <div class="logistics-pill-title">🚗 Wyjazd</div>
+                <div class="logistics-pill-value">{wyjazd_val}</div>
+            </div>
+            <div class="logistics-pill">
+                <div class="logistics-pill-title">🏠 Powrót do Domku</div>
+                <div class="logistics-pill-value">{powrot_val}</div>
+            </div>
+            <div class="logistics-pill">
+                <div class="logistics-pill-title">⏱️ Czas trwania trasy</div>
+                <div class="logistics-pill-value">{czas_trwania}</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-            if len(punkty_trasy) > 0:
-                srodek_lat = sum([p[0] for p in punkty_trasy]) / len(punkty_trasy)
-                srodek_lon = sum([p[1] for p in punkty_trasy]) / len(punkty_trasy)
-                
-                m_trasa = folium.Map(location=[srodek_lat, srodek_lon], zoom_start=10, tiles="CartoDB positron")
-                
-                for p in punkty_trasy:
-                    lat, lon, krok, nazwa = p
-                    is_d = "Domek" in nazwa
-                    icon_bg = "#1D2A36" if is_d else "#4DA8DA"
-                    icon_symbol = "🏠" if is_d else krok
-                    
-                    icon_html = f'<div style="background-color:{icon_bg};color:#FFFFFF;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.4);">{icon_symbol}</div>'
-                    icon = folium.DivIcon(html=icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
-                    folium.Marker([lat, lon], icon=icon, tooltip=f"Krok {krok}: {nazwa}").add_to(m_trasa)
-                    
-                trasa_po_drogach = pobierz_trase_osrm(surowe_wspolrzedne)
-                if trasa_po_drogach:
-                    folium.PolyLine(trasa_po_drogach, color="#1D2A36", weight=5, opacity=0.9).add_to(m_trasa)
-                    
-                st_folium(m_trasa, width="100%", height=240, returned_objects=[])
-
-            st.markdown("---")
-
-        pobudka_val = w_gen.get('pobudka', '06:00') if pd.notna(w_gen.get('pobudka')) else '06:00'
-        wyjazd_val = w_gen.get('czas_wyjazdu', '07:30') if pd.notna(w_gen.get('czas_wyjazdu')) else '07:30'
-        powrot_val = w_gen.get('szacowana_godzina_powrotu', '17:33') if pd.notna(w_gen.get('szacowana_godzina_powrotu')) else '17:33'
-        czas_trwania = f"{w_gen['calkowity_czas_wycieczki_godziny']} godz." if pd.notna(w_gen.get('calkowity_czas_wycieczki_godziny')) else "—"
-
+    if pd.notna(w_gen.get('calosciowy_opis_wycieczki')) and str(w_gen['calosciowy_opis_wycieczki']).strip():
         st.markdown(f"""
-        <div style="background-color:#FFFFFF; border:1.5px solid #E4E9F2; border-radius:20px; padding:14px; margin-bottom:12px; box-shadow: 0 4px 10px rgba(0,0,0,0.02);">
-            <div style="font-size:10pt; font-weight:800; color:#1D2A36; margin-bottom:10px; display:flex; align-items:center; gap:6px;">
-                <span>🧭</span> LOGISTYKA DNIA
-            </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                <div class="logistics-card">
-                    <div class="logistics-title">⏰ Pobudka</div>
-                    <div class="logistics-value">{pobudka_val}</div>
-                </div>
-                <div class="logistics-card">
-                    <div class="logistics-title">🚗 Wyjazd</div>
-                    <div class="logistics-value">{wyjazd_val}</div>
-                </div>
-                <div class="logistics-card">
-                    <div class="logistics-title">🏠 Powrót do Domku</div>
-                    <div class="logistics-value">{powrot_val}</div>
-                </div>
-                <div class="logistics-card">
-                    <div class="logistics-title">⏱️ Czas trwania trasy</div>
-                    <div class="logistics-value">{czas_trwania}</div>
-                </div>
-            </div>
+        <div class="overview-card">
+            <div class="overview-card-title">📝 Cel wycieczki</div>
+            <div class="overview-card-text">{w_gen['calosciowy_opis_wycieczki']}</div>
         </div>
         """, unsafe_allow_html=True)
 
-        if pd.notna(w_gen['calosciowy_opis_wycieczki']) and str(w_gen['calosciowy_opis_wycieczki']).strip() != "":
-            st.markdown(f"""
-            <div style="background-color:#FFFFFF; border:1.5px solid #E4E9F2; border-radius:20px; padding:14px; margin-bottom:12px;">
-                <div style="font-size:10pt; font-weight:800; color:#1D2A36; margin-bottom:4px;">📝 Cel wycieczki</div>
-                <div style="color:#1D2A36; font-weight:600; font-size:10.5pt; line-height:1.4;">{w_gen['calosciowy_opis_wycieczki']}</div>
+    if pd.notna(w_gen.get('calosciowa_taktyka_dnia')) and str(w_gen['calosciowa_taktyka_dnia']).strip():
+        st.markdown(f"""
+        <details class="overview-details-card">
+            <summary>🧠 TAKTYKA DNIA</summary>
+            <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
+                <div class="overview-card-text">{w_gen['calosciowa_taktyka_dnia']}</div>
             </div>
-            """, unsafe_allow_html=True)
+        </details>
+        """, unsafe_allow_html=True)
 
-        if pd.notna(w_gen['calosciowa_taktyka_dnia']) and str(w_gen['calosciowa_taktyka_dnia']).strip() != "":
-            st.markdown(f"""
-            <div style="background-color:#FFFFFF; padding:14px; border:1.5px solid #E4E9F2; border-radius:20px; margin-bottom:16px;">
-                <span style="font-size:10pt; font-weight:800; color:#1D2A36;">🧠 TAKTYKA DNIA:</span><br>
-                <span style="color:#1D2A36; font-weight:600; font-size:10.5pt; line-height:1.4;">{w_gen['calosciowa_taktyka_dnia']}</span>
-            </div>
-            """, unsafe_allow_html=True)
+    if pokaz_mape:
+        punkty_trasy, surowe_wspolrzedne = [], []
+        for _, k in kroki_df.iterrows():
+            coords = str(k['wspolrzedne'])
+            if ',' in coords:
+                try:
+                    parts = coords.split(',')
+                    lat, lon = float(parts[0].strip()), float(parts[1].strip())
+                    punkty_trasy.append((lat, lon, str(k['krok_wycieczki']), str(k['nazwa'])))
+                    surowe_wspolrzedne.append((lat, lon))
+                except:
+                    pass
+        if punkty_trasy:
+            srodek_lat = sum([p[0] for p in punkty_trasy]) / len(punkty_trasy)
+            srodek_lon = sum([p[1] for p in punkty_trasy]) / len(punkty_trasy)
+            m_trasa = folium.Map(location=[srodek_lat, srodek_lon], zoom_start=10, tiles="CartoDB positron")
+            for lat, lon, krok, nazwa in punkty_trasy:
+                is_d = "Domek" in nazwa
+                icon_bg = "#2E251E" if is_d else "#C06C4E"
+                icon_sym = "🏠" if is_d else krok
+                icon_html = f'<div style="background-color:{icon_bg};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:2px solid white;">{icon_sym}</div>'
+                folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13)), tooltip=nazwa).add_to(m_trasa)
+            trasa_po_drogach = pobierz_trase_osrm(surowe_wspolrzedne)
+            if trasa_po_drogach:
+                folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
+            st_folium(m_trasa, width="100%", height=220, returned_objects=[])
 
-        st.markdown("<h3>Szczegółowy plan dnia</h3>", unsafe_allow_html=True)
+    # 3. GŁÓWNA KARTA "Plan na dzień" Z CIĄGŁĄ LINIĄ TIMELINE
+    st.markdown('<div class="day-plan-container"><div class="day-plan-heading">Plan na dzień</div><div class="timeline-wrapper">', unsafe_allow_html=True)
+    
+    current_expanded_param = st.query_params.get("expand")
+    
+    total_steps = len(kroki_df)
+    for idx, (_, k) in enumerate(kroki_df.iterrows()):
+        krok_row_id = str(k['id'])
+        nazwa = str(k['nazwa'])
+        okienko = str(k.get('okienko_zwiedzania', ''))
+        krok_num = str(k['krok_wycieczki'])
+        wspolrzedne = str(k.get('wspolrzedne', ''))
+        coords_clean = wspolrzedne.replace(" ", "")
         
-        # RENDEROWANIE KROKÓW Z BAZY DANYCH (DOMKOWYCH I ATRAKCJI W PORZĄDKU CHRONOLOGICZNYM)
-        for i, (_, k) in enumerate(kroki_df.iterrows()):
-            krok_row_id = k['id']
-            krok_num = str(k['krok_wycieczki'])
-            krok_nazwa = str(k['nazwa'])
-            okienko = str(k.get('okienko_zwiedzania', ''))
-            is_domek = "Domek" in krok_nazwa
-            
-            # Pobranie posiłków dla tego kroku
-            df_posilki = pobierz_posilki_dla_kroku(krok_row_id)
-            
-            # 1. ZBUDOWANIE CZYSTEJ PLAKIETKI POSIŁKU
-            posilki_badge = ""
-            posilki_html_snippets = ""
-            if not df_posilki.empty:
-                tagi = []
-                for _, pos in df_posilki.iterrows():
-                    p_rodzaj = str(pos['rodzaj_posilku'])
-                    p_opis = str(pos['opis']) if pd.notna(pos['opis']) else ""
-                    p_rodzaj_l = p_rodzaj.lower()
-                    
-                    ikona_pos = "🍳" if "śniad" in p_rodzaj_l else ("🍲" if "obiad" in p_rodzaj_l else ("🍷" if "kolac" in p_rodzaj_l else "🍎"))
-                    tagi.append(f"{ikona_pos} {p_rodzaj.upper()}")
-                    
-                    opis_snip = f'<div style="font-size: 9.5pt; font-weight: 700; color: #1D2A36;">{p_opis}</div>' if p_opis.strip() else ""
-                    posilki_html_snippets += f"""
-                    <div style="background-color: rgba(255, 168, 0, 0.08); border: 1.5px solid rgba(255, 168, 0, 0.3); border-radius: 12px; padding: 8px 12px; margin-top: 6px; display: flex; align-items: center; justify-content: space-between;">
-                        <div style="font-size: 9.5pt; font-weight: 800; color: #FFA800; text-transform: uppercase;">
-                            {ikona_pos} {p_rodzaj}
-                        </div>
-                        {opis_snip}
-                    </div>
-                    """
-                posilki_badge = "  |  " + " • ".join(tagi)
+        godzina_start = okienko.split("-")[0].strip() if "-" in okienko else (okienko if okienko else "08:00")
+        godzina_koniec = okienko.split("-")[1].strip() if "-" in okienko else str(k.get('godzina_ewakuacji', '')).strip()
+        
+        is_first = (idx == 0)
+        is_last = (idx == total_steps - 1)
+        
+        opis_tekst = str(k.get('podsumowanie_taktyki', '')).strip()
+        if not opis_tekst or opis_tekst == "None":
+            opis_tekst = str(k.get('opis', '')).strip()
 
-            if is_domek:
-                domek_emoji = "🏠" if "Start" in krok_nazwa or i == 0 else "🏁"
-                tytul_expandera = f"🕒 {okienko}  |  {domek_emoji} {krok_nazwa}{posilki_badge}"
-                
-                with st.expander(tytul_expandera):
-                    st.markdown(f"""
-                        <div style="font-size: 10.5pt; color: #1D2A36; font-weight: 600; margin-bottom: 8px;">
-                            {k['opis']}
-                        </div>
-                        <div class="net-box">
-                            <div class="net-title">🎯 Taktyka w Bazie</div>
-                            <div class="net-text">{k['podsumowanie_taktyki']}</div>
-                        </div>
-                        {posilki_html_snippets}
-                    """, unsafe_allow_html=True)
+        if is_first:
+            badge_symbol = "🛏️"
+            tytul_wyswietlany = "Pobudka"
+            badge_class = "badge-pobudka"
+            has_nav = False
+        elif is_last:
+            badge_symbol = "🚩"
+            tytul_wyswietlany = "Powrót / Zakończenie"
+            badge_class = "badge-powrot"
+            has_nav = False
+        elif "obiad" in nazwa.lower() or "lunch" in nazwa.lower() or "jedzenie" in nazwa.lower() or "przerwa" in nazwa.lower():
+            badge_symbol = "🍴"
+            tytul_wyswietlany = nazwa
+            badge_class = "badge-obiad"
+            has_nav = False
+        else:
+            badge_symbol = krok_num if (krok_num and krok_num != "0") else str(idx)
+            tytul_wyswietlany = nazwa
+            badge_class = "badge-miejsce"
+            has_nav = bool(coords_clean and ',' in coords_clean)
+
+        df_pos = pobierz_posilki_dla_kroku(k['id'])
+        posilki_podpis = ""
+        if not df_pos.empty:
+            for _, prow in df_pos.iterrows():
+                if "obiad" in str(prow['rodzaj_posilku']).lower() and not is_first and not is_last:
+                    posilki_podpis = f"<br><span style='color:#8C5338; font-weight:700;'>🍲 Posiłek: {prow['opis']}</span>"
+
+        is_expanded = (current_expanded_param == krok_row_id)
+        toggle_expand_url = f"?tab=route" if is_expanded else f"?tab=route&expand={krok_row_id}"
+
+        nav_btn_html = ""
+        if has_nav:
+            gps_url = f"https://www.google.com/maps/search/?api=1&query={coords_clean}"
+            nav_btn_html = f'<a href="{gps_url}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>'
+
+        time_end_html = f'<span class="timeline-time-end">do {godzina_koniec}</span>' if (godzina_koniec and godzina_koniec != godzina_start) else ''
+
+        row_html = (
+            f'<div class="timeline-row">'
+            f'<div class="timeline-time">'
+            f'<span class="timeline-time-start">{godzina_start}</span>'
+            f'{time_end_html}'
+            f'</div>'
+            f'<div class="timeline-center-col">'
+            f'<a href="{toggle_expand_url}" target="_self" class="timeline-icon-badge {badge_class}" title="Kliknij, aby rozwinąć/zwinąć szczegóły">{badge_symbol}</a>'
+            f'</div>'
+            f'<div class="timeline-content-col">'
+            f'<div class="timeline-item-title">{tytul_wyswietlany}</div>'
+            f'<div class="timeline-item-desc">{opis_tekst}{posilki_podpis}</div>'
+            f'</div>'
+            f'{nav_btn_html}'
+            f'</div>'
+        )
+        st.markdown(row_html, unsafe_allow_html=True)
+
+        # 4. ROZSUWANY TAB ZE SZCZEGÓŁAMI KROKU
+        if is_expanded:
+            google_search_url = f"https://www.google.com/search?q={nazwa} Kreta"
+            sklep_maps_url = f"https://www.google.com/maps/search/supermarket/@{coords_clean},15z" if coords_clean else "#"
+            resto_maps_url = f"https://www.google.com/maps/search/restaurant/@{coords_clean},15z" if coords_clean else "#"
+
+            pogoda_kroku = pobierz_szczegoly_pogody_dla_godziny(k['wspolrzedne'], planowana_data_val, okienko)
+            pogoda_html = ""
+            if pogoda_kroku:
+                pogoda_html = (
+                    f'<div style="background-color: #FAF8F2; border: 1.5px solid #D8D2BC; border-radius: 16px; padding: 10px 14px; margin-bottom: 12px; text-align: center;">'
+                    f'<div style="font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 3px;">☀️ PROGNOZA POGODY ({pogoda_kroku["data"]})</div>'
+                    f'<div style="font-size: 10.5pt; font-weight: 800; color: #2B2118;">{pogoda_kroku["temp"]}°C (odczuwalna {pogoda_kroku["feel"]}°C), {pogoda_kroku["desc"]} 💨 {pogoda_kroku["wind"]} km/h | ☀️ UV {pogoda_kroku["uv"]}</div>'
+                    f'</div>'
+                )
+
+            opis_glowny = str(k.get('opis', '')).strip()
+            opis_glowny_html = f'<div class="step-desc-bubble">{opis_glowny}</div>' if (opis_glowny and opis_glowny != "None") else ""
+
+            # EWAKUACJA I OSTRZEŻENIE
+            ewakuacja_val = str(k.get('godzina_ewakuacji', '')).strip()
+            evac_html = ""
+            if ewakuacja_val and ewakuacja_val != "None" and ewakuacja_val != "Brak":
+                evac_html = (
+                    f'<div class="step-evac-pill">'
+                    f'<div class="step-evac-pill-title">🚨 Godzina ewakuacji</div>'
+                    f'<div class="step-evac-pill-val">{ewakuacja_val}</div>'
+                    f'</div>'
+                )
+
+            ostrzezenie_val = str(k.get('czerwona_strefa_ostrzezenie', '')).strip()
+            warn_html = ""
+            if ostrzezenie_val and ostrzezenie_val != "None" and ostrzezenie_val != "Brak":
+                warn_html = (
+                    f'<div class="step-warn-box">'
+                    f'<div class="step-warn-title">⚠️ Ostrzeżenie (Czerwona strefa)</div>'
+                    f'<div class="step-warn-text">{ostrzezenie_val}</div>'
+                    f'</div>'
+                )
+
+            taktyka_val = k.get("podsumowanie_taktyki", "Brak szczegółów taktyki")
+            regen_val = k.get("strefa_luzu_i_regeneracji", "Brak strefy regeneracji")
+
+            # Checklista zakupów HTML z formularzem dodawania przez Query Params
+            df_zakupy = pobierz_zakupy_dla_kroku(k['id'])
+            zakupy_items_html = ""
+            if df_zakupy.empty:
+                zakupy_items_html = "<div style='font-size: 8.5pt; color: #8C827A; font-style: italic; margin-bottom: 8px;'>Brak zaplanowanych zakupów w tym punkcie.</div>"
             else:
-                pasujące_miejsce = df_miejsca[df_miejsca['numer_miejsca'] == krok_num]
-                miejsce_id_cel = str(pasujące_miejsce.iloc[0]['numer_miejsca']) if not pasujące_miejsce.empty else "1"
-                
-                google_search_url = f"https://www.google.com/search?q={krok_nazwa} Kreta"
-                gps_maps_url = f"https://www.google.com/maps/search/?api=1&query={k['wspolrzedne']}"
-                coords_clean = str(k['wspolrzedne']).replace(" ", "")
-                sklep_maps_url = f"https://www.google.com/maps/search/supermarket/@{coords_clean},15z"
-                resto_maps_url = f"https://www.google.com/maps/search/restaurant/@{coords_clean},15z"
+                for _, z in df_zakupy.iterrows():
+                    z_id = z['id']
+                    z_nazwa = z['nazwa_produktu']
+                    z_ilosc = z['ilosc']
+                    z_kupione = bool(z['kupione'])
+                    check_icon = "☑️" if z_kupione else "⬜"
+                    ilosc_txt = f" ({z_ilosc})" if z_ilosc and z_ilosc != "1" else ""
+                    zakupy_items_html += f"<div style='font-size: 9pt; color: #2B2118; font-weight: 700; margin-bottom: 4px;'>{check_icon} {z_nazwa}{ilosc_txt}</div>"
 
-                warn_html = f'<div class="net-box-warn"><div class="net-title-warn">⚠️ Ostrzeżenie</div><div class="net-text" style="color:#FFA800; font-weight:800;">{k["czerwona_strefa_ostrzezenie"]}</div></div>' if pd.notna(k.get('czerwona_strefa_ostrzezenie')) and str(k['czerwona_strefa_ostrzezenie']).strip() != "" else ""
-                desc_html = f'<div style="margin-top: 6px; background-color:#F5F7FA; border:1.5px solid #E4E9F2; border-radius:12px; padding:12px; font-size:10.5pt; color:#1D2A36; font-weight:600; line-height:1.4;">{k["opis"]}</div>' if pd.notna(k.get('opis')) and str(k.get('opis')).strip() != "" else ""
+            details_html = (
+                f'<div class="step-details-card">'
+                f'<div style="font-size: 10pt; font-weight: 800; color: #8C5338; margin-bottom: 8px;">🕒 {okienko} | 📌 {nazwa}</div>'
+                f'{pogoda_html}'
+                f'{opis_glowny_html}'
+                f'{evac_html}'
+                f'{warn_html}'
+                f'<details class="step-combined-card">'
+                f'<summary>🎯 Taktyka & Regeneracja</summary>'
+                f'<div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">'
+                f'<div class="step-subitem-title" style="color: #8C5338;">🎯 Taktyka: Wyciszenie</div>'
+                f'<div class="step-subitem-body">{taktyka_val}</div>'
+                f'<div class="step-subitem-title" style="color: #6D8257; margin-top: 8px;">🌿 Regeneracja: Strefa luzu</div>'
+                f'<div class="step-subitem-body">{regen_val}</div>'
+                f'</div>'
+                f'</details>'
+                f'<details class="step-combined-card">'
+                f'<summary>🛒 Zakupy</summary>'
+                f'<div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">'
+                f'{zakupy_items_html}'
+                f'</div>'
+                f'</details>'
+                f'<div class="step-action-vertical-bar">'
+                f'<a href="{google_search_url}" target="_blank" class="step-action-vertical-btn"><span>🔍</span><span>Google</span></a>'
+                f'<a href="{sklep_maps_url}" target="_blank" class="step-action-vertical-btn"><span>🛒</span><span>Sklep</span></a>'
+                f'<a href="{resto_maps_url}" target="_blank" class="step-action-vertical-btn"><span>🍽️</span><span>Resto</span></a>'
+                f'</div>'
+                f'</div>'
+            )
+            st.markdown(details_html, unsafe_allow_html=True)
 
-                tytul_expandera = f"🕒 {okienko}  |  📌 {krok_nazwa}{posilki_badge}" if okienko else f"📌 {krok_nazwa}{posilki_badge}"
+            # Subtelny expander do dodawania zakupów wewnątrz otwartego kroku
+            with st.expander("➕ Dodaj pozycję zakupową"):
+                with st.form(key=f"form_inline_zakup_{krok_row_id}"):
+                    p_nazwa = st.text_input("Nazwa produktu", placeholder="np. Woda, owoce")
+                    p_ilosc = st.text_input("Ilość", value="1")
+                    if st.form_submit_button("💾 Zapisz produkt", use_container_width=True):
+                        if p_nazwa.strip():
+                            dodaj_produkt_zakupow(int(krok_row_id), p_nazwa.strip(), p_ilosc.strip())
+                            st.session_state["flash_toast"] = "🛒 Dodano produkt!"
+                            st.rerun()
 
-                with st.expander(tytul_expandera):
-                    if pokaz_pogode and planowana_data_val:
-                        renderuj_pogode_dla_kroku(k['wspolrzedne'], planowana_data_val, okienko)
+        # Czas dojazdu do kolejnego punktu
+        czas_dojazdu_dalej = k.get('czas_dojazdu_z_poprzedniego_kroku')
+        if idx < len(kroki_df) - 1 and pd.notna(czas_dojazdu_dalej) and str(czas_dojazdu_dalej).strip() != "":
+            st.markdown(f'<div class="timeline-transit-row"><div style="background-color: #EFE8D6; border: 1.5px solid #D6CEBC; border-radius: 20px; padding: 4px 14px; font-size: 8.5pt; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #8C5338;"><span>🚗</span> Dojazd do kolejnego punktu: <span style="color: #2B2118;">{czas_dojazdu_dalej}</span></div></div>', unsafe_allow_html=True)
 
-                    card_html = f'''<div style="background-color:transparent; padding:4px;"><div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;"><div style="background-color:#1D2A36; color:white; border-radius:50%; width:26px; height:26px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:10pt;">{krok_num}</div><span style="font-size:11.5pt; font-weight:900; color:#1D2A36;">{krok_nazwa}</span></div>{desc_html}<div style="display: flex; gap: 6px; margin-top: 12px; margin-bottom: 12px;"><a href="{gps_maps_url}" target="_blank" class="custom-nav-btn" style="padding:8px 0;" title="GPS"><span>📍</span><span>GPS</span></a><a href="{google_search_url}" target="_blank" class="custom-nav-btn" style="padding:8px 0;" title="Google"><span>🔍</span><span>Google</span></a><a href="{sklep_maps_url}" target="_blank" class="custom-nav-btn" style="padding:8px 0;" title="Sklep"><span>🛒</span><span>Sklep</span></a><a href="{resto_maps_url}" target="_blank" class="custom-nav-btn" style="padding:8px 0;" title="Restauracja"><span>🍽️</span><span>Resto</span></a><a href="?tab=zabytek&place={miejsce_id_cel}" target="_self" class="custom-nav-btn" style="padding:8px 0;" title="Opis"><span>📝</span><span>Opis</span></a></div><div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;"><div class="net-box" style="margin-bottom:0;"><div class="net-title">⏱️ Harmonogram</div><div style="font-size:11pt; font-weight:900; color:#1D2A36;">{k["okienko_zwiedzania"]}</div></div><div class="net-box-evac" style="margin-bottom:0;"><div class="net-title-evac">🚨 Ewakuacja</div><div style="font-size:11pt; font-weight:900; color:#FF6B6B;">{k.get("godzina_ewakuacji", "Brak")}</div></div></div><div class="net-box"><div class="net-title">🎯 Taktyka</div><div class="net-text">{k["podsumowanie_taktyki"]}</div></div><div class="net-box-regen" style="margin-bottom:0;"><div class="net-title-regen">🌿 Regeneracja</div><div class="net-text" style="color:#65D084; font-weight:800;">{k["strefa_luzu_i_regeneracji"]}</div></div>{posilki_html_snippets}{warn_html}</div>'''
-                    st.markdown(card_html, unsafe_allow_html=True)
+    st.markdown('</div></div>', unsafe_allow_html=True)
+    renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
 
-                    df_zakupy_kroku = pobierz_zakupy_dla_kroku(krok_row_id)
-                    with st.expander("🛒 Checklista zakupów w tym miejscu"):
-                        with st.form(key=f"form_add_zakup_{krok_row_id}", clear_on_submit=True):
-                            st.markdown('<div style="font-size: 9pt; font-weight: 800; color: #8492A6; margin-bottom: 2px;">PRODUKT I ILOŚĆ</div>', unsafe_allow_html=True)
-                            col_z1, col_z2 = st.columns([3, 1])
-                            with col_z1:
-                                nowy_prod = st.text_input("Nowy produkt", placeholder="np. Woda, owoce", label_visibility="collapsed")
-                            with col_z2:
-                                nowa_il = st.text_input("Ilość", value="1", placeholder="Ilość", label_visibility="collapsed")
-                            
-                            if st.form_submit_button("➕ Dodaj zakup", use_container_width=True):
-                                if nowy_prod.strip():
-                                    dodaj_produkt_zakupow(krok_row_id, nowy_prod.strip(), nowa_il.strip())
-                                    st.session_state["flash_toast"] = "🛒 Dodano produkt!"
-                                    st.rerun()
-
-                        if df_zakupy_kroku.empty:
-                            st.markdown("<p style='color: #8492A6; font-size: 9.5pt; font-style: italic;'>Brak zakupów w tym miejscu.</p>", unsafe_allow_html=True)
-                        else:
-                            for _, z in df_zakupy_kroku.iterrows():
-                                z_id = z['id']
-                                z_nazwa = z['nazwa_produktu']
-                                z_ilosc = z['ilosc']
-                                z_kupione = bool(z['kupione'])
-                                
-                                col_chk, col_del = st.columns([5, 1])
-                                with col_chk:
-                                    etykieta_z = f"{z_nazwa} (*{z_ilosc}*)" if z_ilosc and z_ilosc != "1" else z_nazwa
-                                    stan_checkboxa = st.checkbox(etykieta_z, value=z_kupione, key=f"chk_zakup_{z_id}")
-                                    if stan_checkboxa != z_kupione:
-                                        zmien_status_zakupu(z_id, stan_checkboxa)
-                                        st.rerun()
-                                with col_del:
-                                    if st.button("🗑️", key=f"del_zakup_{z_id}", help="Usuń produkt"):
-                                        usun_produkt_zakupow(z_id)
-                                        st.session_state["flash_toast"] = "🗑️ Usunięto produkt!"
-                                        st.rerun()
-
-            # Czas dojazdu z tego kroku do NASTĘPNEGO (trzymany w bazie w bieżącym kroku)
-            czas_dojazdu_dalej = k.get('czas_dojazdu_z_poprzedniego_kroku')
-            if i < len(kroki_df) - 1 and pd.notna(czas_dojazdu_dalej) and str(czas_dojazdu_dalej).strip() != "":
-                st.markdown(f"""
-                <div style="display: flex; justify-content: center; margin: 4px 0 6px 0;">
-                    <div style="background-color: #F5F7FA; border: 1.5px dashed #E4E9F2; border-radius: 24px; padding: 6px 18px; font-size: 9.5pt; font-weight: 800; display: flex; align-items: center; gap: 8px; color: #8492A6;">
-                        <span>🚗</span> Dojazd do kolejnego punktu: <span style="color: #1D2A36;">{czas_dojazdu_dalej}</span>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
-
+# --- DOLNY PASEK NAWIGACJI: Miejsca / Wycieczki / Trasa Dnia ---
 active_zabytek = "active" if st.session_state.active_tab == "zabytek" else ""
 active_map = "active" if st.session_state.active_tab == "map" else ""
 active_route = "active" if st.session_state.active_tab == "route" else ""
 
 st.markdown(f"""
-    <div class="bottom-nav-container">
-        <a href="?tab=zabytek" target="_self" class="bottom-nav-btn {active_zabytek}"><span>🏛️</span><span>Miejsca</span></a>
-        <a href="?tab=map" target="_self" class="bottom-nav-btn {active_map}"><span>🗺️</span><span>Wycieczki</span></a>
-        <a href="?tab=route" target="_self" class="bottom-nav-btn {active_route}"><span>🚗</span><span>Trasa Dnia</span></a>
-    </div>
+<div class="bottom-nav-container">
+<a href="?tab=zabytek" target="_self" class="bottom-nav-btn {active_zabytek}"><span>🏛️</span><span>Miejsca</span></a>
+<a href="?tab=map" target="_self" class="bottom-nav-btn {active_map}"><span>🗺️</span><span>Wycieczki</span></a>
+<a href="?tab=route" target="_self" class="bottom-nav-btn {active_route}"><span>🚗</span><span>Trasa Dnia</span></a>
+</div>
 """, unsafe_allow_html=True)
 
-if st.session_state.active_tab == "zabytek":
-    logo_b64 = ""
-    if os.path.exists("logo.png"):
-        with open("logo.png", "rb") as f:
-            logo_b64 = base64.b64encode(f.read()).decode("utf-8")
-
-    logo_img_tag = f'<img src="data:image/png;base64,{logo_b64}" style="width:42px;height:42px;border-radius:12px;object-fit:cover;">' if logo_b64 else '<div style="font-size:26px;">🧭</div>'
-
-    st.markdown(f"""
-        <div class="adventure-header">
-            {logo_img_tag}
-            <div>
-                <div class="adventure-title-text">CretAi • Kreta</div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown("### 🗺️ Nasze miejsca")
-    
-    df_miejsca_sorted = df_miejsca.copy()
-    df_miejsca_sorted['sort_key'] = pd.to_numeric(df_miejsca_sorted['numer_miejsca'], errors='coerce')
-    df_miejsca_sorted = df_miejsca_sorted.sort_values(by=['sort_key', 'numer_miejsca']).drop(columns=['sort_key'])
-
-    miejsca_opcje_lista = [f"{r['numer_miejsca']}. {r['nazwa']}" for _, r in df_miejsca_sorted.iterrows()]
-    
-    def aktualizuj_wybrane_miejsce():
-        wybrany_tekst = st.session_state.selected_place_sb
-        if wybrany_tekst:
-            wybrany_num = wybrany_tekst.split(".")[0].strip()
-            st.session_state.active_place_id = wybrany_num
-        else:
-            st.session_state.active_place_id = None
-
-    current_selection_index = None
-    if st.session_state.active_place_id:
-        match_idx = [i for i, opt in enumerate(miejsca_opcje_lista) if opt.startswith(f"{st.session_state.active_place_id}.")]
-        if match_idx:
-            current_selection_index = match_idx[0] + 1
-
-    selected_option = st.selectbox(
-        "Wybierz miejsce:", 
-        options=[None] + miejsca_opcje_lista,
-        index=current_selection_index,
-        format_func=lambda x: "🌐 Pokaż całą mapę (wybierz miejsce...)" if x is None else x,
-        key="selected_place_sb", 
-        on_change=aktualizuj_wybrane_miejsce,
-        label_visibility="collapsed"
-    )
-
-    map_lat, map_lon, map_zoom = 35.3, 24.5, 9
-    if st.session_state.active_place_id:
-        active_row = df_miejsca[df_miejsca['numer_miejsca'] == str(st.session_state.active_place_id)]
-        if not active_row.empty:
-            coords_str = str(active_row.iloc[0]['wspolrzedne'])
-            if ',' in coords_str:
-                try:
-                    parts = coords_str.split(',')
-                    map_lat = float(parts[0].strip())
-                    map_lon = float(parts[1].strip())
-                    map_zoom = 14
-                except:
-                    pass
-
-    m = folium.Map(location=[map_lat, map_lon], zoom_start=map_zoom, tiles="CartoDB positron")
-    dodaj_marker_domku(m)
-
-    for _, row in df_miejsca.iterrows():
-        coords = str(row['wspolrzedne'])
-        if ',' in coords:
-            try:
-                parts = coords.split(',')
-                lat = float(parts[0].strip())
-                lon = float(parts[1].strip())
-                name = row['nazwa']
-                num = str(row['numer_miejsca'])
-                typ_raw = str(row.get('typ', '')).strip().lower()
-                is_visited = int(row.get('odwiedzone', 0)) == 1
-                bg_color = '#E4E9F2' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
-                text_col = '#1D2A36' if is_visited else 'white'
-                
-                icon_html = f'<div style="background-color:{bg_color};color:{text_col};border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">{num}</div>'
-                icon = folium.DivIcon(html=icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
-                folium.Marker([lat, lon], icon=icon, tooltip=f"{num}. {name}").add_to(m)
-            except:
-                pass
-
-    map_data = st_folium(m, width="100%", height=300)
-
-    if map_data and map_data.get("last_object_clicked_tooltip"):
-        clicked_tooltip = map_data["last_object_clicked_tooltip"]
-        if "." in clicked_tooltip:
-            clicked_id = clicked_tooltip.split(".")[0].strip()
-            if clicked_id.isdigit() and clicked_id != st.session_state.active_place_id:
-                st.session_state.active_place_id = clicked_id
-                st.rerun()
-
-    st.markdown("---")
-
-    if st.session_state.active_place_id:
-        place_row = df_miejsca[df_miejsca['numer_miejsca'] == str(st.session_state.active_place_id)]
-        
-        if not place_row.empty:
-            p = place_row.iloc[0]
-            numer_m = str(p['numer_miejsca'])
-            tytul_miejsca = f"{numer_m}. {str(p['nazwa']).upper()}"
-            google_search_url = f"https://www.google.com/search?q={p['nazwa']} Kreta"
-            
-            st.markdown(f"""
-            <div id="selected-place-details" style="background-color: #FFFFFF; border: 1.5px solid #E4E9F2; border-radius: 20px; padding: 16px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(29, 42, 54, 0.04);">
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                    <span style="font-size: 13.5pt; font-weight: 900; color: #1D2A36;">{tytul_miejsca}</span>
-                    <a href="{google_search_url}" target="_blank" style="text-decoration: none; font-size: 16px; background-color: #F5F7FA; border: 1.5px solid #E4E9F2; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: #1D2A36;" title="Szukaj w Google">🔍</a>
-                </div>
-            """, unsafe_allow_html=True)
-
-            is_visited = int(p.get('odwiedzone', 0)) == 1
-            if is_visited:
-                st.markdown("""
-                <div style="text-align: center; margin-bottom: 12px;">
-                    <span style="background-color: rgba(101, 208, 132, 0.1); color: #65D084; padding: 6px 14px; border-radius: 16px; font-weight: 800; border: 1.5px solid rgba(101, 208, 132, 0.3); font-size: 10pt;">
-                        ✨ Odwiedzone
-                    </span>
-                </div>
-                """, unsafe_allow_html=True)
-
-            for ekst in ['.jpg', '.jpeg', '.png']:
-                sciezka_zdjecia = os.path.join("zdjecia", f"{numer_m}{ekst}")
-                if os.path.exists(sciezka_zdjecia):
-                    st.image(sciezka_zdjecia, caption=f"{p['nazwa']}")
-                    break
-            
-            if pd.notna(p['opis']) and str(p['opis']).strip() != "":
-                st.info(p['opis'])
-
-            coords_clean = str(p['wspolrzedne']).replace(" ", "") if pd.notna(p['wspolrzedne']) else "35.3,24.5"
-            gps_maps_url = f"https://www.google.com/maps/search/?api=1&query={coords_clean}"
-
-            st.markdown(f"""
-                <div style="display: flex; align-items: center; justify-content: space-between; margin: 16px 0 12px 0;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <div style="background-color: #1D2A36; color: #FFFFFF; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items:center; justify-content:center; font-size: 14px; font-weight: 900;">📍</div>
-                        <span style="font-size: 10pt; font-weight: 800; color: #8492A6; text-transform: uppercase;">Lokalizacja GPS</span>
-                    </div>
-                    <a href="{gps_maps_url}" target="_blank" style="background-color: #1D2A36; color: #FFFFFF; padding: 8px 18px; border-radius: 20px; font-size: 10pt; font-weight: 900; text-decoration: none; box-shadow: 0 4px 10px rgba(29, 42, 54, 0.2);">NAWIGUJ ➔</a>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                    <div style="background-color: #F5F7FA; border: 1.5px solid #E4E9F2; border-radius: 16px; padding: 12px;">
-                        <div style="font-size: 9pt; font-weight: 800; color: #8492A6; text-transform: uppercase; margin-bottom: 2px;">Dojazd (Stravros)</div>
-                        <div style="font-size: 11pt; font-weight: 900; color: #1D2A36;">{p['czas_dojazdu']}</div>
-                    </div>
-                    <div style="background-color: #F5F7FA; border: 1.5px solid #E4E9F2; border-radius: 16px; padding: 12px;">
-                        <div style="font-size: 9pt; font-weight: 800; color: #8492A6; text-transform: uppercase; margin-bottom: 2px;">Godziny otwarcia</div>
-                        <div style="font-size: 11pt; font-weight: 900; color: #1D2A36;">{p['godziny_otwarcia']}</div>
-                    </div>
-                    <div style="background-color: #F5F7FA; border: 1.5px solid #E4E9F2; border-radius: 16px; padding: 12px;">
-                        <div style="font-size: 9pt; font-weight: 800; color: #8492A6; text-transform: uppercase; margin-bottom: 2px;">Najlepsza pora</div>
-                        <div style="font-size: 10.5pt; font-weight: 900; color: #1D2A36;">{p['najlepsza_pora']}</div>
-                    </div>
-                    <div style="background-color: #F5F7FA; border: 1.5px solid #E4E9F2; border-radius: 16px; padding: 12px;">
-                        <div style="font-size: 9pt; font-weight: 800; color: #8492A6; text-transform: uppercase; margin-bottom: 2px;">Czas zwiedzania</div>
-                        <div style="font-size: 11pt; font-weight: 900; color: #1D2A36;">{p['orientacyjny_czas']}</div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            koszt_val = p.get('koszt', '')
-            if pd.notna(koszt_val) and str(koszt_val).strip() != "":
-                st.markdown(f"""
-                <div style="background-color: #FFFFFF; border: 1.5px solid #E4E9F2; border-radius: 16px; padding: 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
-                    <div style="font-size: 22px;">💶</div>
-                    <div>
-                        <div style="font-size: 9pt; font-weight: 800; color: #8492A6; text-transform: uppercase; margin-bottom: 2px;">Koszt dla rodziny 2+2:</div>
-                        <div style="font-size: 11pt; color: #1D2A36; font-weight: 800;">{koszt_val}</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            akcja_val = p.get('konieczna_akcja', '')
-            if pd.notna(akcja_val) and str(akcja_val).strip() != "Brak" and str(akcja_val).strip() != "":
-                st.markdown(f"""
-                <div style="background-color: rgba(255,107,107,0.05); border: 1.5px solid rgba(255,107,107,0.3); border-radius: 16px; padding: 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px;">
-                    <div style="font-size: 22px;">⚠️</div>
-                    <div>
-                        <div style="font-size: 9pt; font-weight: 800; color: #FF6B6B; text-transform: uppercase; margin-bottom: 2px;">Konieczna akcja</div>
-                        <div style="font-size: 11pt; color: #1D2A36; font-weight: 800;">{akcja_val}</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            renderuj_karty_meltdown_ux(p)
-            
-            if pd.notna(p['zadania_dla_dzieci']) and str(p['zadania_dla_dzieci']).strip() != "":
-                with st.expander("🧒 Zadania dla dzieci w tym miejscu"):
-                    renderuj_zadania_dzieci_expander(p['zadania_dla_dzieci'], p['numer_miejsca'])
-            
-            polaczenie_tekst = str(p['najlepiej_polaczyc'])
-            def zamien_na_link(match):
-                nr_miejsca = match.group(1)
-                return f'<a href="?tab=zabytek&place={nr_miejsca}" target="_self" style="color: #1D2A36; font-weight: 900; text-decoration: underline;">Miejsce {nr_miejsca}</a>'
-            
-            polaczenie_przetworzone = re.sub(r'Miejsce\s+(\d+)', zamien_na_link, polaczenie_tekst, flags=re.IGNORECASE)
-            st.markdown(f"**🔗 Najlepiej połączyć z:** {polaczenie_przetworzone}", unsafe_allow_html=True)
-
-            renderuj_sekcje_notatek(id_miejsca=numer_m)
+# --- ROUTING ZAKŁADEK ---
+if st.session_state.active_tab == "route":
+    aktualne_id = pobierz_aktywna_wycieczke_id()
+    renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False, pokaz_pogode=True)
 
 elif st.session_state.active_tab == "map":
     st.markdown("""
-        <div class="adventure-header">
-            <div style="font-size:26px;">🗺️</div>
-            <div>
-                <div class="adventure-title-text">CretAi • Trasy</div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+<div class="adventure-header">
+<div style="font-size:24px;">🗺️</div>
+<div><div class="adventure-title-text">CretAi • Mapa Trasy</div></div>
+</div>
+""", unsafe_allow_html=True)
     
     opcje_wycieczek_lista = ["-- Wybierz wycieczkę lub mapę miejsc --"] + wycieczki_options
     wybrana_mapa_sb = st.selectbox("", options=opcje_wycieczek_lista, key="map_wycieczka_select", label_visibility="collapsed")
@@ -2277,53 +1982,43 @@ elif st.session_state.active_tab == "map":
     if wybrana_mapa_sb == "-- Wybierz wycieczkę lub mapę miejsc --":
         m_all = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB positron")
         dodaj_marker_domku(m_all)
-        
         for _, row in df_miejsca.iterrows():
             coords = str(row['wspolrzedne'])
             if ',' in coords:
                 try:
                     parts = coords.split(',')
-                    lat = float(parts[0].strip())
-                    lon = float(parts[1].strip())
-                    name = row['nazwa']
+                    lat, lon = float(parts[0].strip()), float(parts[1].strip())
                     num = str(row['numer_miejsca'])
-                    typ_raw = str(row.get('typ', '')).strip().lower()
-                    is_visited = int(row.get('odwiedzone', 0)) == 1
-                    bg_color = '#E4E9F2' if is_visited else COLORS.get(typ_raw, DEFAULT_COLOR)
-                    text_col = '#1D2A36' if is_visited else 'white'
-                    
-                    icon_html = f'<div style="background-color:{bg_color};color:{text_col};border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);">{num}</div>'
-                    icon = folium.DivIcon(html=icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
-                    folium.Marker([lat, lon], icon=icon, tooltip=f"{num}. {name}").add_to(m_all)
+                    icon_html = f'<div style="background-color:#C06C4E;color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:2px solid white;">{num}</div>'
+                    folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13)), tooltip=row['nazwa']).add_to(m_all)
                 except:
                     pass
-        
         st_folium(m_all, width="100%", height=340)
     else:
         if wybrana_mapa_sb:
             wybrana_id = wybrana_mapa_sb.split(". ")[0]
-            st.markdown("---")
             renderuj_karte_wycieczki(wybrana_id, pokaz_mape=True, pokaz_pogode=False)
 
-elif st.session_state.active_tab == "route":
+elif st.session_state.active_tab == "zabytek":
     st.markdown("""
-        <div class="adventure-header">
-            <div style="font-size:26px;">🚗</div>
-            <div>
-                <div class="adventure-title-text">CretAi • Trasa Dnia</div>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+<div class="adventure-header">
+<div style="font-size:24px;">🏛️</div>
+<div><div class="adventure-title-text">CretAi • Baza Miejsc</div></div>
+</div>
+""", unsafe_allow_html=True)
     
-    aktualne_id = pobierz_aktywna_wycieczke_id()
+    miejsca_opcje_lista = [f"{r['numer_miejsca']}. {r['nazwa']}" for _, r in df_miejsca.iterrows()]
+    selected_option = st.selectbox("Wybierz miejsce:", options=[None] + miejsca_opcje_lista, format_func=lambda x: "Wybierz atrakcję..." if x is None else x)
     
-    conn = sqlite3.connect('cretai.db')
-    curr_w_check = pd.read_sql('SELECT odbyta FROM wycieczka WHERE id = ?', conn, params=(str(aktualne_id),))
-    conn.close()
-    
-    if not curr_w_check.empty and int(curr_w_check.iloc[0]['odbyta']) == 1:
-        st.info("✨ Aktualnie ustawiona wycieczka została ukończona.")
-    else:
-        renderuj_karte_wycieczki(aktualne_id, pokaz_mape=False, pokaz_pogode=True)
+    if selected_option:
+        numer_m = selected_option.split(".")[0].strip()
+        p_row = df_miejsca[df_miejsca['numer_miejsca'] == numer_m]
+        if not p_row.empty:
+            p = p_row.iloc[0]
+            st.markdown(f"### {p['nazwa']}")
+            st.write(p['opis'])
+            st.markdown(f"**🧠 Trudność ADHD:** {p.get('trudnosc_adhd', 'Średnia')}")
+            st.markdown(f"**🛡️ Strategia:** {p.get('strategie_meltdown', 'Brak')}")
+            renderuj_sekcje_notatek(id_miejsca=numer_m)
 
 renderuj_globalny_czat_ai(aktualny_uzytkownik)
