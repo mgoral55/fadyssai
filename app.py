@@ -83,7 +83,7 @@ div[data-baseweb="select"] > div {
     border: 1.5px solid #E2DEC8 !important;
     border-radius: 24px !important;
     background-color: #F6F0DD !important;
-    margin-bottom: 12px !important;
+    margin-bottom: 6px !important;
     box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important;
     overflow: hidden !important;
 }
@@ -103,6 +103,19 @@ div[data-baseweb="select"] > div {
     background-color: #F6F0DD !important;
     border-top: 1px solid #D1C7AE !important;
     padding: 12px 14px !important;
+}
+
+/* DEFINITYWNE ZBLIŻENIE EXPANDERÓW W SEKCJI ZADAŃ */
+div[data-testid="stVerticalBlock"]:has(> div.tasks-group-marker) {
+    gap: 6px !important;
+}
+div[data-testid="stVerticalBlock"]:has(> div.tasks-group-marker) > div {
+    margin-bottom: 0px !important;
+    margin-top: 0px !important;
+}
+div[data-testid="stVerticalBlock"]:has(> div.tasks-group-marker) div[data-testid="stExpander"] {
+    margin-bottom: 0px !important;
+    margin-top: 0px !important;
 }
 
 /* Agresywne zmniejszenie odstępów pionowych w blokach zawierających expandery */
@@ -292,48 +305,47 @@ div.st-key-btn_date_picker button p {
     color: #2B2118;
 }
 
-/* GŁÓWNA KARTA PLANu DNIA - ZMNIEJSZONA RAMKA */
+/* GŁÓWNA KARTA PLANu DNIA - BEZ TŁA/RAMKI ZBIORCZEJ, TYLKO KONTENER OSI CZASU */
 .day-plan-container {
-    background-color: #F6F0DD;
-    border-radius: 24px;
-    padding: 14px 12px 10px 12px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.04);
-    margin-bottom: 12px;
-    margin-top: 10px;
-}
-.day-plan-heading {
-    font-size: 14pt;
-    font-weight: 900;
-    color: #2B2118;
-    margin-bottom: 12px;
+    background-color: transparent !important;
+    border-radius: 0px !important;
+    padding: 4px 0px 10px 0px !important;
+    box-shadow: none !important;
+    margin-bottom: 12px !important;
+    margin-top: 10px !important;
 }
 
-/* TIMELINE WRAPPER */
+/* TIMELINE WRAPPER Z IDEALNIE WYŚRODKOWANĄ LINIĄ TŁA PRZEZ KÓŁKA */
 .timeline-wrapper {
     position: relative;
 }
 .timeline-wrapper::before {
     content: "";
     position: absolute;
-    top: 24px;
-    bottom: 24px;
-    left: 83px;
+    top: 20px;
+    bottom: 20px;
+    left: 81px;
     width: 4px;
     background-color: #7A9060;
     z-index: 1;
 }
 
-/* TIMELINE CONTAINER & ITEMS */
+/* TIMELINE CONTAINER & ITEMS Z BEŻOWĄ KARTĄ KROKU */
 .timeline-row {
     position: relative;
     display: flex;
     align-items: center;
     min-height: 64px;
-    padding-bottom: 16px;
     z-index: 2;
+    background-color: #F6F0DD;
+    border: 1.5px solid #E2DEC8;
+    border-radius: 20px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
 }
 .timeline-time {
-    width: 62px;
+    width: 58px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
@@ -356,11 +368,12 @@ div.st-key-btn_date_picker button p {
 
 .timeline-center-col {
     position: relative;
-    width: 44px;
+    width: 46px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     margin-right: 10px;
     z-index: 2;
 }
@@ -609,19 +622,23 @@ div.st-key-btn_date_picker button p {
     line-height: 1;
 }
 
+/* DOJAZD BEZ RAMKI, BEZPOŚREDNIO NA ZIELONYM TLE Z IDEALNIE DOPASOWANĄ LINIĄ */
 .timeline-transit-row {
     position: relative;
     display: flex;
     justify-content: center;
-    margin: -6px 0 10px 0;
+    margin: 4px 0 8px 0;
     z-index: 3;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
 }
 .timeline-transit-row::before {
     content: "";
     position: absolute;
     top: -10px;
     bottom: -10px;
-    left: 83px;
+    left: 81px;
     width: 4px;
     background-color: #7A9060;
     z-index: -1;
@@ -1965,7 +1982,8 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         </details>
         """, unsafe_allow_html=True)
 
-    st.markdown('<div class="day-plan-container"><div class="day-plan-heading">Plan na dzień</div><div class="timeline-wrapper">', unsafe_allow_html=True)
+    st.markdown('### 🗺️ Plan na dzień')
+    st.markdown('<div class="day-plan-container"><div class="timeline-wrapper">', unsafe_allow_html=True)
     
     current_expanded_param = st.query_params.get("expand")
     
@@ -2154,7 +2172,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 czas_dojazdu_dalej = match_row.iloc[0]['czas_przejazdu']
                 postoj_val = match_row.iloc[0]['szacowany_czas_postoju']
                 if pd.notna(czas_dojazdu_dalej) and str(czas_dojazdu_dalej).strip() != "":
-                    st.markdown(f'<div class="timeline-transit-row"><div style="background-color: #EFE8D6; border: 1.5px solid #D6CEBC; border-radius: 20px; padding: 4px 14px; font-size: 8.5pt; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #8C5338;"><span>🚗</span> Dojazd: <span style="color: #2B2118;">{czas_dojazdu_dalej}</span> | ⏱️ Postój: <span style="color: #2B2118;">{postoj_val} min</span></div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="timeline-transit-row"><div style="font-size: 8.5pt; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #8C5338;"><span>🚗</span> Dojazd: <span style="color: #2B2118;">{czas_dojazdu_dalej}</span> | ⏱️ Postój: <span style="color: #2B2118;">{postoj_val} min</span></div></div>', unsafe_allow_html=True)
 
     st.markdown('</div></div>', unsafe_allow_html=True)
 
@@ -2179,7 +2197,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
             st_folium(m_trasa, width=None, height=260, returned_objects=[], key=f"map_route_{wycieczka_id}")
 
-    # 1. SEKCJA: ZADANIA DLA DZIECI (Nagłówek + bezpośrednie expandery zadań w dedykowanym kontenerze)
+    # 1. SEKCJA: ZADANIA DLA DZIECI (Nagłówek + bezpośrednie expandery zadań w dedykowanym kontenerze z markerem)
     st.markdown("### 🎯 Zadania dla dzieci")
     with st.container():
         st.markdown('<div class="tasks-group-marker"></div>', unsafe_allow_html=True)
