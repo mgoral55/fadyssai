@@ -90,7 +90,6 @@ div[data-baseweb="select"] > div {
     color: #2B2118 !important;
 }
 
-/* Poprawka kolorystyczna widgetu kalendarza Streamlit (Data Input) */
 div[data-baseweb="calendar"] {
     background-color: #F6F0DD !important;
     color: #2B2118 !important;
@@ -172,7 +171,7 @@ input[type="date"] {
     line-height: 1.4;
 }
 
-/* ZWIJANA KARTA TAKTYKI DNIA (GŁÓWNA WYCIECZKA) */
+/* ZWIJANA KARTA TAKTYKI DNIA I SPECYFIKI */
 .overview-details-card {
     background-color: #F6F0DD;
     border: 1.5px solid #E2DEC8;
@@ -248,7 +247,7 @@ input[type="date"] {
     margin-bottom: 20px;
 }
 
-/* TIMELINE WRAPPER Z GRUBSZĄ I WYRAŹNĄ LINIĄ W TLE */
+/* TIMELINE WRAPPER */
 .timeline-wrapper {
     position: relative;
 }
@@ -327,7 +326,6 @@ input[type="date"] {
     transform: scale(1.08);
 }
 
-/* NIEDOTYKALNE BADGE DLA POBUDKI I POWROTU */
 .timeline-icon-badge-static {
     position: relative;
     z-index: 3;
@@ -514,7 +512,6 @@ input[type="date"] {
 .step-action-vertical-btn span:first-child { font-size: 13pt; }
 .step-action-vertical-btn span:last-child { font-size: 9.5pt; font-weight: 800; color: #2B2118; }
 
-/* MNIEJSZY, PERFEKCYJNIE WYRÓWNANY PRZYCISK NAWIGUJ W WIERSZU */
 .timeline-nav-btn {
     flex-shrink: 0;
     width: 60px;
@@ -548,7 +545,6 @@ input[type="date"] {
     line-height: 1;
 }
 
-/* DOSTĘP DO DROGI I PRZEJAZDÓW Z CIĄGŁĄ, WYRAŹNĄ LINIĄ */
 .timeline-transit-row {
     position: relative;
     display: flex;
@@ -669,11 +665,40 @@ DOMEK_LON = 24.0918
 SKLEP_LAT = 35.586222
 SKLEP_LON = 24.091861
 
-# --- FUNKCJA POMOCNICZA DO ZAOKRĄGLANIA MINUT DO 5 ---
+# --- NORMALIZACJA KATEGORII I KOLORÓW ---
+# Must have: różowy, Nice to have: pomarańczowy, Plaża: niebieski, Activity: żółty, Shop: fioletowy, Other: zielony
+CATEGORIES_CONFIG = {
+    "Must have": {"color": "#E84393"},
+    "Nice to have": {"color": "#E67E22"},
+    "Plaża": {"color": "#0984E3"},
+    "Activity": {"color": "#F1C40F"},
+    "Shop": {"color": "#8E44AD"},
+    "Other": {"color": "#27AE60"}
+}
+
+def kategoryzuj_typ(typ_str):
+    if not typ_str or pd.isna(typ_str):
+        return "Other"
+    t = str(typ_str).lower().strip()
+    if "must" in t:
+        return "Must have"
+    elif "nice" in t:
+        return "Nice to have"
+    elif "plaż" in t or "plaz" in t or "beach" in t:
+        return "Plaża"
+    elif "activ" in t or "aktywn" in t or "wąwóz" in t or "wawoz" in t or "sport" in t:
+        return "Activity"
+    elif "shop" in t or "sklep" in t or "zakup" in t or "market" in t:
+        return "Shop"
+    else:
+        return "Other"
+
+def pobierz_kolor_kategorii(kategoria):
+    return CATEGORIES_CONFIG.get(kategoria, CATEGORIES_CONFIG["Other"])["color"]
+
 def zaokraglij_do_5_minut(minuty):
     return int(round(minuty / 5.0) * 5)
 
-# --- FUNKCJA POBIERANIA CZASÓW DOJAZDU PRZEZ OSRM ---
 @st.cache_data(ttl=86400)
 def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
     url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
@@ -697,10 +722,13 @@ def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
     return "~25 min", 25
 
 def sparsuj_wspolrzedne(wsp_str):
-    if not wsp_str or ',' not in str(wsp_str):
+    if not wsp_str or pd.isna(wsp_str):
+        return None, None
+    s = str(wsp_str).replace(' ', '').replace(';', ',')
+    if ',' not in s:
         return None, None
     try:
-        parts = str(wsp_str).split(',')
+        parts = s.split(',')
         return float(parts[0].strip()), float(parts[1].strip())
     except:
         return None, None
@@ -719,7 +747,6 @@ def klucz_sortowania_okienka(okienko_str):
         return res[0] * 60 + res[1]
     return 9999
 
-# --- FORMATOWANIE DATY PO POLSKU ---
 DNI_TYGODNIA_PL = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"]
 MIESIACE_PL = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia"]
 
@@ -732,7 +759,6 @@ def formatuj_date_pl(data_obj):
     dzien_tyg = DNI_TYGODNIA_PL[data_obj.weekday()]
     return f"{dzien} {miesiac} {rok} ({dzien_tyg})"
 
-# --- AUTOMATYCZNY SILNIK PRZELICZANIA I SYNCHRONIZACJI LOGISTYKI ---
 def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
@@ -1103,11 +1129,8 @@ def pobierz_prognoze_pogody(lat, lon, data_docelowa):
 def pobierz_szczegoly_pogody_dla_godziny(wspolrzedne, planowana_data, okienko_czasowe):
     if not planowana_data or not str(planowana_data).strip():
         return None
-    try:
-        parts = str(wspolrzedne).split(',')
-        lat = float(parts[0].strip())
-        lon = float(parts[1].strip())
-    except:
+    lat, lon = sparsuj_wspolrzedne(wspolrzedne)
+    if lat is None or lon is None:
         return None
 
     prognoza_dnia = pobierz_prognoze_pogody(lat, lon, str(planowana_data))
@@ -1156,22 +1179,16 @@ def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
     opis_pogody_zbiorczy = set()
 
     for _, k in kroki_df.iterrows():
-        coords = str(k['wspolrzedne'])
-        if ',' in coords:
-            try:
-                parts = coords.split(',')
-                lat = float(parts[0].strip())
-                lon = float(parts[1].strip())
-                prognoza = pobierz_prognoze_pogody(lat, lon, str(planowana_data))
-                if prognoza and 'hourly' in prognoza:
-                    for h in prognoza['hourly']:
-                        t = int(h.get('tempC', 20))
-                        if t > max_temp: max_temp = t
-                        if t < min_temp: min_temp = t
-                        desc = h.get('weatherDesc', [{}])[0].get('value', '').lower()
-                        opis_pogody_zbiorczy.add(desc)
-            except:
-                pass
+        lat, lon = sparsuj_wspolrzedne(k['wspolrzedne'])
+        if lat is not None and lon is not None:
+            prognoza = pobierz_prognoze_pogody(lat, lon, str(planowana_data))
+            if prognoza and 'hourly' in prognoza:
+                for h in prognoza['hourly']:
+                    t = int(h.get('tempC', 20))
+                    if t > max_temp: max_temp = t
+                    if t < min_temp: min_temp = t
+                    desc = h.get('weatherDesc', [{}])[0].get('value', '').lower()
+                    opis_pogody_zbiorczy.add(desc)
 
     for desc in opis_pogody_zbiorczy:
         if 'rain' in desc or 'deszcz' in desc or 'shower' in desc:
@@ -1551,17 +1568,24 @@ def renderuj_globalny_czat_ai(uzytkownik):
 
     st.markdown('</div>', unsafe_allow_html=True)
 
+# Sprawdzenie parametrów URL
 if "tab" in st.query_params:
     st.session_state.active_tab = st.query_params["tab"]
 elif "active_tab" not in st.session_state:
     st.session_state.active_tab = "route"
 
 if "place" in st.query_params:
-    st.session_state.active_place_id = st.query_params["place"]
+    st.session_state.active_place_id = str(st.query_params["place"])
     st.session_state.active_tab = "zabytek"
 
 if "active_place_id" not in st.session_state:
     st.session_state.active_place_id = None
+
+# Obsługa stanu filtrów kategorii
+if "selected_filters" not in st.session_state:
+    st.session_state.selected_filters = set(CATEGORIES_CONFIG.keys())
+elif isinstance(st.session_state.selected_filters, list):
+    st.session_state.selected_filters = set(st.session_state.selected_filters)
 
 df_miejsca = pobierz_wszystkie_miejsca()
 wycieczki_options = pobierz_skrocone_opcje_wycieczek()
@@ -1663,15 +1687,10 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
     if pokaz_mape:
         punkty_trasy, surowe_wspolrzedne = [], []
         for _, k in kroki_df.iterrows():
-            coords = str(k['wspolrzedne'])
-            if ',' in coords:
-                try:
-                    parts = coords.split(',')
-                    lat, lon = float(parts[0].strip()), float(parts[1].strip())
-                    punkty_trasy.append((lat, lon, str(k['krok_wycieczki']), str(k['nazwa'])))
-                    surowe_wspolrzedne.append((lat, lon))
-                except:
-                    pass
+            lat, lon = sparsuj_wspolrzedne(k['wspolrzedne'])
+            if lat is not None and lon is not None:
+                punkty_trasy.append((lat, lon, str(k['krok_wycieczki']), str(k['nazwa'])))
+                surowe_wspolrzedne.append((lat, lon))
         if punkty_trasy:
             srodek_lat = sum([p[0] for p in punkty_trasy]) / len(punkty_trasy)
             srodek_lon = sum([p[1] for p in punkty_trasy]) / len(punkty_trasy)
@@ -1685,7 +1704,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             trasa_po_drogach = pobierz_trase_osrm(surowe_wspolrzedne)
             if trasa_po_drogach:
                 folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
-            st_folium(m_trasa, width="100%", height=220, returned_objects=[])
+            st_folium(m_trasa, width=None, height=220, returned_objects=[], key=f"map_route_{wycieczka_id}")
 
     st.markdown('<div class="day-plan-container"><div class="day-plan-heading">Plan na dzień</div><div class="timeline-wrapper">', unsafe_allow_html=True)
     
@@ -1912,17 +1931,14 @@ elif st.session_state.active_tab == "map":
         m_all = folium.Map(location=[35.3, 24.5], zoom_start=9, tiles="CartoDB positron")
         dodaj_marker_domku(m_all)
         for _, row in df_miejsca.iterrows():
-            coords = str(row['wspolrzedne'])
-            if ',' in coords:
-                try:
-                    parts = coords.split(',')
-                    lat, lon = float(parts[0].strip()), float(parts[1].strip())
-                    num = str(row['numer_miejsca'])
-                    icon_html = f'<div style="background-color:#C06C4E;color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:2px solid white;">{num}</div>'
-                    folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13)), tooltip=row['nazwa']).add_to(m_all)
-                except:
-                    pass
-        st_folium(m_all, width="100%", height=340)
+            lat, lon = sparsuj_wspolrzedne(row.get('wspolrzedne'))
+            if lat is not None and lon is not None:
+                num = str(row.get('numer_miejsca', ''))
+                kat = kategoryzuj_typ(row.get('typ'))
+                kolor = pobierz_kolor_kategorii(kat)
+                icon_html = f'<div style="background-color:{kolor};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:2px solid white;">{num}</div>'
+                folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))).add_to(m_all)
+        st_folium(m_all, width=None, height=340, returned_objects=[], key="map_all_trips_view")
     else:
         if wybrana_mapa_sb:
             wybrana_id = wybrana_mapa_sb.split(". ")[0]
@@ -1936,18 +1952,240 @@ elif st.session_state.active_tab == "zabytek":
 </div>
 """, unsafe_allow_html=True)
     
-    miejsca_opcje_lista = [f"{r['numer_miejsca']}. {r['nazwa']}" for _, r in df_miejsca.iterrows()]
-    selected_option = st.selectbox("Wybierz miejsce:", options=[None] + miejsca_opcje_lista, format_func=lambda x: "Wybierz atrakcję..." if x is None else x)
+    # --- NIEZAWODNE, NATIVE STREAMLIT PRZYCISKI FILTRÓW (LEGENDA) ---
+    all_cats = list(CATEGORIES_CONFIG.keys())
     
+    # Generowanie dynamicznego CSS dla przycisków w filtrze
+    button_styles = []
+    for idx, cat_name in enumerate(all_cats):
+        is_active = cat_name in st.session_state.selected_filters
+        conf = CATEGORIES_CONFIG[cat_name]
+        bg_col = conf["color"] if is_active else "#EBE8DF"
+        border_col = conf["color"] if is_active else "#D6D0C4"
+        opacity = "1.0" if is_active else "0.55"
+        
+        button_styles.append(f"""
+        div[data-testid="stHorizontalBlock"] > div:nth-child({idx + 1}) button {{
+            background-color: {bg_col} !important;
+            color: #000000 !important;
+            border: 1.5px solid {border_col} !important;
+            opacity: {opacity} !important;
+            padding: 3px 6px !important;
+            min-height: 28px !important;
+            height: 28px !important;
+            font-size: 7.5pt !important;
+            font-weight: 800 !important;
+            border-radius: 10px !important;
+            line-height: 1 !important;
+        }}
+        div[data-testid="stHorizontalBlock"] > div:nth-child({idx + 1}) button p {{
+            color: #000000 !important;
+            font-size: 7.5pt !important;
+            font-weight: 800 !important;
+        }}
+        """)
+
+    st.markdown(f"<style>{''.join(button_styles)}</style>", unsafe_allow_html=True)
+
+    cols = st.columns(len(all_cats))
+    for idx, cat_name in enumerate(all_cats):
+        with cols[idx]:
+            is_active = cat_name in st.session_state.selected_filters
+            icon_prefix = "✓ " if is_active else "+ "
+            if st.button(f"{icon_prefix}{cat_name}", key=f"btn_cat_filter_{cat_name}", use_container_width=True):
+                if is_active:
+                    if len(st.session_state.selected_filters) > 1:
+                        st.session_state.selected_filters.remove(cat_name)
+                    else:
+                        st.session_state.selected_filters = set(all_cats)
+                else:
+                    st.session_state.selected_filters.add(cat_name)
+                st.rerun()
+
+    # Filtrowanie miejsc
+    df_miejsca_filtrowane = df_miejsca.copy()
+    if not df_miejsca_filtrowane.empty:
+        df_miejsca_filtrowane['kategoria_normalizowana'] = df_miejsca_filtrowane['typ'].apply(kategoryzuj_typ)
+        if st.session_state.selected_filters:
+            df_miejsca_filtrowane = df_miejsca_filtrowane[df_miejsca_filtrowane['kategoria_normalizowana'].isin(st.session_state.selected_filters)]
+        else:
+            df_miejsca_filtrowane = df_miejsca_filtrowane.iloc[0:0]
+
+    # --- INTERAKTYWNA MAPA BEZ POPUPÓW / DYMKÓW ---
+    m_miejsca = folium.Map(location=[35.3, 24.5], zoom_start=8, tiles="CartoDB positron")
+    dodaj_marker_domku(m_miejsca)
+
+    marker_coords_dict = {}
+
+    if not df_miejsca_filtrowane.empty:
+        for _, row in df_miejsca_filtrowane.iterrows():
+            coords = row.get('wspolrzedne')
+            lat, lon = sparsuj_wspolrzedne(coords)
+            if lat is not None and lon is not None:
+                num = str(row.get('numer_miejsca', ''))
+                kat = row.get('kategoria_normalizowana', 'Other')
+                kolor = pobierz_kolor_kategorii(kat)
+                
+                marker_coords_dict[(round(lat, 4), round(lon, 4))] = num
+                
+                icon_html = f'''
+                <div style="
+                    background-color: {kolor};
+                    color: #FFFFFF;
+                    border-radius: 50%;
+                    width: 26px;
+                    height: 26px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 11px;
+                    font-weight: 900;
+                    border: 2px solid #FFFFFF;
+                    box-shadow: 0 2px 5px rgba(0,0,0,0.25);
+                    cursor: pointer;
+                ">{num}</div>
+                '''
+                
+                folium.Marker(
+                    [lat, lon],
+                    icon=folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))
+                ).add_to(m_miejsca)
+
+    map_output = st_folium(
+        m_miejsca, 
+        width=None, 
+        height=320, 
+        returned_objects=["last_object_clicked"], 
+        key="map_places_view"
+    )
+
+    # Bezpośrednie przejście do szczegółów po kliknięciu punktu
+    if map_output and map_output.get("last_object_clicked"):
+        c_lat = map_output["last_object_clicked"].get("lat")
+        c_lng = map_output["last_object_clicked"].get("lng")
+        if c_lat is not None and c_lng is not None:
+            key_lookup = (round(c_lat, 4), round(c_lng, 4))
+            clicked_id = marker_coords_dict.get(key_lookup)
+            
+            if not clicked_id:
+                for (mlat, mlon), num_id in marker_coords_dict.items():
+                    if abs(mlat - c_lat) < 0.005 and abs(mlon - c_lng) < 0.005:
+                        clicked_id = num_id
+                        break
+
+            if clicked_id and st.session_state.active_place_id != str(clicked_id):
+                st.session_state.active_place_id = str(clicked_id)
+                st.query_params["place"] = str(clicked_id)
+                st.rerun()
+
+    # --- LISTA ROZWIJANA BEZ NAPISU ---
+    miejsca_opcje_lista = [f"{r['numer_miejsca']}. {r['nazwa']}" for _, r in df_miejsca_filtrowane.iterrows()]
+    
+    domyslny_indeks = 0
+    if st.session_state.active_place_id:
+        for idx, opt in enumerate(miejsca_opcje_lista):
+            if opt.startswith(f"{st.session_state.active_place_id}."):
+                domyslny_indeks = idx + 1
+                break
+
+    selected_option = st.selectbox(
+        "",
+        options=[None] + miejsca_opcje_lista,
+        index=domyslny_indeks,
+        format_func=lambda x: "🔍 Wybierz atrakcję ze szczegółami..." if x is None else x,
+        key="place_selectbox_selector",
+        label_visibility="collapsed"
+    )
+    
+    docelowy_nr = None
     if selected_option:
-        numer_m = selected_option.split(".")[0].strip()
-        p_row = df_miejsca[df_miejsca['numer_miejsca'] == numer_m]
+        docelowy_nr = selected_option.split(".")[0].strip()
+        st.session_state.active_place_id = docelowy_nr
+    elif st.session_state.active_place_id:
+        docelowy_nr = st.session_state.active_place_id
+
+    if docelowy_nr:
+        p_row = df_miejsca[df_miejsca['numer_miejsca'] == str(docelowy_nr)]
         if not p_row.empty:
             p = p_row.iloc[0]
-            st.markdown(f"### {p['nazwa']}")
-            st.write(p['opis'])
-            st.markdown(f"**🧠 Trudność ADHD:** {p.get('trudnosc_adhd', 'Średnia')}")
-            st.markdown(f"**🛡️ Strategia:** {p.get('strategie_meltdown', 'Brak')}")
-            renderuj_sekcje_notatek(id_miejsca=numer_m)
+            kat_p = kategoryzuj_typ(p.get('typ'))
+            kolor_p = pobierz_kolor_kategorii(kat_p)
+            coords_p = str(p.get('wspolrzedne', '')).replace(" ", "")
+            numer_p = str(p.get('numer_miejsca', '')).strip()
+            nazwa_p = str(p.get('nazwa', '')).strip()
+            pelny_tytul = f"{numer_p}. {nazwa_p}" if numer_p else nazwa_p
+
+            st.markdown(f"""
+            <div class="overview-card" style="margin-top: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                    <div style="font-size: 15pt; font-weight: 900; color: #2B2118; line-height: 1.2;">{pelny_tytul}</div>
+                    <span style="background-color: {kolor_p}; color: #000000; font-size: 8.5pt; font-weight: 800; padding: 3px 10px; border-radius: 12px; white-space: nowrap;">{kat_p}</span>
+                </div>
+                <div class="overview-card-text">{p.get('opis', '')}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Siatka informacyjna
+            st.markdown(f"""
+            <div class="overview-card">
+                <div class="overview-card-title"><span>ℹ️</span> INFORMACJE PRAKTYCZNE</div>
+                <div class="logistics-grid">
+                    <div class="logistics-pill">
+                        <div class="logistics-pill-title">🚗 Czas dojazdu</div>
+                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('czas_dojazdu', '—')}</div>
+                    </div>
+                    <div class="logistics-pill">
+                        <div class="logistics-pill-title">⏱️ Czas na miejscu</div>
+                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('orientacyjny_czas', '—')}</div>
+                    </div>
+                    <div class="logistics-pill">
+                        <div class="logistics-pill-title">💶 Koszt (2+2)</div>
+                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('koszt', '—')}</div>
+                    </div>
+                    <div class="logistics-pill">
+                        <div class="logistics-pill-title">🕒 Godziny otwarcia</div>
+                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('godziny_otwarcia', '—')}</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Osobna ramka: Poziom trudności
+            st.markdown(f"""
+            <div class="overview-card">
+                <div class="overview-card-title"><span>📊</span> POZIOM TRUDNOŚCI</div>
+                <div class="overview-card-text">{p.get('trudnosc_adhd', 'Średni')}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Osobna ramka: Ochrona przed słońcem
+            st.markdown(f"""
+            <div class="overview-card">
+                <div class="overview-card-title"><span>☀️</span> OCHRONA PRZED SŁOŃCEM</div>
+                <div class="overview-card-text">{p.get('ochrona_slonce', 'Standardowa')}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Zwijana ramka: Specyfika ADHD & Sensoryka (domyślnie zwinięta)
+            st.markdown(f"""
+            <details class="overview-details-card">
+                <summary>🧠 SPECYFIKA ADHD & SENSORYKA</summary>
+                <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
+                    <div style="font-size: 9.5pt; color: #2B2118; margin-bottom: 6px;"><b>Potencjał meltdownu:</b> {p.get('potencjal_meltdownu', 'Średni')}</div>
+                    <div style="font-size: 9.5pt; color: #2B2118;"><b>Strategia zaradcza:</b> {p.get('strategie_meltdown', 'Brak')}</div>
+                </div>
+            </details>
+            """, unsafe_allow_html=True)
+
+            # Przyciski akcji
+            if coords_p and ',' in coords_p:
+                st.markdown(f"""
+                <div class="step-action-vertical-bar">
+                    <a href="https://www.google.com/maps/search/?api=1&query={coords_p}" target="_blank" class="step-action-vertical-btn"><span>🧭</span><span>Nawiguj do tego miejsca</span></a>
+                    <a href="https://www.google.com/search?q={p['nazwa']} Kreta" target="_blank" class="step-action-vertical-btn"><span>🔍</span><span>Szukaj w Google</span></a>
+                </div>
+                """, unsafe_allow_html=True)
+
+            renderuj_sekcje_notatek(id_miejsca=str(docelowy_nr))
 
 renderuj_globalny_czat_ai(aktualny_uzytkownik)
