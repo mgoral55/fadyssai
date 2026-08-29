@@ -78,16 +78,28 @@ div[data-baseweb="select"] > div {
     color: #2F241D !important;
 }
 
-/* ZINTEGROWANY STYL WIDŻETU DATY (EXPANDER I KALENDARZ) */
+/* ZINTEGROWANY STYL WIDŻETU EXPANDERA I KALENDARZA */
 [data-testid="stExpander"] {
     border: 1.5px solid #E2DEC8 !important;
     border-radius: 24px !important;
     background-color: #F6F0DD !important;
     margin-bottom: 12px !important;
     box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important;
+    overflow: hidden !important;
 }
-[data-testid="stExpander"] * {
+[data-testid="stExpander"] summary {
+    font-size: 10pt !important;
+    font-weight: 800 !important;
     color: #2B2118 !important;
+}
+[data-testid="stExpander"] summary svg {
+    fill: #8C5338 !important;
+    color: #8C5338 !important;
+}
+[data-testid="stExpander"] [data-testid="stExpanderDetails"] {
+    background-color: #F6F0DD !important;
+    border-top: 1px solid #D1C7AE !important;
+    padding-top: 10px !important;
 }
 
 div[data-baseweb="calendar"] {
@@ -563,6 +575,40 @@ input[type="date"] {
     z-index: -1;
 }
 
+/* STYLIZACJA BIAŁYCH CHECKBOXÓW I ETYKIET */
+div[data-testid="stCheckbox"] {
+    margin-bottom: 6px !important;
+    background-color: #FAF8F2 !important;
+    border: 1.2px solid #E2DEC8 !important;
+    border-radius: 14px !important;
+    padding: 8px 12px !important;
+}
+div[data-testid="stCheckbox"] label {
+    font-size: 9.5pt !important;
+    font-weight: 700 !important;
+    color: #2B2118 !important;
+    line-height: 1.35 !important;
+}
+/* Wymuszenie czystej bieli wewnątrz kwadracika */
+div[data-testid="stCheckbox"] span[role="checkbox"],
+div[data-testid="stCheckbox"] span[data-baseweb="checkbox"] {
+    background-color: #FFFFFF !important;
+    border: 2px solid #8C5338 !important;
+    border-radius: 6px !important;
+}
+div[data-testid="stCheckbox"] span[role="checkbox"][aria-checked="true"],
+div[data-testid="stCheckbox"] span[data-baseweb="checkbox"][aria-checked="true"],
+div[data-testid="stCheckbox"] input:checked + div,
+div[data-testid="stCheckbox"] input:checked + span {
+    background-color: #8C5338 !important;
+    border-color: #8C5338 !important;
+}
+div[data-testid="stCheckbox"] span[role="checkbox"] svg,
+div[data-testid="stCheckbox"] span[data-baseweb="checkbox"] svg {
+    fill: #FFFFFF !important;
+    color: #FFFFFF !important;
+}
+
 /* Pasek nawigacji dolnej */
 .bottom-nav-container {
     position: fixed;
@@ -976,6 +1022,13 @@ def init_db():
     ''')
 
     cursor.execute('''
+        CREATE TABLE IF NOT EXISTS zadania_dzieci_status (
+            klucz_zadania TEXT PRIMARY KEY,
+            ukonczone INTEGER DEFAULT 0
+        )
+    ''')
+
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS aktywna_wycieczka (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             aktualne_id_wycieczki TEXT
@@ -1065,6 +1118,141 @@ def init_db():
     conn.close()
 
 init_db()
+
+def pobierz_status_zadania(klucz_zadania):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT ukonczone FROM zadania_dzieci_status WHERE klucz_zadania = ?', (str(klucz_zadania),))
+    res = cursor.fetchone()
+    conn.close()
+    return bool(res[0]) if res else False
+
+def zapisz_status_zadania(klucz_zadania, ukonczone):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    cursor.execute('INSERT OR REPLACE INTO zadania_dzieci_status (klucz_zadania, ukonczone) VALUES (?, ?)', (str(klucz_zadania), 1 if ukonczone else 0))
+    conn.commit()
+    conn.close()
+
+def sparsuj_liste_zadan(surowy_tekst):
+    if not surowy_tekst or pd.isna(surowy_tekst):
+        return []
+    s = str(surowy_tekst).strip()
+    if not s or s.lower() in ['nan', 'none', 'brak']:
+        return []
+    
+    linie = re.split(r'[\r\n;]+', s)
+    wynik = []
+    for l in linie:
+        czysta = l.strip()
+        if not czysta:
+            continue
+        czesci_num = re.split(r'(?<=[.!?])\s+(?=\d+[\.\)])', czysta)
+        if len(czesci_num) > 1:
+            for p in czesci_num:
+                p_clean = re.sub(r'^[\s\*\-\•\d\.\)]+', '', p).strip()
+                if p_clean:
+                    wynik.append(p_clean)
+        else:
+            czysta = re.sub(r'^[\s\*\-\•\d\.\)]+', '', czysta).strip()
+            if czysta:
+                wynik.append(czysta)
+    return wynik
+
+def pobierz_zadania_dla_kroku(krok_num, krok_nazwa, krok_opis):
+    conn = sqlite3.connect('cretai.db')
+    query = 'SELECT zadania_dla_dzieci FROM miejsca WHERE numer_miejsca = ? OR nazwa LIKE ? OR ? LIKE ("%" || nazwa || "%")'
+    cursor = conn.cursor()
+    cursor.execute(query, (str(krok_num), f"%{krok_nazwa}%", str(krok_nazwa)))
+    rows = cursor.fetchall()
+    conn.close()
+    
+    zadania_miejsc = []
+    for r in rows:
+        if r and r[0]:
+            zadania_miejsc.extend(sparsuj_liste_zadan(r[0]))
+            
+    if zadania_miejsc:
+        return list(dict.fromkeys(zadania_miejsc))
+        
+    zadania_z_opisu = sparsuj_liste_zadan(krok_opis)
+    return zadania_z_opisu
+
+def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    grupy = []
+    
+    zadania_w_drodze = [
+        "Wypatruj przez okno kóz i policz, ile ich zobaczysz na zboczach gór.",
+        "Znajdź najciekawszy kształt chmury podczas jazdy samochodem.",
+        "Kto pierwszy zauważy morze na horyzoncie, zdobywa punkt nawigatora!"
+    ]
+    grupy.append(("🚗 Zadania na Drogę", zadania_w_drodze, f"w_{wycieczka_id}_droga"))
+
+    for _, k in kroki_df.iterrows():
+        nazwa = str(k['nazwa'])
+        knum = str(k['krok_wycieczki'])
+        k_id = str(k['id'])
+        
+        if "domek" in nazwa.lower():
+            continue
+            
+        query = 'SELECT zadania_dla_dzieci FROM miejsca WHERE numer_miejsca = ? OR nazwa LIKE ? OR ? LIKE ("%" || nazwa || "%")'
+        cursor.execute(query, (str(knum), f"%{nazwa}%", str(nazwa)))
+        rows = cursor.fetchall()
+        
+        zad_miejsca = []
+        for r in rows:
+            if r and r[0]:
+                zad_miejsca.extend(sparsuj_liste_zadan(r[0]))
+        
+        zad_miejsca = list(dict.fromkeys(zad_miejsca))
+        if zad_miejsca:
+            grupy.append((f"📍 {nazwa}", zad_miejsca, f"w_{wycieczka_id}_krok_{k_id}"))
+
+    conn.close()
+    return grupy
+
+def renderuj_grupy_zadan_wycieczki(grupy_zadan):
+    if not grupy_zadan:
+        return
+    with st.expander("🎯 ZADANIA DLA DZIECI / MISJE", expanded=False):
+        for tytul_grupy, lista_zadan, prefix in grupy_zadan:
+            if not lista_zadan:
+                continue
+            st.markdown(f'<div style="font-size: 10pt; font-weight: 800; color: #8C5338; margin-top: 10px; margin-bottom: 6px; padding-bottom: 2px; border-bottom: 1.5px solid #E2DEC8;">{tytul_grupy}</div>', unsafe_allow_html=True)
+            for idx, zad in enumerate(lista_zadan):
+                klucz = f"{prefix}_task_{idx}"
+                stan = pobierz_status_zadania(klucz)
+                nowy_stan = st.checkbox(
+                    zad,
+                    value=stan,
+                    key=f"cb_{klucz}"
+                )
+                if nowy_stan != stan:
+                    zapisz_status_zadania(klucz, nowy_stan)
+                    if nowy_stan:
+                        st.toast(f"🌟 Brawo! Ukończono misję!", icon="🎯")
+                    st.rerun()
+
+def renderuj_zwijana_sekcje_zadan(zadania, prefix_klucza, tytul_naglowka="🎯 ZADANIA DLA DZIECI / MISJE"):
+    if not zadania:
+        return
+    with st.expander(tytul_naglowka, expanded=False):
+        for idx, zad in enumerate(zadania):
+            klucz = f"{prefix_klucza}_task_{idx}"
+            aktualny_stan = pobierz_status_zadania(klucz)
+            nowy_stan = st.checkbox(
+                zad,
+                value=aktualny_stan,
+                key=f"cb_{klucz}"
+            )
+            if nowy_stan != aktualny_stan:
+                zapisz_status_zadania(klucz, nowy_stan)
+                if nowy_stan:
+                    st.toast(f"🌟 Brawo! Ukończono misję!", icon="🎯")
+                st.rerun()
 
 def pobierz_ustawienia_z_db(uzytkownik):
     conn = sqlite3.connect('cretai.db')
@@ -1709,6 +1897,9 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         </details>
         """, unsafe_allow_html=True)
 
+    grupy_zadan = pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df)
+    renderuj_grupy_zadan_wycieczki(grupy_zadan)
+
     st.markdown('<div class="day-plan-container"><div class="day-plan-heading">Plan na dzień</div><div class="timeline-wrapper">', unsafe_allow_html=True)
     
     current_expanded_param = st.query_params.get("expand")
@@ -1880,6 +2071,9 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 f'</div>'
             )
             st.markdown(details_html, unsafe_allow_html=True)
+
+            zadania_kroku = pobierz_zadania_dla_kroku(krok_num, nazwa, opis_glowny)
+            renderuj_zwijana_sekcje_zadan(zadania_kroku, f"krok_{krok_row_id}", tytul_naglowka="🎯 ZADANIA DLA DZIECI / MISJE")
 
             with st.expander("➕ Dodaj pozycję zakupową"):
                 with st.form(key=f"form_inline_zakup_{krok_row_id}"):
@@ -2319,6 +2513,9 @@ elif st.session_state.active_tab == "zabytek":
                 </div>
             </details>
             """, unsafe_allow_html=True)
+
+            zadania_miejsca = sparsuj_liste_zadan(p.get('zadania_dla_dzieci', ''))
+            renderuj_zwijana_sekcje_zadan(zadania_miejsca, f"miejsce_{docelowy_nr}", tytul_naglowka="🎯 ZADANIA DLA DZIECI / MISJE")
 
             if coords_p and ',' in coords_p:
                 st.markdown(f"""
