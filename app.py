@@ -666,7 +666,6 @@ SKLEP_LAT = 35.586222
 SKLEP_LON = 24.091861
 
 # --- NORMALIZACJA KATEGORII I KOLORÓW ---
-# Must have: różowy, Nice to have: pomarańczowy, Plaża: niebieski, Activity: żółty, Shop: fioletowy, Other: zielony
 CATEGORIES_CONFIG = {
     "Must have": {"color": "#E84393"},
     "Nice to have": {"color": "#E67E22"},
@@ -1581,11 +1580,9 @@ if "place" in st.query_params:
 if "active_place_id" not in st.session_state:
     st.session_state.active_place_id = None
 
-# Obsługa stanu filtrów kategorii
-if "selected_filters" not in st.session_state:
-    st.session_state.selected_filters = set(CATEGORIES_CONFIG.keys())
-elif isinstance(st.session_state.selected_filters, list):
-    st.session_state.selected_filters = set(st.session_state.selected_filters)
+# Obsługa stanu filtrów kategorii (Single-choice: None = wszystkie)
+if "selected_category" not in st.session_state:
+    st.session_state.selected_category = None
 
 df_miejsca = pobierz_wszystkie_miejsca()
 wycieczki_options = pobierz_skrocone_opcje_wycieczek()
@@ -1952,64 +1949,77 @@ elif st.session_state.active_tab == "zabytek":
 </div>
 """, unsafe_allow_html=True)
     
-    # --- NIEZAWODNE, NATIVE STREAMLIT PRZYCISKI FILTRÓW (LEGENDA) ---
+    # --- JEDNOLITE PRZYCISKI FILTRÓW (SINGLE-CHOICE LEGENDA) ---
     all_cats = list(CATEGORIES_CONFIG.keys())
+    active_cat = st.session_state.selected_category
     
-    # Generowanie dynamicznego CSS dla przycisków w filtrze
+    # Generowanie dynamicznego CSS z perfekcyjnym wyśrodkowaniem i równą wysokością
     button_styles = []
     for idx, cat_name in enumerate(all_cats):
-        is_active = cat_name in st.session_state.selected_filters
+        is_selected = (active_cat == cat_name)
+        is_all_active = (active_cat is None)
+        
         conf = CATEGORIES_CONFIG[cat_name]
-        bg_col = conf["color"] if is_active else "#EBE8DF"
-        border_col = conf["color"] if is_active else "#D6D0C4"
-        opacity = "1.0" if is_active else "0.55"
+        
+        if is_selected or is_all_active:
+            bg_col = conf["color"]
+            border_col = conf["color"]
+            opacity = "1.0"
+            border_width = "2px" if is_selected else "1.5px"
+        else:
+            bg_col = "#E0DCCE"
+            border_col = "#C8C2B0"
+            opacity = "0.45"
+            border_width = "1.5px"
         
         button_styles.append(f"""
         div[data-testid="stHorizontalBlock"] > div:nth-child({idx + 1}) button {{
             background-color: {bg_col} !important;
-            color: #000000 !important;
-            border: 1.5px solid {border_col} !important;
+            color: #2F241D !important;
+            border: {border_width} solid {border_col} !important;
             opacity: {opacity} !important;
-            padding: 3px 6px !important;
-            min-height: 28px !important;
-            height: 28px !important;
-            font-size: 7.5pt !important;
-            font-weight: 800 !important;
-            border-radius: 10px !important;
-            line-height: 1 !important;
+            padding: 0px 4px !important;
+            height: 34px !important;
+            min-height: 34px !important;
+            max-height: 34px !important;
+            border-radius: 12px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            text-align: center !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
         }}
         div[data-testid="stHorizontalBlock"] > div:nth-child({idx + 1}) button p {{
-            color: #000000 !important;
+            color: #2F241D !important;
             font-size: 7.5pt !important;
             font-weight: 800 !important;
+            line-height: 1.1 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            white-space: normal !important;
+            text-align: center !important;
         }}
         """)
 
     st.markdown(f"<style>{''.join(button_styles)}</style>", unsafe_allow_html=True)
 
-    cols = st.columns(len(all_cats))
+    cols = st.columns(len(all_cats), gap="small")
     for idx, cat_name in enumerate(all_cats):
         with cols[idx]:
-            is_active = cat_name in st.session_state.selected_filters
-            icon_prefix = "✓ " if is_active else "+ "
-            if st.button(f"{icon_prefix}{cat_name}", key=f"btn_cat_filter_{cat_name}", use_container_width=True):
-                if is_active:
-                    if len(st.session_state.selected_filters) > 1:
-                        st.session_state.selected_filters.remove(cat_name)
-                    else:
-                        st.session_state.selected_filters = set(all_cats)
+            btn_label = f"✓ {cat_name}" if active_cat == cat_name else cat_name
+            if st.button(btn_label, key=f"btn_cat_filter_{cat_name}", use_container_width=True):
+                if st.session_state.selected_category == cat_name:
+                    st.session_state.selected_category = None  # Odznaczenie -> powrót do wszystkich
                 else:
-                    st.session_state.selected_filters.add(cat_name)
+                    st.session_state.selected_category = cat_name  # Wybór pojedynczej kategorii
                 st.rerun()
 
     # Filtrowanie miejsc
     df_miejsca_filtrowane = df_miejsca.copy()
     if not df_miejsca_filtrowane.empty:
         df_miejsca_filtrowane['kategoria_normalizowana'] = df_miejsca_filtrowane['typ'].apply(kategoryzuj_typ)
-        if st.session_state.selected_filters:
-            df_miejsca_filtrowane = df_miejsca_filtrowane[df_miejsca_filtrowane['kategoria_normalizowana'].isin(st.session_state.selected_filters)]
-        else:
-            df_miejsca_filtrowane = df_miejsca_filtrowane.iloc[0:0]
+        if st.session_state.selected_category is not None:
+            df_miejsca_filtrowane = df_miejsca_filtrowane[df_miejsca_filtrowane['kategoria_normalizowana'] == st.session_state.selected_category]
 
     # --- INTERAKTYWNA MAPA BEZ POPUPÓW / DYMKÓW ---
     m_miejsca = folium.Map(location=[35.3, 24.5], zoom_start=8, tiles="CartoDB positron")
