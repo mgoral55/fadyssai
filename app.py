@@ -45,13 +45,13 @@ header[data-testid="stHeader"] {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* Pasek boczny */
+/* PASEK BOCZNY - DOPASOWANY STYL I KOLORYSTYKA */
 [data-testid="stSidebar"] {
-    background-color: #F8F6F0 !important;
-    border-right: 1.5px solid #D1D9C5;
+    background-color: #F6F0DD !important;
+    border-right: 1.5px solid #E2DEC8 !important;
 }
 [data-testid="stSidebar"] * {
-    color: #2F241D !important;
+    color: #2B2118 !important;
 }
 
 /* Nagłówki */
@@ -60,7 +60,7 @@ h1, h2, h3, h4, h5 {
     font-weight: 800;
 }
 
-/* INPUTY I COMBOBOXY */
+/* INPUTY I COMBOBOXY W CAŁEJ APLIKACJI ORAZ PANELU BOCZNYM */
 input, textarea, .stChatInput textarea {
     background-color: #FAF8F2 !important;
     color: #2F241D !important;
@@ -76,6 +76,18 @@ div[data-baseweb="select"] > div {
     border-color: #D6D2C4 !important;
     border-radius: 16px !important;
     color: #2F241D !important;
+}
+
+/* ZINTEGROWANY STYL NOTATEK I ROZWIJANYCH ELEMENTÓW (EXPANDERÓW) */
+[data-testid="stExpander"] {
+    border: 1.5px solid #E2DEC8 !important;
+    border-radius: 24px !important;
+    background-color: #F6F0DD !important;
+    margin-bottom: 12px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important;
+}
+[data-testid="stExpander"] * {
+    color: #2B2118 !important;
 }
 
 /* Belka nagłówkowa aplikacji */
@@ -588,16 +600,6 @@ div[data-baseweb="select"] > div {
     padding: 0.5rem 1rem !important;
     min-height: 44px !important;
     font-size: 10.5pt !important;
-}
-
-[data-testid="stExpander"] {
-    border: 1.5px solid #D8D2BC !important;
-    border-radius: 18px !important;
-    background-color: #FAF8F2 !important;
-    margin-bottom: 8px !important;
-}
-[data-testid="stExpander"] * {
-    color: #2B2118 !important;
 }
 
 .note-card {
@@ -1578,7 +1580,7 @@ def renderuj_globalny_czat_ai(uzytkownik):
 
         dzisiaj_str = date.today().strftime("%Y-%m-%d")
         zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
-        system_prompt = f"Jesteś asystentem CretAi na Krecie. Dziś: {dzisiaj_str}.\n{zewnetrzny_kontekst}"
+        system_prompt = f"Jesteś asystentem podróży CretAi na Krecie. Dziś: {dzisiaj_str}.\n{zewnetrzny_kontekst}"
         
         chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
         chat_container = st.container(height=200)
@@ -1804,7 +1806,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             badge_class = "badge-miejsce"
             has_nav = bool(coords_clean and ',' in coords_clean)
 
-        # Zostawiamy wyłącznie napis "Śniadanie", "Obiad" lub "Kolacja" bazując na rodzaju posiłku
         df_pos = pobierz_posilki_dla_kroku(k['id'])
         opis_tekst = ""
         if not df_pos.empty:
@@ -2009,7 +2010,7 @@ elif st.session_state.active_tab == "zabytek":
 <div style="font-size:24px;">🏛️</div>
 <div><div class="adventure-title-text">CretAi • Baza Miejsc</div></div>
 </div>
-""", unsafe_allow_html=True)
+""", unsafe_allow_html5=True)
     
     miejsca_opcje_lista = [f"{r['numer_miejsca']}. {r['nazwa']}" for _, r in df_miejsca.iterrows()]
     selected_option = st.selectbox("Wybierz miejsce:", options=[None] + miejsca_opcje_lista, format_func=lambda x: "Wybierz atrakcję..." if x is None else x)
