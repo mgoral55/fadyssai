@@ -667,12 +667,12 @@ SKLEP_LON = 24.091861
 
 # --- NORMALIZACJA KATEGORII I KOLORÓW ---
 CATEGORIES_CONFIG = {
-    "Must have": {"color": "#E84393"},
-    "Nice to have": {"color": "#E67E22"},
-    "Plaża": {"color": "#0984E3"},
-    "Activity": {"color": "#F1C40F"},
-    "Shop": {"color": "#8E44AD"},
-    "Other": {"color": "#27AE60"}
+    "Must have": {"color": "#E84393", "slug": "must_have"},
+    "Nice to have": {"color": "#E67E22", "slug": "nice_to_have"},
+    "Plaża": {"color": "#0984E3", "slug": "plaza"},
+    "Activity": {"color": "#F1C40F", "slug": "activity"},
+    "Shop": {"color": "#8E44AD", "slug": "shop"},
+    "Other": {"color": "#27AE60", "slug": "other"}
 }
 
 def kategoryzuj_typ(typ_str):
@@ -1949,17 +1949,29 @@ elif st.session_state.active_tab == "zabytek":
 </div>
 """, unsafe_allow_html=True)
     
-    # --- JEDNOLITE PRZYCISKI FILTRÓW (SINGLE-CHOICE LEGENDA) ---
+    # --- JEDNOLITE PRZYCISKI FILTRÓW (UKŁAD 2x3 POD EKRANY MOBILNE & DESKTOP) ---
     all_cats = list(CATEGORIES_CONFIG.keys())
     active_cat = st.session_state.selected_category
     
-    # Generowanie dynamicznego CSS z perfekcyjnym wyśrodkowaniem i równą wysokością
-    button_styles = []
-    for idx, cat_name in enumerate(all_cats):
+    # CSS wymuszający 3 kolumny w wierszu oraz precyzyjne kolorowanie każdego przycisku
+    button_styles = ["""
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 6px !important;
+        margin-bottom: 6px !important;
+    }
+    div[data-testid="stHorizontalBlock"] > div {
+        flex: 1 1 0px !important;
+        min-width: 0 !important;
+    }
+    """]
+
+    for cat_name, conf in CATEGORIES_CONFIG.items():
         is_selected = (active_cat == cat_name)
         is_all_active = (active_cat is None)
-        
-        conf = CATEGORIES_CONFIG[cat_name]
+        slug = conf["slug"]
         
         if is_selected or is_all_active:
             bg_col = conf["color"]
@@ -1973,45 +1985,65 @@ elif st.session_state.active_tab == "zabytek":
             border_width = "1.5px"
         
         button_styles.append(f"""
-        div[data-testid="stHorizontalBlock"] > div:nth-child({idx + 1}) button {{
+        div.st-key-btn_cat_filter_{slug} button {{
             background-color: {bg_col} !important;
             color: #2F241D !important;
             border: {border_width} solid {border_col} !important;
             opacity: {opacity} !important;
-            padding: 0px 4px !important;
-            height: 34px !important;
-            min-height: 34px !important;
-            max-height: 34px !important;
-            border-radius: 12px !important;
+            padding: 0px 2px !important;
+            height: 32px !important;
+            min-height: 32px !important;
+            max-height: 32px !important;
+            border-radius: 10px !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
             text-align: center !important;
             box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
+            width: 100% !important;
         }}
-        div[data-testid="stHorizontalBlock"] > div:nth-child({idx + 1}) button p {{
+        div.st-key-btn_cat_filter_{slug} button p {{
             color: #2F241D !important;
-            font-size: 7.5pt !important;
+            font-size: 8pt !important;
             font-weight: 800 !important;
-            line-height: 1.1 !important;
+            line-height: 1.0 !important;
             margin: 0 !important;
             padding: 0 !important;
-            white-space: normal !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
             text-align: center !important;
         }}
         """)
 
     st.markdown(f"<style>{''.join(button_styles)}</style>", unsafe_allow_html=True)
 
-    cols = st.columns(len(all_cats), gap="small")
-    for idx, cat_name in enumerate(all_cats):
-        with cols[idx]:
+    # Rząd 1 (Must have, Nice to have, Plaża)
+    row1_cats = all_cats[:3]
+    cols_row1 = st.columns(3, gap="small")
+    for idx, cat_name in enumerate(row1_cats):
+        slug = CATEGORIES_CONFIG[cat_name]["slug"]
+        with cols_row1[idx]:
             btn_label = f"✓ {cat_name}" if active_cat == cat_name else cat_name
-            if st.button(btn_label, key=f"btn_cat_filter_{cat_name}", use_container_width=True):
+            if st.button(btn_label, key=f"btn_cat_filter_{slug}", use_container_width=True):
                 if st.session_state.selected_category == cat_name:
-                    st.session_state.selected_category = None  # Odznaczenie -> powrót do wszystkich
+                    st.session_state.selected_category = None
                 else:
-                    st.session_state.selected_category = cat_name  # Wybór pojedynczej kategorii
+                    st.session_state.selected_category = cat_name
+                st.rerun()
+
+    # Rząd 2 (Activity, Shop, Other)
+    row2_cats = all_cats[3:]
+    cols_row2 = st.columns(3, gap="small")
+    for idx, cat_name in enumerate(row2_cats):
+        slug = CATEGORIES_CONFIG[cat_name]["slug"]
+        with cols_row2[idx]:
+            btn_label = f"✓ {cat_name}" if active_cat == cat_name else cat_name
+            if st.button(btn_label, key=f"btn_cat_filter_{slug}", use_container_width=True):
+                if st.session_state.selected_category == cat_name:
+                    st.session_state.selected_category = None
+                else:
+                    st.session_state.selected_category = cat_name
                 st.rerun()
 
     # Filtrowanie miejsc
