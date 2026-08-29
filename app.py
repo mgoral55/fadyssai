@@ -689,7 +689,11 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki):
 
     kroki.sort(key=lambda x: klucz_sortowania_okienka(x[3]))
 
-    czasy_dojazdu_krokow = []
+    krok_ids = [k[0] for k in kroki]
+    if krok_ids:
+        placeholders = ','.join(['?'] * len(krok_ids))
+        cursor.execute(f'DELETE FROM czasy_dojazdu WHERE id_kroku_z IN ({placeholders}) OR id_kroku_do IN ({placeholders})', krok_ids + krok_ids)
+
     for idx in range(len(kroki) - 1):
         k1_id, _, k1_wsp, _, _ = kroki[idx]
         k2_id, _, k2_wsp, _, _ = kroki[idx + 1]
@@ -699,13 +703,11 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki):
         
         if lat1 is not None and lon1 is not None and lat2 is not None and lon2 is not None:
             tekst_dojazdu, minuty = oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2)
-            cursor.execute('UPDATE krok_wycieczki SET czas_dojazdu_z_poprzedniego_kroku = ? WHERE id = ?', (tekst_dojazdu, k1_id))
-            czasy_dojazdu_krokow.append(minuty)
-        else:
-            cursor.execute('UPDATE krok_wycieczki SET czas_dojazdu_z_poprzedniego_kroku = ? WHERE id = ?', ("~25 min", k1_id))
-            czasy_dojazdu_krokow.append(25)
-
-    cursor.execute('UPDATE krok_wycieczki SET czas_dojazdu_z_poprzedniego_kroku = NULL WHERE id = ?', (kroki[-1][0],))
+            szacowany_postoj = 15
+            cursor.execute('''
+                INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
+                VALUES (?, ?, ?, ?)
+            ''', (k1_id, k2_id, tekst_dojazdu, szacowany_postoj))
 
     pierwsze_okienko = kroki[0][3] or "07:00 - 07:30"
     ostatnie_okienko = kroki[-1][3] or "18:00 - 18:30"
@@ -825,7 +827,6 @@ def init_db():
             krok_wycieczki TEXT,
             nazwa TEXT,
             wspolrzedne TEXT,
-            czas_dojazdu_z_poprzedniego_kroku TEXT DEFAULT NULL,
             okienko_zwiedzania TEXT,
             godzina_ewakuacji TEXT,
             czerwona_strefa_ostrzezenie TEXT,
@@ -834,6 +835,18 @@ def init_db():
             potencjal_meltdownu TEXT,
             strategie_meltdown TEXT,
             opis TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS czasy_dojazdu (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_kroku_z INTEGER,
+            id_kroku_do INTEGER,
+            czas_przejazdu TEXT,
+            szacowany_czas_postoju INTEGER,
+            FOREIGN KEY (id_kroku_z) REFERENCES krok_wycieczki(id) ON DELETE CASCADE,
+            FOREIGN KEY (id_kroku_do) REFERENCES krok_wycieczki(id) ON DELETE CASCADE
         )
     ''')
 
@@ -985,14 +998,29 @@ def zapisz_ustawienia_w_db(uzytkownik, api_key, dostawca_ai, model_ai):
     conn.commit()
     conn.close()
 
-def sprawdz_czas_dojazdu_w_locie(punkt_a_gps, punkt_b_gps):
+def sprawdź_pogodę_w_locie(szerokosc_geograficzna, dlugosc_geograficzna, data_wspolrzedne="dzisiaj"):
     try:
-        lat1, lon1 = [float(x.strip()) for x in punkt_a_gps.split(',')]
-        lat2, lon2 = [float(x.strip()) for x in punkt_b_gps.split(',')]
-        tekst, minuty = oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2)
-        return f"Czas przejazdu między ({punkt_a_gps}) a ({punkt_b_gps}): {tekst} ({minuty} minut)."
-    except Exception as e:
-        return f"Błąd kalkulacji trasy GPS: {e}"
+        lat = float(szerokosc_geograficzna)
+        lon = float(dlugosc_geograficzna)
+    except:
+        return "Błąd: Niepoprawne współrzędne geograficzne."
+    
+    docelowa_data = str(data_wspolrzedne).strip()
+    if docelowa_data.lower() in ["dzisiaj", "today", ""]:
+        docelowa_data = date.today().strftime("%Y-%m-%d")
+
+    prognoza = pobierz_prognoze_pogody(lat, lon, docelowa_data)
+    if not prognoza:
+        return f"Nie udało się pobrać pogody dla współrzędnych {lat}, {lon} na dzień {docelowa_data}."
+    
+    max_t = prognoza.get('maxtempC', 'brak')
+    min_t = prognoza.get('mintempC', 'brak')
+    hourly = prognoza.get('hourly', [])
+    opis = "Brak szczegółów"
+    if hourly:
+        opis = hourly[0].get('weatherDesc', [{}])[0].get('value', 'Brak opisu')
+
+    return f"Prognoza pogody dla współrzędnych ({lat}, {lon}) na dzień {docelowa_data}: Maks: {max_t}°C, Min: {min_t}°C, Stan: {opis}."
 
 @st.cache_data(ttl=3600)
 def pobierz_prognoze_pogody(lat, lon, data_docelowa):
@@ -1056,30 +1084,6 @@ def pobierz_szczegoly_pogody_dla_godziny(wspolrzedne, planowana_data, okienko_cz
             "data": planowana_data
         }
     return None
-
-def sprawdź_pogodę_w_locie(szerokosc_geograficzna, dlugosc_geograficzna, data_wspolrzedne="dzisiaj"):
-    try:
-        lat = float(szerokosc_geograficzna)
-        lon = float(dlugosc_geograficzna)
-    except:
-        return "Błąd: Niepoprawne współrzędne geograficzne."
-    
-    docelowa_data = str(data_wspolrzedne).strip()
-    if docelowa_data.lower() in ["dzisiaj", "today", ""]:
-        docelowa_data = date.today().strftime("%Y-%m-%d")
-
-    prognoza = pobierz_prognoze_pogody(lat, lon, docelowa_data)
-    if not prognoza:
-        return f"Nie udało się pobrać pogody dla współrzędnych {lat}, {lon} na dzień {docelowa_data}."
-    
-    max_t = prognoza.get('maxtempC', 'brak')
-    min_t = prognoza.get('mintempC', 'brak')
-    hourly = prognoza.get('hourly', [])
-    opis = "Brak szczegółów"
-    if hourly:
-        opis = hourly[0].get('weatherDesc', [{}])[0].get('value', 'Brak opisu')
-
-    return f"Prognoza pogody dla współrzędnych ({lat}, {lon}) na dzień {docelowa_data}: Maks: {max_t}°C, Min: {min_t}°C, Stan: {opis}."
 
 def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
     if not planowana_data or not str(planowana_data).strip() or kroki_df.empty:
@@ -1643,13 +1647,13 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
     conn = sqlite3.connect('cretai.db')
     wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
     kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
+    czasy_dojazdu_df = pd.read_sql('SELECT * FROM czasy_dojazdu', conn)
     conn.close()
     
     if wycieczka_row.empty:
         st.info("Brak danych wycieczki.")
         return
 
-    # Chronologiczne posortowanie kroków
     if not kroki_df.empty:
         kroki_df['sort_key'] = kroki_df['okienko_zwiedzania'].apply(klucz_sortowania_okienka)
         kroki_df = kroki_df.sort_values(by='sort_key').drop(columns=['sort_key'])
@@ -1665,7 +1669,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
     formatted_date_str = formatuj_date_pl(parsed_date)
 
-    # 1. GÓRNA SEKCJA: Tytuł i Data
     st.markdown(f'<div class="trip-top-section"><div class="trip-main-title">Twoja wycieczka</div><div class="trip-date-subtitle"><span>{formatted_date_str}</span><span style="font-size: 10pt;">▼</span></div></div>', unsafe_allow_html=True)
 
     with st.expander("📅 Zmień datę wycieczki", expanded=False):
@@ -1687,7 +1690,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
     if pokaz_pogode:
         renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data_val)
 
-    # 2. LOGISTYKA DNIA, CEL WYCIECZKI I ZWIJANA TAKTYKA DNIA
     pobudka_val = w_gen.get('pobudka', '06:00') if pd.notna(w_gen.get('pobudka')) else '06:00'
     wyjazd_val = w_gen.get('czas_wyjazdu', '07:30') if pd.notna(w_gen.get('czas_wyjazdu')) else '07:30'
     powrot_val = w_gen.get('szacowana_godzina_powrotu', '17:33') if pd.notna(w_gen.get('szacowana_godzina_powrotu')) else '17:33'
@@ -1762,14 +1764,13 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
             st_folium(m_trasa, width="100%", height=220, returned_objects=[])
 
-    # 3. GŁÓWNA KARTA "Plan na dzień" Z CIĄGŁĄ LINIĄ TIMELINE
     st.markdown('<div class="day-plan-container"><div class="day-plan-heading">Plan na dzień</div><div class="timeline-wrapper">', unsafe_allow_html=True)
     
     current_expanded_param = st.query_params.get("expand")
     
     total_steps = len(kroki_df)
     for idx, (_, k) in enumerate(kroki_df.iterrows()):
-        krok_row_id = str(k['id'])
+        krok_row_id = int(k['id'])
         nazwa = str(k['nazwa'])
         okienko = str(k.get('okienko_zwiedzania', ''))
         krok_num = str(k['krok_wycieczki'])
@@ -1782,10 +1783,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         is_first = (idx == 0)
         is_last = (idx == total_steps - 1)
         
-        opis_tekst = str(k.get('podsumowanie_taktyki', '')).strip()
-        if not opis_tekst or opis_tekst == "None":
-            opis_tekst = str(k.get('opis', '')).strip()
-
         if is_first:
             badge_symbol = "🛏️"
             tytul_wyswietlany = "Pobudka"
@@ -1807,14 +1804,21 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             badge_class = "badge-miejsce"
             has_nav = bool(coords_clean and ',' in coords_clean)
 
+        # Zostawiamy wyłącznie napis "Śniadanie", "Obiad" lub "Kolacja" bazując na rodzaju posiłku
         df_pos = pobierz_posilki_dla_kroku(k['id'])
-        posilki_podpis = ""
+        opis_tekst = ""
         if not df_pos.empty:
+            posiłki_str = []
             for _, prow in df_pos.iterrows():
-                if "obiad" in str(prow['rodzaj_posilku']).lower() and not is_first and not is_last:
-                    posilki_podpis = f"<br><span style='color:#8C5338; font-weight:700;'>🍲 Posiłek: {prow['opis']}</span>"
+                p_rodzaj = str(prow.get('rodzaj_posilku', '')).strip().lower()
+                if p_rodzaj in ['śniadanie', 'obiad', 'kolacja']:
+                    posiłki_str.append(p_rodzaj.capitalize())
+                elif p_rodzaj == 'przekąska':
+                    posiłki_str.append("Przekąska")
+            if posiłki_str:
+                opis_tekst = f"<span style='color:#8C5338; font-weight:700;'>🍲 {' / '.join(posiłki_str)}</span>"
 
-        is_expanded = (current_expanded_param == krok_row_id)
+        is_expanded = (current_expanded_param == str(krok_row_id))
         toggle_expand_url = f"?tab=route" if is_expanded else f"?tab=route&expand={krok_row_id}"
 
         nav_btn_html = ""
@@ -1835,14 +1839,13 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             f'</div>'
             f'<div class="timeline-content-col">'
             f'<div class="timeline-item-title">{tytul_wyswietlany}</div>'
-            f'<div class="timeline-item-desc">{opis_tekst}{posilki_podpis}</div>'
+            f'<div class="timeline-item-desc">{opis_tekst}</div>'
             f'</div>'
             f'{nav_btn_html}'
             f'</div>'
         )
         st.markdown(row_html, unsafe_allow_html=True)
 
-        # 4. ROZSUWANY TAB ZE SZCZEGÓŁAMI KROKU
         if is_expanded:
             google_search_url = f"https://www.google.com/search?q={nazwa} Kreta"
             sklep_maps_url = f"https://www.google.com/maps/search/supermarket/@{coords_clean},15z" if coords_clean else "#"
@@ -1861,7 +1864,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             opis_glowny = str(k.get('opis', '')).strip()
             opis_glowny_html = f'<div class="step-desc-bubble">{opis_glowny}</div>' if (opis_glowny and opis_glowny != "None") else ""
 
-            # EWAKUACJA I OSTRZEŻENIE
             ewakuacja_val = str(k.get('godzina_ewakuacji', '')).strip()
             evac_html = ""
             if ewakuacja_val and ewakuacja_val != "None" and ewakuacja_val != "Brak":
@@ -1885,7 +1887,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             taktyka_val = k.get("podsumowanie_taktyki", "Brak szczegółów taktyki")
             regen_val = k.get("strefa_luzu_i_regeneracji", "Brak strefy regeneracji")
 
-            # Checklista zakupów HTML z formularzem dodawania przez Query Params
             df_zakupy = pobierz_zakupy_dla_kroku(k['id'])
             zakupy_items_html = ""
             if df_zakupy.empty:
@@ -1931,7 +1932,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             )
             st.markdown(details_html, unsafe_allow_html=True)
 
-            # Subtelny expander do dodawania zakupów wewnątrz otwartego kroku
             with st.expander("➕ Dodaj pozycję zakupową"):
                 with st.form(key=f"form_inline_zakup_{krok_row_id}"):
                     p_nazwa = st.text_input("Nazwa produktu", placeholder="np. Woda, owoce")
@@ -1942,10 +1942,14 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                             st.session_state["flash_toast"] = "🛒 Dodano produkt!"
                             st.rerun()
 
-        # Czas dojazdu do kolejnego punktu
-        czas_dojazdu_dalej = k.get('czas_dojazdu_z_poprzedniego_kroku')
-        if idx < len(kroki_df) - 1 and pd.notna(czas_dojazdu_dalej) and str(czas_dojazdu_dalej).strip() != "":
-            st.markdown(f'<div class="timeline-transit-row"><div style="background-color: #EFE8D6; border: 1.5px solid #D6CEBC; border-radius: 20px; padding: 4px 14px; font-size: 8.5pt; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #8C5338;"><span>🚗</span> Dojazd do kolejnego punktu: <span style="color: #2B2118;">{czas_dojazdu_dalej}</span></div></div>', unsafe_allow_html=True)
+        if idx < len(kroki_df) - 1:
+            k2_row_id = int(kroki_df.iloc[idx + 1]['id'])
+            match_row = czasy_dojazdu_df[(czasy_dojazdu_df['id_kroku_z'] == krok_row_id) & (czasy_dojazdu_df['id_kroku_do'] == k2_row_id)]
+            if not match_row.empty:
+                czas_dojazdu_dalej = match_row.iloc[0]['czas_przejazdu']
+                postoj_val = match_row.iloc[0]['szacowany_czas_postoju']
+                if pd.notna(czas_dojazdu_dalej) and str(czas_dojazdu_dalej).strip() != "":
+                    st.markdown(f'<div class="timeline-transit-row"><div style="background-color: #EFE8D6; border: 1.5px solid #D6CEBC; border-radius: 20px; padding: 4px 14px; font-size: 8.5pt; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #8C5338;"><span>🚗</span> Dojazd: <span style="color: #2B2118;">{czas_dojazdu_dalej}</span> | ⏱️ Postój: <span style="color: #2B2118;">{postoj_val} min</span></div></div>', unsafe_allow_html=True)
 
     st.markdown('</div></div>', unsafe_allow_html=True)
     renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
