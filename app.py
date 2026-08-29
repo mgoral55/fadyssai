@@ -78,7 +78,7 @@ div[data-baseweb="select"] > div {
     color: #2F241D !important;
 }
 
-/* ZINTEGROWANY STYL NOTATEK I ROZWIJANYCH ELEMENTÓW (EXPANDERÓW) */
+/* ZINTEGROWANY STYL WIDŻETU DATY (EXPANDER I KALENDARZ) */
 [data-testid="stExpander"] {
     border: 1.5px solid #E2DEC8 !important;
     border-radius: 24px !important;
@@ -88,6 +88,20 @@ div[data-baseweb="select"] > div {
 }
 [data-testid="stExpander"] * {
     color: #2B2118 !important;
+}
+
+/* Poprawka kolorystyczna widgetu kalendarza Streamlit (Data Input) */
+div[data-baseweb="calendar"] {
+    background-color: #F6F0DD !important;
+    color: #2B2118 !important;
+}
+div[data-baseweb="calendar"] * {
+    color: #2B2118 !important;
+}
+input[type="date"] {
+    background-color: #FAF8F2 !important;
+    color: #2B2118 !important;
+    border: 1.5px solid #D6D2C4 !important;
 }
 
 /* Belka nagłówkowa aplikacji */
@@ -218,7 +232,7 @@ div[data-baseweb="select"] > div {
     color: #2B2118;
 }
 
-/* GŁÓWNA KARTA PLANU DNIA */
+/* GŁÓWNA KARTA PLANu DNIA */
 .day-plan-container {
     background-color: #F6F0DD;
     border-radius: 36px 36px 28px 28px;
@@ -312,6 +326,26 @@ div[data-baseweb="select"] > div {
 .timeline-icon-badge:hover {
     transform: scale(1.08);
 }
+
+/* NIEDOTYKALNE BADGE DLA POBUDKI I POWROTU */
+.timeline-icon-badge-static {
+    position: relative;
+    z-index: 3;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13pt;
+    font-weight: 900;
+    color: #FFFFFF !important;
+    text-decoration: none !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+    border: 2px solid #FFFFFF;
+    cursor: default !important;
+}
+
 .badge-pobudka { background-color: #94A77E; }
 .badge-miejsce { background-color: #C06C4E; }
 .badge-obiad { background-color: #B56749; }
@@ -621,6 +655,10 @@ DOMEK_LON = 24.0918
 SKLEP_LAT = 35.586222
 SKLEP_LON = 24.091861
 
+# --- FUNKCJA POMOCNICZA DO ZAOKRĄGLANIA MINUT DO 5 ---
+def zaokraglij_do_5_minut(minuty):
+    return int(round(minuty / 5.0) * 5)
+
 # --- FUNKCJA POBIERANIA CZASÓW DOJAZDU PRZEZ OSRM ---
 @st.cache_data(ttl=86400)
 def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
@@ -631,11 +669,14 @@ def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
             data = json.loads(response.read().decode())
             if 'routes' in data and len(data['routes']) > 0:
                 duration_sec = data['routes'][0]['duration']
-                minuty = int(round(duration_sec / 60))
+                surowe_minuty = int(round(duration_sec / 60))
+                minuty = zaokraglij_do_5_minut(surowe_minuty)
                 if minuty < 60:
                     return f"~{minuty} min", minuty
                 godziny = minuty // 60
                 reszta = minuty % 60
+                if reszta == 0:
+                    return f"~{godziny}h", minuty
                 return f"~{godziny}h {reszta}m", minuty
     except:
         pass
@@ -696,6 +737,8 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki):
         placeholders = ','.join(['?'] * len(krok_ids))
         cursor.execute(f'DELETE FROM czasy_dojazdu WHERE id_kroku_z IN ({placeholders}) OR id_kroku_do IN ({placeholders})', krok_ids + krok_ids)
 
+    calkowity_czas_minuty = 0
+
     for idx in range(len(kroki) - 1):
         k1_id, _, k1_wsp, _, _ = kroki[idx]
         k2_id, _, k2_wsp, _, _ = kroki[idx + 1]
@@ -703,13 +746,19 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki):
         lat1, lon1 = sparsuj_wspolrzedne(k1_wsp)
         lat2, lon2 = sparsuj_wspolrzedne(k2_wsp)
         
+        minuty_przejazdu = 25
+        tekst_dojazdu = "~25 min"
         if lat1 is not None and lon1 is not None and lat2 is not None and lon2 is not None:
-            tekst_dojazdu, minuty = oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2)
-            szacowany_postoj = 15
-            cursor.execute('''
-                INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
-                VALUES (?, ?, ?, ?)
-            ''', (k1_id, k2_id, tekst_dojazdu, szacowany_postoj))
+            tekst_dojazdu, minuty_przejazdu = oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2)
+            
+        szacowany_postoj = 15 # Domyślny postój w minutach
+        
+        cursor.execute('''
+            INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
+            VALUES (?, ?, ?, ?)
+        ''', (k1_id, k2_id, tekst_dojazdu, szacowany_postoj))
+
+        calkowity_czas_minuty += zaokraglij_do_5_minut(minuty_przejazdu + szacowany_postoj)
 
     pierwsze_okienko = kroki[0][3] or "07:00 - 07:30"
     ostatnie_okienko = kroki[-1][3] or "18:00 - 18:30"
@@ -723,11 +772,13 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki):
 
     dt_start = datetime(2026, 1, 1, start_1[0], start_1[1])
     dt_wyjazd = dt_start
-    dt_pobudka = dt_wyjazd - timedelta(minutes=90)
+    dt_pobudka = dt_wyjazd - timedelta(minutes=zaokraglij_do_5_minut(90))
     dt_powrot = datetime(2026, 1, 1, koniec_n[0], koniec_n[1])
 
     roznica_sek = (dt_powrot - dt_wyjazd).total_seconds()
-    czas_trwania_h = round(max(roznica_sek / 3600.0, 0.5), 1)
+    surowe_minuty_trwania = roznica_sek / 60.0
+    zaokraglone_minuty_trwania = zaokraglij_do_5_minut(surowe_minuty_trwania)
+    czas_trwania_h = round(max(zaokraglone_minuty_trwania / 60.0, calkowity_czas_minuty / 60.0, 0.5), 1)
 
     str_pobudka = dt_pobudka.strftime("%H:%M")
     str_wyjazd = dt_wyjazd.strftime("%H:%M")
@@ -1580,7 +1631,7 @@ def renderuj_globalny_czat_ai(uzytkownik):
 
         dzisiaj_str = date.today().strftime("%Y-%m-%d")
         zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
-        system_prompt = f"Jesteś asystentem podróży CretAi na Krecie. Dziś: {dzisiaj_str}.\n{zewnetrzny_kontekst}"
+        system_prompt = f"Jesteś asystentem podróży CretAi na Kretę. Dziś: {dzisiaj_str}.\n{zewnetrzny_kontekst}"
         
         chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
         chat_container = st.container(height=200)
@@ -1794,7 +1845,9 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             badge_symbol = "🚩"
             tytul_wyswietlany = "Powrót / Zakończenie"
             badge_class = "badge-powrot"
-            has_nav = False
+            # Zgodnie z wymaganiem: nawigacja do domku na kafelku powrót
+            has_nav = True
+            coords_clean = f"{DOMEK_LAT}, {DOMEK_LON}"
         elif "obiad" in nazwa.lower() or "lunch" in nazwa.lower() or "jedzenie" in nazwa.lower() or "przerwa" in nazwa.lower():
             badge_symbol = "🍴"
             tytul_wyswietlany = nazwa
@@ -1819,8 +1872,13 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             if posiłki_str:
                 opis_tekst = f"<span style='color:#8C5338; font-weight:700;'>🍲 {' / '.join(posiłki_str)}</span>"
 
-        is_expanded = (current_expanded_param == str(krok_row_id))
-        toggle_expand_url = f"?tab=route" if is_expanded else f"?tab=route&expand={krok_row_id}"
+        # Pobudka i powrót mają być nieinteraktywne (brak rozwinięcia po kliknięciu w badge)
+        if is_first or is_last:
+            badge_html = f'<div class="timeline-icon-badge-static {badge_class}">{badge_symbol}</div>'
+        else:
+            is_expanded = (current_expanded_param == str(krok_row_id))
+            toggle_expand_url = f"?tab=route" if is_expanded else f"?tab=route&expand={krok_row_id}"
+            badge_html = f'<a href="{toggle_expand_url}" target="_self" class="timeline-icon-badge {badge_class}" title="Kliknij, aby rozwinąć/zwinąć szczegóły">{badge_symbol}</a>'
 
         nav_btn_html = ""
         if has_nav:
@@ -1836,7 +1894,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             f'{time_end_html}'
             f'</div>'
             f'<div class="timeline-center-col">'
-            f'<a href="{toggle_expand_url}" target="_self" class="timeline-icon-badge {badge_class}" title="Kliknij, aby rozwinąć/zwinąć szczegóły">{badge_symbol}</a>'
+            f'{badge_html}'
             f'</div>'
             f'<div class="timeline-content-col">'
             f'<div class="timeline-item-title">{tytul_wyswietlany}</div>'
@@ -1847,7 +1905,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         )
         st.markdown(row_html, unsafe_allow_html=True)
 
-        if is_expanded:
+        if not (is_first or is_last) and is_expanded:
             google_search_url = f"https://www.google.com/search?q={nazwa} Kreta"
             sklep_maps_url = f"https://www.google.com/maps/search/supermarket/@{coords_clean},15z" if coords_clean else "#"
             resto_maps_url = f"https://www.google.com/maps/search/restaurant/@{coords_clean},15z" if coords_clean else "#"
@@ -2010,7 +2068,7 @@ elif st.session_state.active_tab == "zabytek":
 <div style="font-size:24px;">🏛️</div>
 <div><div class="adventure-title-text">CretAi • Baza Miejsc</div></div>
 </div>
-""", unsafe_allow_html5=True)
+""", unsafe_allow_html=True)
     
     miejsca_opcje_lista = [f"{r['numer_miejsca']}. {r['nazwa']}" for _, r in df_miejsca.iterrows()]
     selected_option = st.selectbox("Wybierz miejsce:", options=[None] + miejsca_opcje_lista, format_func=lambda x: "Wybierz atrakcję..." if x is None else x)
