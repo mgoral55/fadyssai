@@ -1955,19 +1955,25 @@ elif st.session_state.active_tab == "map":
 </div>
 """, unsafe_allow_html=True)
     
-    opcje_wycieczek_lista = ["-- Wybierz wycieczkę lub mapę miejsc --"] + wycieczki_options
+    opcje_wycieczek_lista = [None] + wycieczki_options
     
     selected_idx = 0
     if "selected_trip_from_click" in st.session_state and st.session_state["selected_trip_from_click"]:
         for i, opt in enumerate(opcje_wycieczek_lista):
-            if opt.startswith(f"{st.session_state['selected_trip_from_click']}."):
+            if opt and opt.startswith(f"{st.session_state['selected_trip_from_click']}."):
                 selected_idx = i
                 break
         st.session_state["selected_trip_from_click"] = None
 
-    # LISTA WYBORU WYCIECZKI NAD MAPĄ Z NAPISEM "Wybierz wycieczkę"
-    st.markdown('<div style="font-size: 10pt; font-weight: 800; color: #2B2118; margin-bottom: 4px;">Wybierz wycieczkę</div>', unsafe_allow_html=True)
-    wybrana_mapa_sb = st.selectbox("", options=opcje_wycieczek_lista, index=selected_idx, key="map_wycieczka_select", label_visibility="collapsed")
+    # LISTA WYBORU WYCIECZKI NAD MAPĄ
+    wybrana_mapa_sb = st.selectbox(
+        "", 
+        options=opcje_wycieczek_lista, 
+        index=selected_idx, 
+        format_func=lambda x: "**Wybierz wycieczkę**" if x is None else x,
+        key="map_wycieczka_select", 
+        label_visibility="collapsed"
+    )
 
     # MAPA Z WYBOREM MIEJSC (ZAWSZE W TYM SAMYM MIEJSCU, ODDALONA NA CAŁĄ KRETĘ: zoom_start=8)
     m_all = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="CartoDB positron")
@@ -2029,10 +2035,9 @@ elif st.session_state.active_tab == "map":
                         st.session_state["selected_trip_from_click"] = w_id
                         st.rerun()
 
-    if wybrana_mapa_sb != "-- Wybierz wycieczkę lub mapę miejsc --":
-        if wybrana_mapa_sb:
-            wybrana_id = wybrana_mapa_sb.split(". ")[0]
-            renderuj_karte_wycieczki(wybrana_id, pokaz_mape=True, pokaz_pogode=False)
+    if wybrana_mapa_sb is not None:
+        wybrana_id = wybrana_mapa_sb.split(". ")[0]
+        renderuj_karte_wycieczki(wybrana_id, pokaz_mape=True, pokaz_pogode=False)
 
 elif st.session_state.active_tab == "zabytek":
     st.markdown("""
