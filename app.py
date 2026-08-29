@@ -35,7 +35,7 @@ header[data-testid="stHeader"] {
 
 /* BAZA MOTYWU OLIVE/CREAM */
 .block-container {
-    padding-top: 1.5rem !important;
+    padding-top: 1.0rem !important;
     padding-bottom: 140px !important;
     max-width: 540px;
 }
@@ -151,6 +151,47 @@ input[type="date"] {
     background-color: #FAF8F2 !important;
     color: #2B2118 !important;
     border: 1.5px solid #D6D2C4 !important;
+}
+
+/* STAŁY PASEK NAWIGACYJNY NA SAMEJ GÓRZE */
+.top-sticky-nav-container {
+    position: sticky;
+    top: 0;
+    z-index: 999;
+    background-color: #B4C29D;
+    padding: 8px 0 12px 0;
+    margin-bottom: 8px;
+    border-bottom: 1.5px solid rgba(255, 255, 255, 0.2);
+}
+
+.custom-top-nav-bar {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+}
+.custom-top-nav-btn {
+    flex: 1;
+    background-color: #EFE8D6;
+    border: 1.5px solid #D6CEBC;
+    color: #8A7B70;
+    padding: 8px 4px;
+    text-align: center;
+    border-radius: 14px;
+    font-size: 11px;
+    font-weight: 800;
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+}
+.custom-top-nav-btn.active {
+    background-color: #F6F0DD;
+    color: #8C5338;
+    border-color: #C8C0AC;
+    font-weight: 900;
 }
 
 /* Belka nagłówkowa aplikacji */
@@ -305,32 +346,32 @@ div.st-key-btn_date_picker button p {
     color: #2B2118;
 }
 
-/* GŁÓWNA KARTA PLANu DNIA - BEZ TŁA/RAMKI ZBIORCZEJ, TYLKO KONTENER OSI CZASU */
+/* GŁÓWNA KARTA PLANu DNIA - NATURALNE ODSTĘPY */
 .day-plan-container {
     background-color: transparent !important;
     border-radius: 0px !important;
-    padding: 4px 0px 10px 0px !important;
+    padding: 0px !important;
     box-shadow: none !important;
     margin-bottom: 12px !important;
-    margin-top: 10px !important;
+    margin-top: 4px !important;
 }
 
-/* TIMELINE WRAPPER Z IDEALNIE WYŚRODKOWANĄ LINIĄ TŁA PRZEZ KÓŁKA */
-.timeline-wrapper {
+/* TIMELINE CONTAINER & STABILNA LINIOWY UKŁAD HTML/CSS */
+.timeline-container {
     position: relative;
+    padding-left: 0px;
 }
-.timeline-wrapper::before {
-    content: "";
+.timeline-line-bg {
     position: absolute;
+    left: 81px;
     top: 20px;
     bottom: 20px;
-    left: 81px;
     width: 4px;
     background-color: #7A9060;
     z-index: 1;
 }
 
-/* TIMELINE CONTAINER & ITEMS Z BEŻOWĄ KARTĄ KROKU */
+/* TIMELINE ITEMS Z BEŻOWĄ KARTĄ KROKU */
 .timeline-row {
     position: relative;
     display: flex;
@@ -622,7 +663,7 @@ div.st-key-btn_date_picker button p {
     line-height: 1;
 }
 
-/* DOJAZD BEZ RAMKI, BEZPOŚREDNIO NA ZIELONYM TLE Z IDEALNIE DOPASOWANĄ LINIĄ */
+/* DOJAZD BEZ RAMKI, BEZPOŚREDNIO NA ZIELONYM TLE Z LINIĄ W TLE */
 .timeline-transit-row {
     position: relative;
     display: flex;
@@ -632,16 +673,6 @@ div.st-key-btn_date_picker button p {
     background-color: transparent !important;
     border: none !important;
     box-shadow: none !important;
-}
-.timeline-transit-row::before {
-    content: "";
-    position: absolute;
-    top: -10px;
-    bottom: -10px;
-    left: 81px;
-    width: 4px;
-    background-color: #7A9060;
-    z-index: -1;
 }
 
 /* CAŁKOWITE USUNIĘCIE CZERNI Z CHECKBOXÓW - BIAŁY ŚRODEK */
@@ -688,46 +719,10 @@ div[data-testid="stCheckbox"] span[data-baseweb="checkbox"] svg {
     color: #FAF8F2 !important;
 }
 
-/* Pasek nawigacji dolnej */
-.bottom-nav-container {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background-color: #EFE8D6;
-    border-top: 1.5px solid #D6CEBC;
-    padding: 10px 16px;
-    display: flex;
-    justify-content: space-around;
-    gap: 12px;
-    z-index: 99999;
-    box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.05);
-}
-.bottom-nav-btn {
-    flex: 1;
-    background-color: transparent;
-    color: #8A7B70;
-    padding: 6px 0;
-    text-align: center;
-    border-radius: 14px;
-    font-size: 11px;
-    font-weight: 800;
-    text-decoration: none;
-    cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-}
-.bottom-nav-btn.active {
-    color: #8C5338;
-    font-weight: 900;
-}
-
 /* Pływający kontener AI */
 .floating-ai-container {
     position: fixed;
-    bottom: 75px;
+    bottom: 15px;
     left: 8px;
     right: 8px;
     max-width: 520px;
@@ -1315,22 +1310,6 @@ def renderuj_grupy_zadan_wycieczki(grupy_zadan):
                         zapisz_status_zadania(klucz, nowy_stan)
                         st.rerun()
 
-def renderuj_zwijana_sekcje_zadan(zadania, prefix_klucza, tytul_naglowka="🎯 Zadania dla dzieci"):
-    if not zadania:
-        return
-    with st.expander(tytul_naglowka, expanded=False):
-        for idx, zad in enumerate(zadania):
-            klucz = f"{prefix_klucza}_task_{idx}"
-            aktualny_stan = pobierz_status_zadania(klucz)
-            nowy_stan = st.checkbox(
-                zad,
-                value=aktualny_stan,
-                key=f"cb_{klucz}"
-            )
-            if nowy_stan != aktualny_stan:
-                zapisz_status_zadania(klucz, nowy_stan)
-                st.rerun()
-
 def pobierz_ustawienia_z_db(uzytkownik):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
@@ -1573,53 +1552,7 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, c
     przelicz_i_zsynchronizuj_wycieczke(str(id))
     return f"Wycieczka #{id} została zaktualizowana."
 
-def dodaj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne="35.3,24.5", 
-                         okienko_zwiedzania="10:00 - 12:00", godzina_ewakuacji="12:00", 
-                         czerwona_strefa_ostrzezenie="Unikać upału", strefa_luzu_i_regeneracji="Cień", 
-                         podsumowanie_taktyki="Spokojne tempo", potencjal_meltdownu="Średni", 
-                         strategie_meltdown="Okulary i woda", opis="Brak opisu"):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO krok_wycieczki (
-            id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, 
-            okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, 
-            strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, 
-            strategie_meltdown, opis
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        str(id_wycieczki), str(krok_wycieczki), str(nazwa), str(wspolrzedne), 
-        str(okienko_zwiedzania), str(godzina_ewakuacji), str(czerwona_strefa_ostrzezenie), 
-        str(strefa_luzu_i_regeneracji), str(podsumowanie_taktyki), 
-        str(potencjal_meltdownu), str(strategie_meltdown), str(opis)
-    ))
-    conn.commit()
-    conn.close()
-    przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
-    return f"Dodano krok {nazwa} do wycieczki."
-
-def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? AND (krok_wycieczki = ? OR nazwa LIKE ?)', 
-                   (str(id_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%"))
-    krok_to_del = cursor.fetchone()
-    if not krok_to_del:
-        conn.close()
-        return "Nie znaleziono takiego kroku w harmonogramie wycieczki."
-    
-    krok_id, nazwa = krok_to_del
-    if "domek" in nazwa.lower():
-        conn.close()
-        return f"BLOKADA: Krok '{nazwa}' to baza wypadowa (Domek) i jest nieusuwalny!"
-
-    cursor.execute('DELETE FROM krok_wycieczki WHERE id = ?', (krok_id,))
-    conn.commit()
-    conn.close()
-    przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
-    return f"Usunięto krok '{nazwa}'."
-
-def pobierz_posilki_dla_kroku(id_kroku):
+def pob_posilki_dla_kroku(id_kroku):
     conn = sqlite3.connect('cretai.db')
     df = pd.read_sql('SELECT * FROM posilki_kroku WHERE id_kroku = ?', conn, params=(str(id_kroku),))
     conn.close()
@@ -1882,6 +1815,21 @@ if "selected_category" not in st.session_state:
 df_miejsca = pobierz_wszystkie_miejsca()
 wycieczki_options = pobierz_skrocone_opcje_wycieczek()
 
+# --- 1. ORYGINALNE PRZYCISKI NAWIGACJI NA SAMEJ GÓRZE ---
+active_zabytek = "active" if st.session_state.active_tab == "zabytek" else ""
+active_map = "active" if st.session_state.active_tab == "map" else ""
+active_route = "active" if st.session_state.active_tab == "route" else ""
+
+st.markdown(f"""
+<div class="top-sticky-nav-container">
+    <div class="custom-top-nav-bar">
+        <a href="?tab=zabytek" target="_self" class="custom-top-nav-btn {active_zabytek}"><span>🏛️</span><span>Miejsca</span></a>
+        <a href="?tab=map" target="_self" class="custom-top-nav-btn {active_map}"><span>🗺️</span><span>Wycieczki</span></a>
+        <a href="?tab=route" target="_self" class="custom-top-nav-btn {active_route}"><span>🚗</span><span>Trasa Dnia</span></a>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
 @st.dialog("Wybierz nową datę")
 def edit_date_dialog(wycieczka_id, aktualna_data):
     dzisiaj = date.today()
@@ -1983,7 +1931,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         """, unsafe_allow_html=True)
 
     st.markdown('### 🗺️ Plan na dzień')
-    st.markdown('<div class="day-plan-container"><div class="timeline-wrapper">', unsafe_allow_html=True)
+    st.markdown('<div class="day-plan-container"><div class="timeline-container"><div class="timeline-line-bg"></div>', unsafe_allow_html=True)
     
     current_expanded_param = st.query_params.get("expand")
     
@@ -2024,7 +1972,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             badge_class = "badge-miejsce"
             has_nav = bool(coords_clean and ',' in coords_clean)
 
-        df_pos = pobierz_posilki_dla_kroku(k['id'])
+        df_pos = pob_posilki_dla_kroku(k['id'])
         opis_tekst = ""
         if not df_pos.empty:
             posiłki_str = []
@@ -2174,9 +2122,9 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 if pd.notna(czas_dojazdu_dalej) and str(czas_dojazdu_dalej).strip() != "":
                     st.markdown(f'<div class="timeline-transit-row"><div style="font-size: 8.5pt; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #8C5338;"><span>🚗</span> Dojazd: <span style="color: #2B2118;">{czas_dojazdu_dalej}</span> | ⏱️ Postój: <span style="color: #2B2118;">{postoj_val} min</span></div></div>', unsafe_allow_html=True)
 
-    st.markdown('</div></div>', unsafe_allow_html=True)
+    st.markdown('</div></div></div>', unsafe_allow_html=True)
 
-    # MAPA TRASY NA SAMYM DOLE SZCZEGÓŁÓW WYCIECZKI (zoom_start=8 dla widoku całej Krety)
+    # MAPA TRASY NA SAMYM DOLE SZCZEGÓŁÓW WYCIECZKI
     if pokaz_mape:
         punkty_trasy, surowe_wspolrzedne = [], []
         for _, k in kroki_df.iterrows():
@@ -2197,7 +2145,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
             st_folium(m_trasa, width=None, height=260, returned_objects=[], key=f"map_route_{wycieczka_id}")
 
-    # 1. SEKCJA: ZADANIA DLA DZIECI (Nagłówek + bezpośrednie expandery zadań w dedykowanym kontenerze z markerem)
+    # 1. SEKCJA: ZADANIA DLA DZIECI
     st.markdown("### 🎯 Zadania dla dzieci")
     with st.container():
         st.markdown('<div class="tasks-group-marker"></div>', unsafe_allow_html=True)
@@ -2219,24 +2167,12 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                             zapisz_status_zadania(klucz, nowy_stan)
                             st.rerun()
 
-    # 2. SEKCJA: NOTATKI (Nagłówek + Karty notatek + Expander dodawania)
+    # 2. SEKCJA: NOTATKI
     renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
 
-    # 3. SEKCJA: ASYSTENT AI (Nagłówek + Czat Asystenta)
+    # 3. SEKCJA: ASYSTENT AI
     st.markdown("### 🤖 Asystent AI")
     renderuj_globalny_czat_ai(aktualny_uzytkownik, inline=True)
-
-active_zabytek = "active" if st.session_state.active_tab == "zabytek" else ""
-active_map = "active" if st.session_state.active_tab == "map" else ""
-active_route = "active" if st.session_state.active_tab == "route" else ""
-
-st.markdown(f"""
-<div class="bottom-nav-container">
-<a href="?tab=zabytek" target="_self" class="bottom-nav-btn {active_zabytek}"><span>🏛️</span><span>Miejsca</span></a>
-<a href="?tab=map" target="_self" class="bottom-nav-btn {active_map}"><span>🗺️</span><span>Wycieczki</span></a>
-<a href="?tab=route" target="_self" class="bottom-nav-btn {active_route}"><span>🚗</span><span>Trasa Dnia</span></a>
-</div>
-""", unsafe_allow_html=True)
 
 if st.session_state.active_tab == "route":
     st.markdown("""
@@ -2266,7 +2202,6 @@ elif st.session_state.active_tab == "map":
                 break
         st.session_state["selected_trip_from_click"] = None
 
-    # LISTA WYBORU WYCIECZKI NAD MAPĄ
     wybrana_mapa_sb = st.selectbox(
         "", 
         options=opcje_wycieczek_lista, 
@@ -2276,7 +2211,6 @@ elif st.session_state.active_tab == "map":
         label_visibility="collapsed"
     )
 
-    # MAPA Z WYBOREM MIEJSC (ZAWSZE W TYM SAMYM MIEJSCU, ODDALONA NA CAŁĄ KRETĘ: zoom_start=8)
     m_all = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="CartoDB positron")
     dodaj_marker_domku(m_all)
     
@@ -2461,7 +2395,6 @@ elif st.session_state.active_tab == "zabytek":
         if st.session_state.selected_category is not None:
             df_miejsca_filtrowane = df_miejsca_filtrowane[df_miejsca_filtrowane['kategoria_normalizowana'] == st.session_state.selected_category]
 
-    # MAPA MIEJSC ODDALONA NA CAŁĄ KRETĘ (zoom_start=8)
     m_miejsca = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="CartoDB positron")
     dodaj_marker_domku(m_miejsca)
 
