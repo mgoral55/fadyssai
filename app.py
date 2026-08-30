@@ -19,6 +19,13 @@ try:
 except ImportError:
     ANTHROPIC_AVAILABLE = False
 
+# --- 0. BEZPIECZNE POŁĄCZENIE Z BAZĄ DANYCH (CONCURRENCY & WAL) ---
+def get_db():
+    conn = sqlite3.connect('cretai.db', timeout=30.0)
+    conn.execute('PRAGMA journal_mode=WAL;')
+    conn.execute('PRAGMA busy_timeout = 30000;')
+    return conn
+
 # --- 1. KONFIGURACJA STRONY I DESIGN SYSTEM: SAGE & TERRACOTTA TIMELINE ---
 st.set_page_config(page_title="CretAi - Kreta", layout="centered", page_icon="🧭")
 
@@ -719,33 +726,21 @@ def wczytaj_pliki_regul(katalog="rule"):
                     pass
     return tresc_regul if znaleziono else ""
 
-# --- PEŁNY KASKADOWY SILNIK PRZELICZANIA I SYNCHRONIZACJI WYCIECZKI ---
+# --- PEŁNY KASKADOWY SILNIK PRZELICZANIA I SYNCHRONIZACJI WYCIECZKI (ZOPTYMALIZOWANY) ---
 def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor_koniec_str=None, anchor_start_str=None):
-    """
-    Przelicza harmonogram wycieczki kaskadowo w oparciu o czasy trwania pobytu, czasy dojazdu OSRM
-    oraz szacowane bufory postoju na trasie pobierane z tabeli czasy_dojazdu (lub 15 min jako domyślne).
-    """
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    
-    # 0. Odczyt dotychczasowych postojów
-    cursor.execute('SELECT id_kroku_z, id_kroku_do, szacowany_czas_postoju FROM czasy_dojazdu WHERE szacowany_czas_postoju IS NOT NULL')
-    istniejace_postoje = {(row[0], row[1]): row[2] for row in cursor.fetchall()}
+    # 0. Szybki odczyt danych z bazy (krótkie połączenie)
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT id_kroku_z, id_kroku_do, szacowany_czas_postoju FROM czasy_dojazdu WHERE szacowany_czas_postoju IS NOT NULL')
+        istniejace_postoje = {(row[0], row[1]): row[2] for row in cursor.fetchall()}
 
-    # Pobranie kroków w aktualnej kolejności
-    cursor.execute('SELECT id, krok_wycieczki, wspolrzedne, okienko_zwiedzania, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC, id ASC', (str(id_wycieczki),))
-    kroki = cursor.fetchall()
+        cursor.execute('SELECT id, krok_wycieczki, wspolrzedne, okienko_zwiedzania, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC, id ASC', (str(id_wycieczki),))
+        kroki = cursor.fetchall()
     
     if not kroki:
-        conn.close()
         return
 
-    krok_ids = [k[0] for k in kroki]
-    if krok_ids:
-        placeholders = ','.join(['?'] * len(krok_ids))
-        cursor.execute(f'DELETE FROM czasy_dojazdu WHERE id_kroku_z IN ({placeholders}) OR id_kroku_do IN ({placeholders})', krok_ids + krok_ids)
-
-    # 1. Obliczenie czasów dojazdu OSRM oraz pobranie buforu postoju na trasie
+    # 1. Obliczenie czasów dojazdu OSRM oraz buforów (POZA połączeniem z bazą)
     dojazdy_minuty = []
     dojazdy_tekst = []
     postoje_na_trasie_minuty = []
@@ -831,36 +826,41 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
                 czas_odcinka = dojazdy_minuty[i] + postoje_na_trasie_minuty[i]
                 cur_dt = end_times[i] + timedelta(minutes=czas_odcinka)
 
-    # 4. Zapisanie przeliczonych okienek i buforów postoju do tabeli czasy_dojazdu
-    for i in range(len(kroki)):
-        s_str = start_times[i].strftime("%H:%M")
-        e_str = end_times[i].strftime("%H:%M")
-        nowe_okienko = f"{s_str} - {e_str}"
-        cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (nowe_okienko, kroki[i][0]))
-        
-        if i < len(kroki) - 1:
-            cursor.execute('''
-                INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
-                VALUES (?, ?, ?, ?)
-            ''', (kroki[i][0], kroki[i + 1][0], dojazdy_tekst[i], postoje_na_trasie_minuty[i]))
+    # 4. Atomowy, szybki zapis przeliczonych danych do bazy
+    with get_db() as conn:
+        cursor = conn.cursor()
+        krok_ids = [k[0] for k in kroki]
+        if krok_ids:
+            placeholders = ','.join(['?'] * len(krok_ids))
+            cursor.execute(f'DELETE FROM czasy_dojazdu WHERE id_kroku_z IN ({placeholders}) OR id_kroku_do IN ({placeholders})', krok_ids + krok_ids)
 
-    dt_wyjazd = end_times[0]
-    dt_powrot = start_times[-1]
-    dt_pobudka = dt_wyjazd - timedelta(minutes=zaokraglij_do_5_minut(90))
-    roznica_sek = (dt_powrot - dt_wyjazd).total_seconds()
-    czas_trwania_h = round(max(roznica_sek / 3600.0, 0.5), 1)
+        for i in range(len(kroki)):
+            s_str = start_times[i].strftime("%H:%M")
+            e_str = end_times[i].strftime("%H:%M")
+            nowe_okienko = f"{s_str} - {e_str}"
+            cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (nowe_okienko, kroki[i][0]))
+            
+            if i < len(kroki) - 1:
+                cursor.execute('''
+                    INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
+                    VALUES (?, ?, ?, ?)
+                ''', (kroki[i][0], kroki[i + 1][0], dojazdy_tekst[i], postoje_na_trasie_minuty[i]))
 
-    cursor.execute('''
-        UPDATE wycieczka 
-        SET pobudka = ?, czas_wyjazdu = ?, szacowana_godzina_powrotu = ?, calkowity_czas_wycieczki_godziny = ?, czas_powrotu_do_domku = NULL
-        WHERE id = ?
-    ''', (dt_pobudka.strftime("%H:%M"), dt_wyjazd.strftime("%H:%M"), dt_powrot.strftime("%H:%M"), str(czas_trwania_h), str(id_wycieczki)))
+        dt_wyjazd = end_times[0]
+        dt_powrot = start_times[-1]
+        dt_pobudka = dt_wyjazd - timedelta(minutes=zaokraglij_do_5_minut(90))
+        roznica_sek = (dt_powrot - dt_wyjazd).total_seconds()
+        czas_trwania_h = round(max(roznica_sek / 3600.0, 0.5), 1)
 
-    conn.commit()
-    conn.close()
+        cursor.execute('''
+            UPDATE wycieczka 
+            SET pobudka = ?, czas_wyjazdu = ?, szacowana_godzina_powrotu = ?, calkowity_czas_wycieczki_godziny = ?, czas_powrotu_do_domku = NULL
+            WHERE id = ?
+        ''', (dt_pobudka.strftime("%H:%M"), dt_wyjazd.strftime("%H:%M"), dt_powrot.strftime("%H:%M"), str(czas_trwania_h), str(id_wycieczki)))
+        conn.commit()
 
 def init_db():
-    conn = sqlite3.connect('cretai.db')
+    conn = get_db()
     cursor = conn.cursor()
     
     cursor.execute('''
@@ -1086,26 +1086,25 @@ def init_db():
             cursor.execute("INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, opis) VALUES (?, 'kolacja', 'w domku', 'Kolacja po powrocie')", (db_krok_ids[3],))
 
         conn.commit()
-        przelicz_i_zsynchronizuj_wycieczke("1")
     conn.close()
+    przelicz_i_zsynchronizuj_wycieczke("1")
 
 init_db()
 
 # --- FUNKCJE CRUD DO ZARZĄDZANIA WYCIECZKAMI I KROKAMI PRZEZ LLM ---
 def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, 
                      planowana_data=None):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    if tytul_wycieczki is not None:
-        cursor.execute('UPDATE wycieczka SET tytul_wycieczki = ? WHERE id = ?', (tytul_wycieczki, str(id)))
-    if calosciowy_opis_wycieczki is not None:
-        cursor.execute('UPDATE wycieczka SET calosciowy_opis_wycieczki = ? WHERE id = ?', (calosciowy_opis_wycieczki, str(id)))
-    if calosciowa_taktyka_dnia is not None:
-        cursor.execute('UPDATE wycieczka SET calosciowa_taktyka_dnia = ? WHERE id = ?', (calosciowa_taktyka_dnia, str(id)))
-    if planowana_data is not None:
-        cursor.execute('UPDATE wycieczka SET planowana_data = ? WHERE id = ?', (planowana_data, str(id)))
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        if tytul_wycieczki is not None:
+            cursor.execute('UPDATE wycieczka SET tytul_wycieczki = ? WHERE id = ?', (tytul_wycieczki, str(id)))
+        if calosciowy_opis_wycieczki is not None:
+            cursor.execute('UPDATE wycieczka SET calosciowy_opis_wycieczki = ? WHERE id = ?', (calosciowy_opis_wycieczki, str(id)))
+        if calosciowa_taktyka_dnia is not None:
+            cursor.execute('UPDATE wycieczka SET calosciowa_taktyka_dnia = ? WHERE id = ?', (calosciowa_taktyka_dnia, str(id)))
+        if planowana_data is not None:
+            cursor.execute('UPDATE wycieczka SET planowana_data = ? WHERE id = ?', (planowana_data, str(id)))
+        conn.commit()
     przelicz_i_zsynchronizuj_wycieczke(str(id))
     return f"Wycieczka #{id} została zaktualizowana i przeliczona."
 
@@ -1114,33 +1113,26 @@ def dodaj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne="35.3,
                          okienko_zwiedzania="10:00 - 12:00", godzina_ewakuacji="Brak", 
                          czerwona_strefa_ostrzezenie="Brak", strefa_luzu_i_regeneracji="Spokojna strefa", 
                          podsumowanie_taktyki="Brak", opis="Brak"):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    
-    # Pobranie istniejących kroków
-    cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
-    istniejace = cursor.fetchall()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
+        istniejace = cursor.fetchall()
 
-    is_sklep = "sklep" in nazwa.lower() or "market" in nazwa.lower() or "zakup" in nazwa.lower()
-    
-    # Jeśli to zakupy/sklep w drodze powrotnej lub nowy krok pośredni, umieszczamy go tuż przed końcowym domkiem
-    if istniejace and ("domek" in istniejace[-1][2].lower() or "powrót" in istniejace[-1][2].lower()):
-        ostatni_id = istniejace[-1][0]
-        nowy_numer_sklepu = len(istniejace) - 1
-        nowy_numer_domku = len(istniejace)
-        
-        # Przesuwamy końcowy domek na wyższy numer
-        cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(nowy_numer_domku), ostatni_id))
-        target_krok_num = str(nowy_numer_sklepu)
-    else:
-        target_krok_num = str(len(istniejace))
+        if istniejace and ("domek" in istniejace[-1][2].lower() or "powrót" in istniejace[-1][2].lower()):
+            ostatni_id = istniejace[-1][0]
+            nowy_numer_sklepu = len(istniejace) - 1
+            nowy_numer_domku = len(istniejace)
+            
+            cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(nowy_numer_domku), ostatni_id))
+            target_krok_num = str(nowy_numer_sklepu)
+        else:
+            target_krok_num = str(len(istniejace))
 
-    cursor.execute('''
-        INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, opis)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (str(id_wycieczki), target_krok_num, str(nazwa), str(wspolrzedne), str(okienko_zwiedzania), str(godzina_ewakuacji), str(czerwona_strefa_ostrzezenie), str(strefa_luzu_i_regeneracji), str(podsumowanie_taktyki), str(opis)))
-    conn.commit()
-    conn.close()
+        cursor.execute('''
+            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, opis)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (str(id_wycieczki), target_krok_num, str(nazwa), str(wspolrzedne), str(okienko_zwiedzania), str(godzina_ewakuacji), str(czerwona_strefa_ostrzezenie), str(strefa_luzu_i_regeneracji), str(podsumowanie_taktyki), str(opis)))
+        conn.commit()
     
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
     return f"Dodano krok '{nazwa}' do wycieczki #{id_wycieczki} i automatycznie przeliczono cały łańcuch godzin."
@@ -1148,35 +1140,32 @@ def dodaj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne="35.3,
 def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa=None, wspolrzedne=None, okienko_zwiedzania=None, 
                           godzina_ewakuacji=None, czerwona_strefa_ostrzezenie=None, strefa_luzu_i_regeneracji=None, 
                           podsumowanie_taktyki=None, opis=None, godzina_wyjazdu_do=None, godzina_dotarcia_na=None):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    
-    query = '''
-        SELECT id, nazwa FROM krok_wycieczki 
-        WHERE id_wycieczki = ? AND (
-            id = ? OR 
-            krok_wycieczki = ? OR 
-            nazwa LIKE ? OR 
-            ? LIKE ('%' || nazwa || '%')
-        )
-    '''
-    cursor.execute(query, (str(id_wycieczki), str(krok_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%", str(krok_wycieczki)))
-    res = cursor.fetchone()
-    if not res:
-        conn.close()
-        return f"Nie znaleziono kroku '{krok_wycieczki}' w wycieczce #{id_wycieczki}."
-    krok_id = res[0]
-    
-    pola = {
-        "nazwa": nazwa, "wspolrzedne": wspolrzedne, "okienko_zwiedzania": okienko_zwiedzania,
-        "godzina_ewakuacji": godzina_ewakuacji, "czerwona_strefa_ostrzezenie": czerwona_strefa_ostrzezenie,
-        "strefa_luzu_i_regeneracji": strefa_luzu_i_regeneracji, "podsumowanie_taktyki": podsumowanie_taktyki, "opis": opis
-    }
-    for col, val in pola.items():
-        if val is not None:
-            cursor.execute(f'UPDATE krok_wycieczki SET {col} = ? WHERE id = ?', (val, krok_id))
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        query = '''
+            SELECT id, nazwa FROM krok_wycieczki 
+            WHERE id_wycieczki = ? AND (
+                id = ? OR 
+                krok_wycieczki = ? OR 
+                nazwa LIKE ? OR 
+                ? LIKE ('%' || nazwa || '%')
+            )
+        '''
+        cursor.execute(query, (str(id_wycieczki), str(krok_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%", str(krok_wycieczki)))
+        res = cursor.fetchone()
+        if not res:
+            return f"Nie znaleziono kroku '{krok_wycieczki}' w wycieczce #{id_wycieczki}."
+        krok_id = res[0]
+        
+        pola = {
+            "nazwa": nazwa, "wspolrzedne": wspolrzedne, "okienko_zwiedzania": okienko_zwiedzania,
+            "godzina_ewakuacji": godzina_ewakuacji, "czerwona_strefa_ostrzezenie": czerwona_strefa_ostrzezenie,
+            "strefa_luzu_i_regeneracji": strefa_luzu_i_regeneracji, "podsumowanie_taktyki": podsumowanie_taktyki, "opis": opis
+        }
+        for col, val in pola.items():
+            if val is not None:
+                cursor.execute(f'UPDATE krok_wycieczki SET {col} = ? WHERE id = ?', (val, krok_id))
+        conn.commit()
     
     przelicz_i_zsynchronizuj_wycieczke(
         str(id_wycieczki), 
@@ -1188,47 +1177,42 @@ def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa=None, wspolrzedne=
 
 # --- NIEZAWODNE USUWANIE KROKU Z BAZY DANYCH ---
 def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    
-    query = '''
-        SELECT id, nazwa FROM krok_wycieczki 
-        WHERE id_wycieczki = ? AND (
-            id = ? OR 
-            krok_wycieczki = ? OR 
-            nazwa LIKE ? OR 
-            ? LIKE ('%' || nazwa || '%')
-        )
-    '''
-    cursor.execute(query, (str(id_wycieczki), str(krok_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%", str(krok_wycieczki)))
-    res = cursor.fetchone()
-    if not res:
-        conn.close()
-        return f"Nie znaleziono kroku '{krok_wycieczki}' do usunięcia."
+    with get_db() as conn:
+        cursor = conn.cursor()
+        query = '''
+            SELECT id, nazwa FROM krok_wycieczki 
+            WHERE id_wycieczki = ? AND (
+                id = ? OR 
+                krok_wycieczki = ? OR 
+                nazwa LIKE ? OR 
+                ? LIKE ('%' || nazwa || '%')
+            )
+        '''
+        cursor.execute(query, (str(id_wycieczki), str(krok_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%", str(krok_wycieczki)))
+        res = cursor.fetchone()
+        if not res:
+            return f"Nie znaleziono kroku '{krok_wycieczki}' do usunięcia."
+            
+        krok_id, nazwa = res
+        if "domek" in nazwa.lower() and ("start" in nazwa.lower() or "powrót" in nazwa.lower() or "baza" in nazwa.lower()):
+            return "BLOKADA: Baza wypadowa (Domek) jest nieusuwalna! Możesz usuwać wyłącznie atrakcje, sklepy i plaże na trasie."
         
-    krok_id, nazwa = res
-    if "domek" in nazwa.lower() and ("start" in nazwa.lower() or "powrót" in nazwa.lower() or "baza" in nazwa.lower()):
-        conn.close()
-        return "BLOKADA: Baza wypadowa (Domek) jest nieusuwalna! Możesz usuwać wyłącznie atrakcje, sklepy i plaże na trasie."
-    
-    # 1. Usunięcie powiązanych rekordów podrzędnych
-    cursor.execute('DELETE FROM posilki_kroku WHERE id_kroku = ?', (krok_id,))
-    cursor.execute('DELETE FROM zakupy WHERE id_kroku = ?', (krok_id,))
-    cursor.execute('DELETE FROM czasy_dojazdu WHERE id_kroku_z = ? OR id_kroku_do = ?', (krok_id, krok_id))
-    
-    # 2. Usunięcie samego kroku
-    cursor.execute('DELETE FROM krok_wycieczki WHERE id = ?', (krok_id,))
-    conn.commit()
+        # 1. Usunięcie powiązanych rekordów podrzędnych
+        cursor.execute('DELETE FROM posilki_kroku WHERE id_kroku = ?', (krok_id,))
+        cursor.execute('DELETE FROM zakupy WHERE id_kroku = ?', (krok_id,))
+        cursor.execute('DELETE FROM czasy_dojazdu WHERE id_kroku_z = ? OR id_kroku_do = ?', (krok_id, krok_id))
+        
+        # 2. Usunięcie samego kroku
+        cursor.execute('DELETE FROM krok_wycieczki WHERE id = ?', (krok_id,))
 
-    # 3. Renumeracja pozostałych kroków (0, 1, 2, ... N)
-    cursor.execute('SELECT id, nazwa, okienko_zwiedzania FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
-    pozostale = cursor.fetchall()
-    pozostale.sort(key=lambda x: klucz_sortowania_okienka(x[2]))
-    
-    for idx, (row_id, _, _) in enumerate(pozostale):
-        cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(idx), row_id))
-    conn.commit()
-    conn.close()
+        # 3. Renumeracja pozostałych kroków (0, 1, 2, ... N)
+        cursor.execute('SELECT id, nazwa, okienko_zwiedzania FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
+        pozostale = cursor.fetchall()
+        pozostale.sort(key=lambda x: klucz_sortowania_okienka(x[2]))
+        
+        for idx, (row_id, _, _) in enumerate(pozostale):
+            cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(idx), row_id))
+        conn.commit()
 
     # 4. Ponowne przeliczenie całego łańcucha czasowego wycieczki
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
@@ -1236,53 +1220,48 @@ def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
 
 # --- ZARZĄDZANIE BUFORAMI POSTOJÓW NA TRASIE PRZEZ LLM ---
 def zmien_czas_postoju_na_trasie(id_wycieczki, krok_z, krok_do, minuty_postoju):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    
-    def find_id(k_val):
-        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? AND (id = ? OR krok_wycieczki = ? OR nazwa LIKE ?)', (str(id_wycieczki), str(k_val), str(k_val), f"%{k_val}%"))
-        r = cursor.fetchone()
-        return r[0] if r else None
-
-    id_z = find_id(krok_z)
-    id_do = find_id(krok_do)
-    
-    if not id_z or not id_do:
-        conn.close()
-        return "Nie znaleziono wskazanych kroków trasy."
+    with get_db() as conn:
+        cursor = conn.cursor()
         
-    cursor.execute('UPDATE czasy_dojazdu SET szacowany_czas_postoju = ? WHERE id_kroku_z = ? AND id_kroku_do = ?', (int(minuty_postoju), id_z, id_do))
-    conn.commit()
-    conn.close()
+        def find_id(k_val):
+            cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? AND (id = ? OR krok_wycieczki = ? OR nazwa LIKE ?)', (str(id_wycieczki), str(k_val), str(k_val), f"%{k_val}%"))
+            r = cursor.fetchone()
+            return r[0] if r else None
+
+        id_z = find_id(krok_z)
+        id_do = find_id(krok_do)
+        
+        if not id_z or not id_do:
+            return "Nie znaleziono wskazanych kroków trasy."
+            
+        cursor.execute('UPDATE czasy_dojazdu SET szacowany_czas_postoju = ? WHERE id_kroku_z = ? AND id_kroku_do = ?', (int(minuty_postoju), id_z, id_do))
+        conn.commit()
     
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
     return f"Zaktualizowano bufor postoju na trasie do {minuty_postoju} minut i przeliczono harmonogram."
 
 def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=None, tytul=None):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO notatki (id_wycieczki, id_miejsca, tytul, zawartosc, typ_notatki)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (str(id_wycieczki) if id_wycieczki else None, str(id_miejsca) if id_miejsca else None, tytul, zawartosc, typ_notatki))
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO notatki (id_wycieczki, id_miejsca, tytul, zawartosc, typ_notatki)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (str(id_wycieczki) if id_wycieczki else None, str(id_miejsca) if id_miejsca else None, tytul, zawartosc, typ_notatki))
+        conn.commit()
     return "Dodano notatkę!"
 
 def dodaj_produkt_zakupow(id_kroku, nazwa_produktu, ilosc="1"):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('INSERT INTO zakupy (id_kroku, nazwa_produktu, ilosc, kupione) VALUES (?, ?, ?, 0)', (str(id_kroku), nazwa_produktu, str(ilosc)))
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO zakupy (id_kroku, nazwa_produktu, ilosc, kupione) VALUES (?, ?, ?, 0)', (str(id_kroku), nazwa_produktu, str(ilosc)))
+        conn.commit()
     return f"Dodano produkt '{nazwa_produktu}' do listy zakupów."
 
 def zmien_status_zakupu(zakup_id, kupione):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('UPDATE zakupy SET kupione = ? WHERE id = ?', (1 if kupione else 0, int(zakup_id)))
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE zakupy SET kupione = ? WHERE id = ?', (1 if kupione else 0, int(zakup_id)))
+        conn.commit()
 
 # --- ZESTAW NARZĘDZI FUNCTION CALLING DLA LLM ---
 cretai_tools = types.Tool(function_declarations=[
@@ -1413,19 +1392,17 @@ def wykonaj_narzedzie_bazy(call_name, args):
 
 # --- WŁASNE FUNKCJE POMOCNICZE I POBIERANIE KONTEKSTU ---
 def pobierz_status_zadania(klucz_zadania):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT ukonczone FROM zadania_dzieci_status WHERE klucz_zadania = ?', (str(klucz_zadania),))
-    res = cursor.fetchone()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT ukonczone FROM zadania_dzieci_status WHERE klucz_zadania = ?', (str(klucz_zadania),))
+        res = cursor.fetchone()
     return bool(res[0]) if res else False
 
 def zapisz_status_zadania(klucz_zadania, ukonczone):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('INSERT OR REPLACE INTO zadania_dzieci_status (klucz_zadania, ukonczone) VALUES (?, ?)', (str(klucz_zadania), 1 if ukonczone else 0))
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('INSERT OR REPLACE INTO zadania_dzieci_status (klucz_zadania, ukonczone) VALUES (?, ?)', (str(klucz_zadania), 1 if ukonczone else 0))
+        conn.commit()
 
 def sparsuj_liste_zadan(surowy_tekst):
     if not surowy_tekst or pd.isna(surowy_tekst):
@@ -1445,8 +1422,6 @@ def sparsuj_liste_zadan(surowy_tekst):
     return wynik
 
 def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
     grupy = []
     
     zadania_w_drodze = [
@@ -1456,49 +1431,48 @@ def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df):
     ]
     grupy.append(("🚗 Zadania na drogę", zadania_w_drodze, f"w_{wycieczka_id}_droga"))
 
-    for _, k in kroki_df.iterrows():
-        nazwa = str(k['nazwa'])
-        knum = str(k['krok_wycieczki'])
-        k_id = str(k['id'])
-        
-        if "domek" in nazwa.lower():
-            continue
+    with get_db() as conn:
+        cursor = conn.cursor()
+        for _, k in kroki_df.iterrows():
+            nazwa = str(k['nazwa'])
+            knum = str(k['krok_wycieczki'])
+            k_id = str(k['id'])
             
-        query = 'SELECT zadania_dla_dzieci FROM miejsca WHERE numer_miejsca = ? OR nazwa LIKE ? OR ? LIKE ("%" || nazwa || "%")'
-        cursor.execute(query, (str(knum), f"%{nazwa}%", str(nazwa)))
-        rows = cursor.fetchall()
-        
-        zad_miejsca = []
-        for r in rows:
-            if r and r[0]:
-                zad_miejsca.extend(sparsuj_liste_zadan(r[0]))
-        
-        zad_miejsca = list(dict.fromkeys(zad_miejsca))
-        if zad_miejsca:
-            grupy.append((f"📍 {nazwa}", zad_miejsca, f"w_{wycieczka_id}_krok_{k_id}"))
+            if "domek" in nazwa.lower():
+                continue
+                
+            query = 'SELECT zadania_dla_dzieci FROM miejsca WHERE numer_miejsca = ? OR nazwa LIKE ? OR ? LIKE ("%" || nazwa || "%")'
+            cursor.execute(query, (str(knum), f"%{nazwa}%", str(nazwa)))
+            rows = cursor.fetchall()
+            
+            zad_miejsca = []
+            for r in rows:
+                if r and r[0]:
+                    zad_miejsca.extend(sparsuj_liste_zadan(r[0]))
+            
+            zad_miejsca = list(dict.fromkeys(zad_miejsca))
+            if zad_miejsca:
+                grupy.append((f"📍 {nazwa}", zad_miejsca, f"w_{wycieczka_id}_krok_{k_id}"))
 
-    conn.close()
     return grupy
 
 def pobierz_ustawienia_z_db(uzytkownik):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT api_key, dostawca_ai, model_ai FROM uzytkownik_ustawienia WHERE uzytkownik = ?', (uzytkownik,))
-    res = cursor.fetchone()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT api_key, dostawca_ai, model_ai FROM uzytkownik_ustawienia WHERE uzytkownik = ?', (uzytkownik,))
+        res = cursor.fetchone()
     if res:
         return res[0] or "", res[1] or "Google Gemini", res[2] or "gemini-3.1-flash-lite"
     return "", "Google Gemini", "gemini-3.1-flash-lite"
 
 def zapisz_ustawienia_w_db(uzytkownik, api_key, dostawca_ai, model_ai):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT OR REPLACE INTO uzytkownik_ustawienia (uzytkownik, api_key, dostawca_ai, model_ai) 
-        VALUES (?, ?, ?, ?)
-    ''', (uzytkownik, api_key, dostawca_ai, model_ai))
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO uzytkownik_ustawienia (uzytkownik, api_key, dostawca_ai, model_ai) 
+            VALUES (?, ?, ?, ?)
+        ''', (uzytkownik, api_key, dostawca_ai, model_ai))
+        conn.commit()
 
 with st.sidebar:
     st.markdown("### 👤 Profil Użytkownika")
@@ -1633,11 +1607,10 @@ def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
             st.markdown(f'<div style="color: #DC5050; font-weight: 800; font-size: 9.5pt; margin-top: 2px;">{ost}</div>', unsafe_allow_html=True)
 
 def pobierz_historie_czatu_z_db(uzytkownik):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT rola, tresc FROM czat_historia WHERE uzytkownik = ? ORDER BY id ASC', (uzytkownik,))
-    rows = cursor.fetchall()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT rola, tresc FROM czat_historia WHERE uzytkownik = ? ORDER BY id ASC', (uzytkownik,))
+        rows = cursor.fetchall()
     
     history = []
     for rola, tresc in rows:
@@ -1646,28 +1619,25 @@ def pobierz_historie_czatu_z_db(uzytkownik):
     return history
 
 def zapisz_wiadomosc_w_db(uzytkownik, rola, tresc):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('INSERT INTO czat_historia (uzytkownik, rola, tresc) VALUES (?, ?, ?)', (uzytkownik, rola, tresc))
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO czat_historia (uzytkownik, rola, tresc) VALUES (?, ?, ?)', (uzytkownik, rola, tresc))
+        conn.commit()
 
 def wyczysc_historie_czatu_w_db(uzytkownik):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM czat_historia WHERE uzytkownik = ?', (uzytkownik,))
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM czat_historia WHERE uzytkownik = ?', (uzytkownik,))
+        conn.commit()
 
 def pobierz_notatki(id_wycieczki=None, id_miejsca=None):
-    conn = sqlite3.connect('cretai.db')
-    if id_wycieczki:
-        df = pd.read_sql('SELECT * FROM notatki WHERE id_wycieczki = ?', conn, params=(str(id_wycieczki),))
-    elif id_miejsca:
-        df = pd.read_sql('SELECT * FROM notatki WHERE id_miejsca = ?', conn, params=(str(id_miejsca),))
-    else:
-        df = pd.DataFrame()
-    conn.close()
+    with get_db() as conn:
+        if id_wycieczki:
+            df = pd.read_sql('SELECT * FROM notatki WHERE id_wycieczki = ?', conn, params=(str(id_wycieczki),))
+        elif id_miejsca:
+            df = pd.read_sql('SELECT * FROM notatki WHERE id_miejsca = ?', conn, params=(str(id_miejsca),))
+        else:
+            df = pd.DataFrame()
     return df
 
 def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
@@ -1694,35 +1664,30 @@ def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
                 st.rerun()
 
 def pob_posilki_dla_kroku(id_kroku):
-    conn = sqlite3.connect('cretai.db')
-    df = pd.read_sql('SELECT * FROM posilki_kroku WHERE id_kroku = ?', conn, params=(str(id_kroku),))
-    conn.close()
+    with get_db() as conn:
+        df = pd.read_sql('SELECT * FROM posilki_kroku WHERE id_kroku = ?', conn, params=(str(id_kroku),))
     return df
 
 def pobierz_zakupy_dla_kroku(id_kroku):
-    conn = sqlite3.connect('cretai.db')
-    df = pd.read_sql('SELECT * FROM zakupy WHERE id_kroku = ?', conn, params=(str(id_kroku),))
-    conn.close()
+    with get_db() as conn:
+        df = pd.read_sql('SELECT * FROM zakupy WHERE id_kroku = ?', conn, params=(str(id_kroku),))
     return df
 
 def pobierz_wszystkie_miejsca():
-    conn = sqlite3.connect('cretai.db')
-    df = pd.read_sql('SELECT * FROM miejsca', conn)
-    conn.close()
+    with get_db() as conn:
+        df = pd.read_sql('SELECT * FROM miejsca', conn)
     return df
 
 def pobierz_aktywna_wycieczke_id():
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT aktualne_id_wycieczki FROM aktywna_wycieczka WHERE id = 1')
-    res = cursor.fetchone()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT aktualne_id_wycieczki FROM aktywna_wycieczka WHERE id = 1')
+        res = cursor.fetchone()
     return str(res[0]) if res else "1"
 
 def pobierz_skrocone_opcje_wycieczek():
-    conn = sqlite3.connect('cretai.db')
-    df_w = pd.read_sql('SELECT id, tytul_wycieczki FROM wycieczka WHERE odbyta = 0', conn)
-    conn.close()
+    with get_db() as conn:
+        df_w = pd.read_sql('SELECT id, tytul_wycieczki FROM wycieczka WHERE odbyta = 0', conn)
     if df_w.empty:
         return []
     opcje = []
@@ -1736,15 +1701,14 @@ def pobierz_skrocone_opcje_wycieczek():
     return opcje
 
 def pobierz_wycieczki_dla_miejsca(numer_miejsca, nazwa_miejsca):
-    conn = sqlite3.connect('cretai.db')
-    query = '''
-        SELECT DISTINCT w.id, w.tytul_wycieczki, k.krok_wycieczki, k.okienko_zwiedzania
-        FROM wycieczka w
-        JOIN krok_wycieczki k ON w.id = k.id_wycieczki
-        WHERE k.krok_wycieczki = ? OR k.nazwa LIKE ? OR ? LIKE ('%' || k.nazwa || '%')
-    '''
-    df = pd.read_sql(query, conn, params=(str(numer_miejsca), f"%{nazwa_miejsca}%", str(nazwa_miejsca)))
-    conn.close()
+    with get_db() as conn:
+        query = '''
+            SELECT DISTINCT w.id, w.tytul_wycieczki, k.krok_wycieczki, k.okienko_zwiedzania
+            FROM wycieczka w
+            JOIN krok_wycieczki k ON w.id = k.id_wycieczki
+            WHERE k.krok_wycieczki = ? OR k.nazwa LIKE ? OR ? LIKE ('%' || k.nazwa || '%')
+        '''
+        df = pd.read_sql(query, conn, params=(str(numer_miejsca), f"%{nazwa_miejsca}%", str(nazwa_miejsca)))
     return df
 
 def wczytaj_kontekst_zewnetrzny():
@@ -1753,13 +1717,12 @@ def wczytaj_kontekst_zewnetrzny():
     tekst += f"- Lokalizacja SKLEP (Sklep przy domku): {SKLEP_LAT}, {SKLEP_LON}\n"
     tekst += wczytaj_pliki_regul("rule")
     
-    conn = sqlite3.connect('cretai.db')
-    try:
-        wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, pobudka, czas_wyjazdu, szacowana_godzina_powrotu, planowana_data FROM wycieczka', conn)
-        kroki_df = pd.read_sql('SELECT id, id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji FROM krok_wycieczki ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn)
-    except:
-        wycieczki_df, kroki_df = pd.DataFrame(), pd.DataFrame()
-    conn.close()
+    with get_db() as conn:
+        try:
+            wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, pobudka, czas_wyjazdu, szacowana_godzina_powrotu, planowana_data FROM wycieczka', conn)
+            kroki_df = pd.read_sql('SELECT id, id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji FROM krok_wycieczki ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn)
+        except:
+            wycieczki_df, kroki_df = pd.DataFrame(), pd.DataFrame()
 
     if not wycieczki_df.empty:
         for _, w in wycieczki_df.iterrows():
@@ -1961,11 +1924,10 @@ def edit_date_dialog(wycieczka_id, aktualna_data):
             st.rerun()
 
 def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False):
-    conn = sqlite3.connect('cretai.db')
-    wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
-    kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn, params=(str(wycieczka_id),))
-    czasy_dojazdu_df = pd.read_sql('SELECT * FROM czasy_dojazdu', conn)
-    conn.close()
+    with get_db() as conn:
+        wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
+        kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn, params=(str(wycieczka_id),))
+        czasy_dojazdu_df = pd.read_sql('SELECT * FROM czasy_dojazdu', conn)
     
     if wycieczka_row.empty:
         st.info("Brak danych wycieczki.")
