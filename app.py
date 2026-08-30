@@ -9,7 +9,7 @@ import os
 import urllib.request
 import json
 import re
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, time, timedelta
 
 # Próba zaimportowania Anthropic SDK dla Claude'a
 try:
@@ -84,7 +84,58 @@ div[data-baseweb="select"] > div {
     color: #2F241D !important;
 }
 
-/* EXPANDER OGÓLNY */
+/* WYMUSZENIE POZIOMEGO UKŁADU KOLUMN STREAMLITA DLA LOGISTYKI */
+div[data-testid="stHorizontalBlock"] {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+}
+div[data-testid="stHorizontalBlock"] > div {
+    flex: 1 1 0px !important;
+    min-width: 0 !important;
+}
+
+/* JEDNOLITE TŁO #F6F0DD DRAŻNIĄCYCH BIAŁYCH ELEMENTÓW */
+div.st-key-btn_date_picker button {
+    background-color: #F6F0DD !important;
+    color: #2B2118 !important;
+    border: 1.5px solid #E2DEC8 !important;
+    border-radius: 20px !important;
+    padding: 14px 16px !important;
+    min-height: 52px !important;
+    font-size: 1.02rem !important;
+    font-weight: 800 !important;
+    width: 100% !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important;
+}
+div.st-key-btn_date_picker button:hover {
+    border-color: #8C5338 !important;
+    background-color: #EFE8D1 !important;
+}
+
+div[data-testid="stPopover"] {
+    width: 100% !important;
+}
+div[data-testid="stPopover"] > button {
+    background-color: #F6F0DD !important;
+    color: #2B2118 !important;
+    border: 1.5px solid #E2DEC8 !important;
+    border-radius: 20px !important;
+    padding: 18px 10px !important;
+    min-height: 72px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important;
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+div[data-testid="stPopover"] > button:hover {
+    border-color: #8C5338 !important;
+    background-color: #EFE8D1 !important;
+}
+
+/* EXPANDER OGÓLNY / TAKTYKA DNIA */
 [data-testid="stExpander"] {
     border: 1.5px solid #E2DEC8 !important;
     border-radius: 24px !important;
@@ -188,41 +239,25 @@ div[data-baseweb="select"] > div {
 div.st-key-btn_date_picker {
     margin-bottom: 12px !important;
 }
-div.st-key-btn_date_picker button {
-    background-color: #FAF8F2 !important;
-    color: #2B2118 !important;
-    border: 1.5px solid #D8D2BC !important;
-    border-radius: 20px !important;
-    padding: 12px 16px !important;
-    min-height: 48px !important;
-    font-size: 1.02rem !important;
-    font-weight: 800 !important;
-    width: 100% !important;
-}
 
-/* KARTY */
-.overview-card {
-    background-color: #F6F0DD;
-    border: 1.5px solid #E2DEC8;
-    border-radius: 24px;
-    padding: 16px;
-    margin-bottom: 12px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-}
-.overview-card-title {
-    font-size: 10pt;
-    font-weight: 800;
-    color: #2B2118;
-    margin-bottom: 8px;
+/* UJEDNOLICONE NAGŁÓWKI SEKCJI */
+.section-unified-header {
+    font-size: 1.25rem !important;
+    font-weight: 800 !important;
+    color: #2B2118 !important;
+    margin-top: 16px !important;
+    margin-bottom: 8px !important;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
 }
-.overview-card-text {
+
+.section-body-text {
     font-size: 9.5pt;
     color: #2B2118;
     font-weight: 600;
     line-height: 1.4;
+    margin-bottom: 12px;
 }
 
 .overview-details-card {
@@ -252,32 +287,8 @@ div.st-key-btn_date_picker button {
     color: #8C5338;
 }
 
-.logistics-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-}
-.logistics-pill {
-    background-color: #FAF8F2;
-    border: 1.5px solid #E2DEC8;
-    border-radius: 16px;
-    padding: 10px 12px;
-}
-.logistics-pill-title {
-    font-size: 8pt;
-    font-weight: 800;
-    color: #8C5338;
-    text-transform: uppercase;
-    margin-bottom: 3px;
-}
-.logistics-pill-value {
-    font-size: 11pt;
-    font-weight: 900;
-    color: #2B2118;
-}
-
 /* =========================================================
-   PANCERNA, W 100% CIĄGŁA OŚ CZASU (PIONOWY KRĘGOSŁUP)
+   PANCERNA, W 100% CIĄGŁA I PROSTA OŚ CZASU (SZARA LINIA)
    ========================================================= */
 .timeline-master-container {
     position: relative;
@@ -287,16 +298,16 @@ div.st-key-btn_date_picker button {
     margin-bottom: 16px;
 }
 
-/* JEDNA NIEPRZERWANA LINIA PRZEBIEGAJĄCA PRZEZ CAŁY HARMONOGRAM */
 .timeline-master-continuous-line {
     position: absolute;
-    left: 93px;
+    left: 94px;
     top: 32px;
     bottom: 32px;
     width: 3.5px;
-    background-color: #2B2118;
+    background-color: rgba(0, 0, 0, 0.25) !important;
     transform: translateX(-50%);
-    z-index: 1;
+    z-index: 1 !important;
+    pointer-events: none;
 }
 
 .timeline-step-row-wrapper {
@@ -305,16 +316,15 @@ div.st-key-btn_date_picker button {
     z-index: 2;
 }
 
-.timeline-row {
+.timeline-row-frameless {
     position: relative;
     display: flex;
     align-items: center;
-    min-height: 64px;
-    background-color: #F6F0DD;
-    border: 1.5px solid #E2DEC8;
-    border-radius: 20px;
-    padding: 10px 12px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    min-height: 56px;
+    background-color: transparent !important;
+    border: none !important;
+    padding: 6px 12px;
+    box-sizing: border-box;
 }
 
 .timeline-step-expander {
@@ -324,6 +334,7 @@ div.st-key-btn_date_picker button {
     border-radius: 20px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.03);
     overflow: hidden;
+    box-sizing: border-box;
 }
 .timeline-step-expander summary {
     list-style: none !important;
@@ -342,12 +353,9 @@ div.st-key-btn_date_picker button {
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
 }
-.timeline-step-expander .timeline-expander-body {
-    padding: 12px 14px;
-    background-color: #F6F0DD;
-}
 
 .timeline-row-inner {
+    position: relative;
     display: flex;
     align-items: center;
     min-height: 44px;
@@ -355,12 +363,13 @@ div.st-key-btn_date_picker button {
 }
 
 .timeline-time {
+    position: relative;
     width: 58px;
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    z-index: 3;
+    z-index: 2;
 }
 .timeline-time-start {
     font-size: 11pt;
@@ -374,19 +383,16 @@ div.st-key-btn_date_picker button {
     margin-top: 2px;
 }
 
-/* ŚRODKOWA KOLUMNA IKONY */
 .timeline-center-col {
     position: relative;
-    width: 46px;
+    width: 48px;
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-right: 10px;
-    z-index: 3;
+    margin-right: 8px;
 }
 
-/* ODZNAKA / KÓŁKO KROKU */
 .timeline-icon-badge-static {
     position: relative;
     width: 38px;
@@ -398,22 +404,24 @@ div.st-key-btn_date_picker button {
     font-size: 13pt;
     font-weight: 900;
     color: #FFFFFF !important;
-    border: 2px solid #FFFFFF;
+    border: 2.5px solid #FFFFFF !important;
     box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-    z-index: 4;
+    z-index: 5 !important;
+    opacity: 1 !important;
 }
 
-.badge-pobudka { background-color: #94A77E; }
-.badge-miejsce { background-color: #C06C4E; }
-.badge-obiad { background-color: #B56749; }
-.badge-powrot { background-color: #DDAE92; }
+.badge-pobudka { background-color: #94A77E !important; }
+.badge-miejsce { background-color: #C06C4E !important; }
+.badge-obiad { background-color: #B56749 !important; }
+.badge-powrot { background-color: #DDAE92 !important; }
 
 .timeline-content-col {
+    position: relative;
     flex: 1;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    z-index: 3;
+    z-index: 2;
 }
 .timeline-item-title {
     font-size: 12.5pt;
@@ -425,12 +433,44 @@ div.st-key-btn_date_picker button {
     color: #4A3E36;
 }
 
+.timeline-nav-btn {
+    position: relative;
+    flex-shrink: 0;
+    width: auto;
+    min-width: 50px;
+    height: 48px;
+    background-color: transparent !important;
+    border: none !important;
+    border-radius: 14px;
+    text-align: center;
+    text-decoration: none !important;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    margin-left: 8px;
+    padding: 0 4px;
+    z-index: 2;
+}
+.timeline-nav-btn span:first-child { font-size: 13pt; color: #8C5338; }
+.timeline-nav-btn span:last-child { font-size: 7.5pt; font-weight: 800; color: #2B2118; }
+
+.timeline-step-expander .timeline-expander-body {
+    position: relative;
+    padding: 12px 14px;
+    background-color: #F6F0DD !important;
+    z-index: 3;
+}
+
 .step-details-card {
-    background-color: #EDE8D6;
+    position: relative;
+    background-color: #EDE8D6 !important;
     border: 1.5px solid #D6CEBA;
     border-radius: 18px;
     padding: 14px;
     margin-bottom: 8px;
+    z-index: 3;
 }
 .step-desc-bubble {
     background-color: #E2DAC4;
@@ -539,29 +579,6 @@ div.st-key-btn_date_picker button {
 .step-action-vertical-btn span:first-child { font-size: 13pt; }
 .step-action-vertical-btn span:last-child { font-size: 9.5pt; font-weight: 800; color: #2B2118; }
 
-.timeline-nav-btn {
-    flex-shrink: 0;
-    width: auto;
-    min-width: 50px;
-    height: 48px;
-    background-color: transparent !important;
-    border: none !important;
-    border-radius: 14px;
-    text-align: center;
-    text-decoration: none !important;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 1px;
-    margin-left: 8px;
-    padding: 0 4px;
-    z-index: 4;
-}
-.timeline-nav-btn span:first-child { font-size: 13pt; color: #8C5338; }
-.timeline-nav-btn span:last-child { font-size: 7.5pt; font-weight: 800; color: #2B2118; }
-
-/* PRZESTRZEŃ MIĘDZY KARTAMI Z PLAKIETKĄ DOJAZDU */
 .timeline-transit-spacer {
     position: relative;
     width: 100%;
@@ -572,20 +589,18 @@ div.st-key-btn_date_picker button {
     z-index: 2;
 }
 
-.timeline-transit-badge-box {
-    margin-left: 115px;
-    font-size: 8.5pt;
+.timeline-transit-text {
+    margin-left: 118px;
+    font-size: 9pt;
     font-weight: 800;
-    color: #8C5338;
+    color: #2B2118;
     display: flex;
     align-items: center;
     gap: 6px;
-    z-index: 3;
-    background-color: rgba(246, 240, 221, 0.95);
-    border: 1px solid #E2DEC8;
-    padding: 3px 10px;
-    border-radius: 10px;
-    width: fit-content;
+    z-index: 2;
+    background: transparent;
+    border: none;
+    padding: 0;
 }
 
 div[data-testid="stCheckbox"] {
@@ -787,7 +802,7 @@ def wczytaj_pliki_regul(katalog="rule"):
     return tresc_regul if znaleziono else ""
 
 # --- PEŁNY KASKADOWY SILNIK PRZELICZANIA I SYNCHRONIZACJI WYCIECZKI ---
-def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor_koniec_str=None, anchor_start_str=None):
+def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor_koniec_str=None, anchor_start_str=None, force_pobudka_str=None, force_wyjazd_str=None, force_powrot_str=None):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT id_kroku_z, id_kroku_do, szacowany_czas_postoju FROM czasy_dojazdu WHERE szacowany_czas_postoju IS NOT NULL')
@@ -848,6 +863,19 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
     start_times = [None] * len(kroki)
     end_times = [None] * len(kroki)
 
+    if force_powrot_str:
+        anchor_idx = len(kroki) - 1
+        anchor_start_str = force_powrot_str
+    elif force_wyjazd_str:
+        anchor_idx = 0
+        anchor_koniec_str = force_wyjazd_str
+    elif force_pobudka_str:
+        g_pob = sparsuj_godzine_minuty(force_pobudka_str) or (6, 0)
+        dt_pob = datetime(2026, 1, 1, g_pob[0], g_pob[1])
+        dt_wyj = dt_pob + timedelta(minutes=90)
+        anchor_idx = 0
+        anchor_koniec_str = dt_wyj.strftime("%H:%M")
+
     if anchor_idx is not None and (anchor_koniec_str or anchor_start_str):
         if anchor_koniec_str:
             g_end = sparsuj_godzine_minuty(anchor_koniec_str) or (12, 0)
@@ -870,7 +898,7 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
         for i in range(anchor_idx + 1, len(kroki)):
             czas_odcinka = dojazdy_minuty[i - 1] + postoje_na_trasie_minuty[i - 1]
             start_times[i] = end_times[i - 1] + timedelta(minutes=czas_odcinka)
-            end_times[i] = start_times[i + 1] if False else (start_times[i] + timedelta(minutes=czasy_pobytu[i]))
+            end_times[i] = start_times[i] + timedelta(minutes=czasy_pobytu[i])
     else:
         p_start = sparsuj_godzine_minuty(kroki[0][3].split('-')[0]) if kroki[0][3] else (7, 0)
         cur_dt = datetime(2026, 1, 1, p_start[0], p_start[1])
@@ -1643,10 +1671,9 @@ def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
     if max_temp >= 32:
         ostrzezenia.append(f"🔥 Ekstremalny upał! Maksymalna temperatura sięgnie {max_temp}°C.")
 
-    border_col = '#DC5050' if ostrzezenia else '#D8D2BC'
     title_col = '#DC5050' if ostrzezenia else '#8A7B70'
 
-    st.markdown(f'<div style="background-color: #FAF8F2; border: 1.5px solid {border_col}; border-radius: 20px; padding: 14px; margin-bottom: 12px;"><div style="font-size: 9pt; font-weight: 900; color: {title_col}; margin-bottom: 4px; text-transform: uppercase;">🌤️ Pogoda na trasie ({planowana_data})</div><div style="font-size: 10.5pt; color: #2B2118; font-weight: 700;">Temperatura: <b>{min_temp}°C do {max_temp}°C</b></div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="section-unified-header">🌤️ Pogoda na trasie</div><div style="font-size: 10.5pt; color: #2B2118; font-weight: 700; margin-bottom: 12px;">Temperatura: <b>{min_temp}°C do {max_temp}°C</b></div>', unsafe_allow_html=True)
 
     if ostrzezenia:
         for ost in ostrzezenia:
@@ -1969,6 +1996,34 @@ def edit_date_dialog(wycieczka_id, aktualna_data):
         if st.button("Anuluj", use_container_width=True):
             st.rerun()
 
+# --- DIALOGI DLA EDYCJI GODZIN W LOGISTYCE ---
+@st.dialog("Edytuj godzinę pobudki")
+def edit_pobudka_dialog(wycieczka_id, pobudka_val):
+    g_pob = sparsuj_godzine_minuty(pobudka_val) or (6, 0)
+    t_pob = st.time_input("⏰ Godzina pobudki", value=time(g_pob[0], g_pob[1]), step=300)
+    if st.button("💾 Zapisz", use_container_width=True):
+        przelicz_i_zsynchronizuj_wycieczke(str(wycieczka_id), force_pobudka_str=t_pob.strftime("%H:%M"))
+        st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę pobudki!"
+        st.rerun()
+
+@st.dialog("Edytuj godzinę wyjazdu")
+def edit_wyjazd_dialog(wycieczka_id, wyjazd_val):
+    g_wyj = sparsuj_godzine_minuty(wyjazd_val) or (7, 30)
+    t_wyj = st.time_input("🚗 Godzina wyjazdu", value=time(g_wyj[0], g_wyj[1]), step=300)
+    if st.button("💾 Zapisz", use_container_width=True):
+        przelicz_i_zsynchronizuj_wycieczke(str(wycieczka_id), force_wyjazd_str=t_wyj.strftime("%H:%M"))
+        st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę wyjazdu!"
+        st.rerun()
+
+@st.dialog("Edytuj godzinę powrotu")
+def edit_powrot_dialog(wycieczka_id, powrot_val):
+    g_pow = sparsuj_godzine_minuty(powrot_val) or (17, 33)
+    t_pow = st.time_input("🏠 Godzina powrotu do domku", value=time(g_pow[0], g_pow[1]), step=300)
+    if st.button("💾 Zapisz", use_container_width=True):
+        przelicz_i_zsynchronizuj_wycieczke(str(wycieczka_id), force_powrot_str=t_pow.strftime("%H:%M"))
+        st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę powrotu!"
+        st.rerun()
+
 def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False):
     with get_db() as conn:
         wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
@@ -2002,59 +2057,78 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
     if pokaz_pogode:
         renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data_val)
 
-    pobudka_val = w_gen.get('pobudka', '06:00') if pd.notna(w_gen.get('pobudka')) else '06:00'
-    wyjazd_val = w_gen.get('czas_wyjazdu', '07:30') if pd.notna(w_gen.get('czas_wyjazdu')) else '07:30'
-    powrot_val = w_gen.get('szacowana_godzina_powrotu', '17:33') if pd.notna(w_gen.get('szacowana_godzina_powrotu')) else '17:33'
-    czas_trwania = f"{w_gen['calkowity_czas_wycieczki_godziny']} godz." if pd.notna(w_gen.get('calkowity_czas_wycieczki_godziny')) else "—"
-
-    st.markdown(f"""
-    <div class="overview-card">
-        <div class="overview-card-title"><span>🧭</span> LOGISTYKA DNIA</div>
-        <div class="logistics-grid">
-            <div class="logistics-pill">
-                <div class="logistics-pill-title">⏰ Pobudka</div>
-                <div class="logistics-pill-value">{pobudka_val}</div>
-            </div>
-            <div class="logistics-pill">
-                <div class="logistics-pill-title">🚗 Wyjazd</div>
-                <div class="logistics-pill-value">{wyjazd_val}</div>
-            </div>
-            <div class="logistics-pill">
-                <div class="logistics-pill-title">🏠 Powrót do Domku</div>
-                <div class="logistics-pill-value">{powrot_val}</div>
-            </div>
-            <div class="logistics-pill">
-                <div class="logistics-pill-title">⏱️ Czas trwania trasy</div>
-                <div class="logistics-pill-value">{czas_trwania}</div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
     if pd.notna(w_gen.get('calosciowy_opis_wycieczki')) and str(w_gen['calosciowy_opis_wycieczki']).strip():
         st.markdown(f"""
-        <div class="overview-card">
-            <div class="overview-card-title">📝 Cel wycieczki</div>
-            <div class="overview-card-text">{w_gen['calosciowy_opis_wycieczki']}</div>
+        <div style="margin-top: 4px; margin-bottom: 12px;">
+            <div class="section-unified-header">📝 Cel wycieczki</div>
+            <div class="section-body-text">{w_gen['calosciowy_opis_wycieczki']}</div>
         </div>
         """, unsafe_allow_html=True)
 
+    # POBRANIE WSPÓŁDZIELONEGO STANU Z BAZY (Pierwszy i ostatni krok harmonogramu)
+    pobudka_val = w_gen.get('pobudka', '06:00') if pd.notna(w_gen.get('pobudka')) else '06:00'
+    if not kroki_df.empty:
+        pobudka_val = kroki_df.iloc[0]['okienko_zwiedzania'].split("-")[0].strip() if "-" in str(kroki_df.iloc[0]['okienko_zwiedzania']) else pobudka_val
+        wyjazd_val = kroki_df.iloc[0]['okienko_zwiedzania'].split("-")[1].strip() if "-" in str(kroki_df.iloc[0]['okienko_zwiedzania']) else w_gen.get('czas_wyjazdu', '07:30')
+        powrot_val = kroki_df.iloc[-1]['okienko_zwiedzania'].split("-")[0].strip() if "-" in str(kroki_df.iloc[-1]['okienko_zwiedzania']) else w_gen.get('szacowana_godzina_powrotu', '17:33')
+    else:
+        wyjazd_val = w_gen.get('czas_wyjazdu', '07:30')
+        powrot_val = w_gen.get('szacowana_godzina_powrotu', '17:33')
+
+    # --- SEKCJA LOGISTYKA I TAKTYKA ---
+    st.markdown('<div class="section-unified-header">🧭 Logistyka i taktyka</div>', unsafe_allow_html=True)
+    
+    col_log1, col_log2, col_log3 = st.columns(3)
+    
+    with col_log1:
+        st.markdown('<div style="text-align: center; font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;">⏰ Pobudka</div>', unsafe_allow_html=True)
+        with st.popover(pobudka_val, use_container_width=True):
+            g_pob = sparsuj_godzine_minuty(pobudka_val) or (6, 0)
+            t_pob = st.time_input("Nowa godzina pobudki", value=time(g_pob[0], g_pob[1]), step=300, key=f"ti_pob_{wycieczka_id}")
+            if st.button("💾 Zapisz", key=f"btn_save_pob_{wycieczka_id}", use_container_width=True):
+                przelicz_i_zsynchronizuj_wycieczke(str(wycieczka_id), force_pobudka_str=t_pob.strftime("%H:%M"))
+                st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę pobudki!"
+                st.rerun()
+
+    with col_log2:
+        st.markdown('<div style="text-align: center; font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;">🚗 Wyjazd</div>', unsafe_allow_html=True)
+        with st.popover(wyjazd_val, use_container_width=True):
+            g_wyj = sparsuj_godzine_minuty(wyjazd_val) or (7, 30)
+            t_wyj = st.time_input("Nowa godzina wyjazdu", value=time(g_wyj[0], g_wyj[1]), step=300, key=f"ti_wyj_{wycieczka_id}")
+            if st.button("💾 Zapisz", key=f"btn_save_wyj_{wycieczka_id}", use_container_width=True):
+                przelicz_i_zsynchronizuj_wycieczke(str(wycieczka_id), force_wyjazd_str=t_wyj.strftime("%H:%M"))
+                st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę wyjazdu!"
+                st.rerun()
+
+    with col_log3:
+        st.markdown('<div style="text-align: center; font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;">🏠 Powrót</div>', unsafe_allow_html=True)
+        with st.popover(powrot_val, use_container_width=True):
+            g_pow = sparsuj_godzine_minuty(powrot_val) or (17, 33)
+            t_pow = st.time_input("Nowa godzina powrotu", value=time(g_pow[0], g_pow[1]), step=300, key=f"ti_pow_{wycieczka_id}")
+            if st.button("💾 Zapisz", key=f"btn_save_pow_{wycieczka_id}", use_container_width=True):
+                przelicz_i_zsynchronizuj_wycieczke(str(wycieczka_id), force_powrot_str=t_pow.strftime("%H:%M"))
+                st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę powrotu!"
+                st.rerun()
+
     if pd.notna(w_gen.get('calosciowa_taktyka_dnia')) and str(w_gen['calosciowa_taktyka_dnia']).strip():
         st.markdown(f"""
-        <details class="overview-details-card">
-            <summary>🧠 TAKTYKA DNIA</summary>
+        <details class="overview-details-card" style="margin-top: 6px;">
+            <summary>🧠 Taktyka dnia</summary>
             <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
-                <div class="overview-card-text">{w_gen['calosciowa_taktyka_dnia']}</div>
+                <div class="section-body-text" style="margin-bottom: 0;">{w_gen['calosciowa_taktyka_dnia']}</div>
             </div>
         </details>
         """, unsafe_allow_html=True)
 
-    st.markdown('### 🗺️ Plan na dzień')
+    st.markdown('<div class="section-unified-header">🗺️ Plan na dzień</div>', unsafe_allow_html=True)
 
-    # BUDUJEMY KOMPLETNY, CIĄGŁY BLOK HTML CAŁEGO HARMONOGRAMU
-    timeline_full_html = ['<div class="timeline-master-container">', '<div class="timeline-master-continuous-line"></div>']
-    
+    # BUDUJEMY JEDEN CIĄGŁY BLOK HTML Z JEDNĄ GLOBALNĄ SZARĄ LINIĄ W TLE
     total_steps = len(kroki_df)
+    timeline_full_html = [
+        '<div class="timeline-master-container">',
+        '<div class="timeline-master-continuous-line"></div>'
+    ]
+    
     for idx, (_, k) in enumerate(kroki_df.iterrows()):
         krok_row_id = int(k['id'])
         nazwa = str(k['nazwa'])
@@ -2119,7 +2193,8 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
         if is_first or is_last:
             row_html = (
-                f'<div class="timeline-row">'
+                f'<div class="timeline-row-frameless">'
+                f'<div class="timeline-row-inner">'
                 f'<div class="timeline-time">'
                 f'<span class="timeline-time-start">{godzina_start}</span>'
                 f'{time_end_html}'
@@ -2130,6 +2205,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 f'<div class="timeline-item-desc">{opis_tekst}</div>'
                 f'</div>'
                 f'{nav_btn_html}'
+                f'</div>'
                 f'</div>'
             )
             timeline_full_html.append(row_html)
@@ -2220,7 +2296,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
         timeline_full_html.append('</div>')
 
-        # Przestrzeń między kartami z plakietką dojazdu (przez którą linia przechodzi płynnie w tle)
+        # Pływający tekst dojazdu
         if idx < total_steps - 1:
             k2_row_id = int(kroki_df.iloc[idx + 1]['id'])
             match_row = czasy_dojazdu_df[(czasy_dojazdu_df['id_kroku_z'] == krok_row_id) & (czasy_dojazdu_df['id_kroku_do'] == k2_row_id)]
@@ -2229,9 +2305,13 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 czas_dojazdu_dalej = match_row.iloc[0]['czas_przejazdu']
                 postoj_val = match_row.iloc[0]['szacowany_czas_postoju']
                 if pd.notna(czas_dojazdu_dalej) and str(czas_dojazdu_dalej).strip() != "":
-                    transit_html = f'<div class="timeline-transit-badge-box">🚗 {czas_dojazdu_dalej} | + {postoj_val}m</div>'
+                    transit_html = f'<div class="timeline-transit-text">🚗 {czas_dojazdu_dalej} | + {postoj_val}m</div>'
 
-            spacer_html = f'<div class="timeline-transit-spacer">{transit_html}</div>'
+            spacer_html = (
+                f'<div class="timeline-transit-spacer">'
+                f'{transit_html}'
+                f'</div>'
+            )
             timeline_full_html.append(spacer_html)
 
     timeline_full_html.append('</div>')
@@ -2290,7 +2370,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
             st_folium(m_trasa, width=None, height=260, returned_objects=[], key=f"map_route_{wycieczka_id}")
 
-    st.markdown("### 🎯 Zadania dla dzieci")
+    st.markdown('<div class="section-unified-header">🎯 Zadania dla dzieci</div>', unsafe_allow_html=True)
     grupy_zadan = pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df)
     
     with st.expander("Rozwiń listę zadań dla dzieci", expanded=False):
@@ -2315,7 +2395,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
     renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
 
-    st.markdown("### 🤖 Asystent AI")
+    st.markdown('<div class="section-unified-header">🤖 Asystent AI</div>', unsafe_allow_html=True)
     renderuj_globalny_czat_ai(aktualny_uzytkownik, inline=True)
 
 if st.session_state.active_tab == "route":
