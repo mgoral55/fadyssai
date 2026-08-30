@@ -260,6 +260,57 @@ div.st-key-btn_date_picker {
     margin-bottom: 12px;
 }
 
+.overview-card {
+    background-color: #F6F0DD;
+    border: 1.5px solid #E2DEC8;
+    border-radius: 24px;
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+}
+.overview-card-title {
+    font-size: 10pt;
+    font-weight: 800;
+    color: #2B2118;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.overview-card-text {
+    font-size: 9.5pt;
+    color: #2B2118;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+.logistics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+.logistics-pill {
+    background-color: #FAF8F2;
+    border: 1.5px solid #E2DEC8;
+    border-radius: 16px;
+    padding: 10px 12px;
+}
+.logistics-pill-title {
+    font-size: 8pt;
+    font-weight: 800;
+    color: #8C5338;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.logistics-pill-value {
+    font-size: 11pt;
+    font-weight: 900;
+    color: #2B2118;
+}
+
 .overview-details-card {
     background-color: #F6F0DD;
     border: 1.5px solid #E2DEC8;
@@ -779,7 +830,6 @@ def oblicz_czas_trwania_okienka(okienko_str, domyslny_czas=45):
 DNI_TYGODNIA_PL = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"]
 MIESIACE_PL = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia"]
 
-# --- FUNKCJA WCZYTUJĄCA REGUŁY Z FOLDERU rule/ ---
 def wczytaj_pliki_regul(katalog="rule"):
     if not os.path.exists(katalog):
         return ""
@@ -801,7 +851,6 @@ def wczytaj_pliki_regul(katalog="rule"):
                     pass
     return tresc_regul if znaleziono else ""
 
-# --- PEŁNY KASKADOWY SILNIK PRZELICZANIA I SYNCHRONIZACJI WYCIECZKI ---
 def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor_koniec_str=None, anchor_start_str=None, force_pobudka_str=None, force_wyjazd_str=None, force_powrot_str=None):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -888,13 +937,11 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
             start_times[anchor_idx] = dt_anchor_start
             end_times[anchor_idx] = dt_anchor_start + timedelta(minutes=czasy_pobytu[anchor_idx])
 
-        # Przeliczenie wstecz
         for i in range(anchor_idx - 1, -1, -1):
             czas_odcinka = dojazdy_minuty[i] + postoje_na_trasie_minuty[i]
             end_times[i] = start_times[i + 1] - timedelta(minutes=czas_odcinka)
             start_times[i] = end_times[i] - timedelta(minutes=czasy_pobytu[i])
 
-        # Przeliczenie w przód
         for i in range(anchor_idx + 1, len(kroki)):
             czas_odcinka = dojazdy_minuty[i - 1] + postoje_na_trasie_minuty[i - 1]
             start_times[i] = end_times[i - 1] + timedelta(minutes=czas_odcinka)
@@ -1173,7 +1220,6 @@ def init_db():
 
 init_db()
 
-# --- FUNKCJE CRUD DO ZARZĄDZANIA WYCIECZKAMI I KROKAMI PRZEZ LLM ---
 def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, 
                      planowana_data=None):
     with get_db() as conn:
@@ -1337,7 +1383,6 @@ def zmien_status_zakupu(zakup_id, kupione):
         cursor.execute('UPDATE zakupy SET kupione = ? WHERE id = ?', (1 if kupione else 0, int(zakup_id)))
         conn.commit()
 
-# --- ZESTAW NARZĘDZI FUNCTION CALLING DLA LLM ---
 cretai_tools = types.Tool(function_declarations=[
     types.FunctionDeclaration(
         name="dodaj_notatke",
@@ -1464,7 +1509,6 @@ def wykonaj_narzedzie_bazy(call_name, args):
         return dodaj_produkt_zakupow(**args)
     return "Wykonano."
 
-# --- WŁASNE FUNKCJE POMOCNICZE I POBIERANIE KONTEKSTU ---
 def pobierz_status_zadania(klucz_zadania):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -1671,8 +1715,6 @@ def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
     if max_temp >= 32:
         ostrzezenia.append(f"🔥 Ekstremalny upał! Maksymalna temperatura sięgnie {max_temp}°C.")
 
-    title_col = '#DC5050' if ostrzezenia else '#8A7B70'
-
     st.markdown(f'<div class="section-unified-header">🌤️ Pogoda na trasie</div><div style="font-size: 10.5pt; color: #2B2118; font-weight: 700; margin-bottom: 12px;">Temperatura: <b>{min_temp}°C do {max_temp}°C</b></div>', unsafe_allow_html=True)
 
     if ostrzezenia:
@@ -1826,7 +1868,6 @@ def dodaj_marker_domku(m):
     domek_icon = folium.DivIcon(html=domek_icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=domek_icon, tooltip="Nasz Domek").add_to(m)
 
-# --- GLOBALNY CZAT AI Z OBSŁUGĄ FUNCTION CALLING ---
 def renderuj_globalny_czat_ai(uzytkownik, inline=False):
     if not inline:
         st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
@@ -1996,7 +2037,6 @@ def edit_date_dialog(wycieczka_id, aktualna_data):
         if st.button("Anuluj", use_container_width=True):
             st.rerun()
 
-# --- DIALOGI DLA EDYCJI GODZIN W LOGISTYCE ---
 @st.dialog("Edytuj godzinę pobudki")
 def edit_pobudka_dialog(wycieczka_id, pobudka_val):
     g_pob = sparsuj_godzine_minuty(pobudka_val) or (6, 0)
@@ -2065,7 +2105,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         </div>
         """, unsafe_allow_html=True)
 
-    # POBRANIE WSPÓŁDZIELONEGO STANU Z BAZY (Pierwszy i ostatni krok harmonogramu)
     pobudka_val = w_gen.get('pobudka', '06:00') if pd.notna(w_gen.get('pobudka')) else '06:00'
     if not kroki_df.empty:
         pobudka_val = kroki_df.iloc[0]['okienko_zwiedzania'].split("-")[0].strip() if "-" in str(kroki_df.iloc[0]['okienko_zwiedzania']) else pobudka_val
@@ -2075,7 +2114,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         wyjazd_val = w_gen.get('czas_wyjazdu', '07:30')
         powrot_val = w_gen.get('szacowana_godzina_powrotu', '17:33')
 
-    # --- SEKCJA LOGISTYKA I TAKTYKA ---
     st.markdown('<div class="section-unified-header">🧭 Logistyka i taktyka</div>', unsafe_allow_html=True)
     
     col_log1, col_log2, col_log3 = st.columns(3)
@@ -2122,7 +2160,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
     st.markdown('<div class="section-unified-header">🗺️ Plan na dzień</div>', unsafe_allow_html=True)
 
-    # BUDUJEMY JEDEN CIĄGŁY BLOK HTML Z JEDNĄ GLOBALNĄ SZARĄ LINIĄ W TLE
     total_steps = len(kroki_df)
     timeline_full_html = [
         '<div class="timeline-master-container">',
@@ -2296,7 +2333,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
         timeline_full_html.append('</div>')
 
-        # Pływający tekst dojazdu
         if idx < total_steps - 1:
             k2_row_id = int(kroki_df.iloc[idx + 1]['id'])
             match_row = czasy_dojazdu_df[(czasy_dojazdu_df['id_kroku_z'] == krok_row_id) & (czasy_dojazdu_df['id_kroku_do'] == k2_row_id)]
@@ -2318,7 +2354,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
     
     st.markdown("".join(timeline_full_html), unsafe_allow_html=True)
 
-    # CHECKLISTY ZAKUPÓW
     for idx, (_, k) in enumerate(kroki_df.iterrows()):
         krok_row_id = int(k['id'])
         nazwa = str(k['nazwa'])
@@ -2631,10 +2666,71 @@ elif st.session_state.active_tab == "zabytek":
             </div>
             """, unsafe_allow_html=True)
 
+            st.markdown(f"""
+            <div class="overview-card">
+                <div class="overview-card-title"><span>ℹ️</span> INFORMACJE PRAKTYCZNE</div>
+                <div class="logistics-grid">
+                    <div class="logistics-pill">
+                        <div class="logistics-pill-title">🚗 Czas dojazdu</div>
+                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('czas_dojazdu', '—')}</div>
+                    </div>
+                    <div class="logistics-pill">
+                        <div class="logistics-pill-title">⏱️ Czas na miejscu</div>
+                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('orientacyjny_czas', '—')}</div>
+                    </div>
+                    <div class="logistics-pill">
+                        <div class="logistics-pill-title">💶 Koszt (2+2)</div>
+                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('koszt', '—')}</div>
+                    </div>
+                    <div class="logistics-pill">
+                        <div class="logistics-pill-title">🕒 Godziny otwarcia</div>
+                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('godziny_otwarcia', '—')}</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown(f"""
+            <div class="overview-card">
+                <div class="overview-card-title"><span>📊</span> POZIOM TRUDNOŚCI</div>
+                <div class="overview-card-text">{p.get('trudnosc_adhd', 'Średni')}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown(f"""
+            <div class="overview-card">
+                <div class="overview-card-title"><span>☀️</span> OCHRONA PRZED SŁOŃCEM</div>
+                <div class="overview-card-text">{p.get('ochrona_slonce', 'Standardowa')}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown(f"""
+            <details class="overview-details-card">
+                <summary>🧠 SPECYFIKA ADHD & SENSORYKA</summary>
+                <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
+                    <div style="font-size: 9.5pt; color: #2B2118; margin-bottom: 6px;"><b>Potencjał meltdownu:</b> {p.get('potencjal_meltdownu', 'Średni')}</div>
+                    <div style="font-size: 9.5pt; color: #2B2118;"><b>Strategia zaradcza:</b> {p.get('strategie_meltdown', 'Brak')}</div>
+                </div>
+            </details>
+            """, unsafe_allow_html=True)
+
+            zadania_miejsca = sparsuj_liste_zadan(p.get('zadania_dla_dzieci', ''))
+            if zadania_miejsca:
+                zadania_html_list = "".join([f"<div style='font-size: 9.5pt; color: #2B2118; margin-bottom: 6px;'>• {z}</div>" for z in zadania_miejsca])
+                st.markdown(f"""
+                <details class="overview-details-card">
+                    <summary><b>🎯 Zadania dla dzieci</b></summary>
+                    <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
+                        {zadania_html_list}
+                    </div>
+                </details>
+                """, unsafe_allow_html=True)
+
             if coords_p and ',' in coords_p:
                 st.markdown(f"""
                 <div class="step-action-vertical-bar">
                     <a href="https://www.google.com/maps/search/?api=1&query={coords_p}" target="_blank" class="step-action-vertical-btn"><span>🧭</span><span>Nawiguj do tego miejsca</span></a>
+                    <a href="https://www.google.com/search?q={p['nazwa']} Kreta" target="_blank" class="step-action-vertical-btn"><span>🔍</span><span>Szukaj w Google</span></a>
                 </div>
                 """, unsafe_allow_html=True)
 
