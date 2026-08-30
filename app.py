@@ -2153,8 +2153,8 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 f'</div>'
                 f'</details>'
                 f'<div class="step-action-vertical-bar">'
-                f'<a href="{sklep_maps_url}" target="_blank" class="step-action-vertical-btn"><span>🛒</span><span>Sklep</span></a>'
-                f'<a href="{resto_maps_url}" target="_blank" class="step-action-vertical-btn"><span>🍽️</span><span>Resto</span></a>'
+                f'<a href="{sklep_maps_url}" target="_blank" class="step-action-vertical-btn"><span>🛒</span><span>Sklepy w pobliżu</span></a>'
+                f'<a href="{resto_maps_url}" target="_blank" class="step-action-vertical-btn"><span>🍽️</span><span>Gastro w pobliżu</span></a>'
                 f'</div>'
                 f'</div>'
             )
@@ -2219,7 +2219,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 czas_dojazdu_dalej = match_row.iloc[0]['czas_przejazdu']
                 postoj_val = match_row.iloc[0]['szacowany_czas_postoju']
                 if pd.notna(czas_dojazdu_dalej) and str(czas_dojazdu_dalej).strip() != "":
-                    st.markdown(f'<div class="timeline-transit-row"><div style="font-size: 8.5pt; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #8C5338;"><span>🚗</span> Dojazd: <span style="color: #2B2118;">{czas_dojazdu_dalej}</span> | ⏱️ Postój na trasie: <span style="color: #2B2118;">{postoj_val} min</span></div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="timeline-transit-row"><div style="font-size: 8.5pt; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #8C5338;">Dojazd: <span style="color: #2B2118;">{czas_dojazdu_dalej}</span> | + <span style="color: #2B2118;">{postoj_val} min</span> postoju</div></div>', unsafe_allow_html=True)
 
     st.markdown('</div></div></div>', unsafe_allow_html=True)
 
