@@ -9,7 +9,6 @@ import os
 import urllib.request
 import json
 import re
-import base64
 from datetime import datetime, date, timedelta
 
 # Próba zaimportowania Anthropic SDK dla Claude'a
@@ -726,9 +725,8 @@ def wczytaj_pliki_regul(katalog="rule"):
                     pass
     return tresc_regul if znaleziono else ""
 
-# --- PEŁNY KASKADOWY SILNIK PRZELICZANIA I SYNCHRONIZACJI WYCIECZKI (ZOPTYMALIZOWANY) ---
+# --- PEŁNY KASKADOWY SILNIK PRZELICZANIA I SYNCHRONIZACJI WYCIECZKI ---
 def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor_koniec_str=None, anchor_start_str=None):
-    # 0. Szybki odczyt danych z bazy (krótkie połączenie)
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT id_kroku_z, id_kroku_do, szacowany_czas_postoju FROM czasy_dojazdu WHERE szacowany_czas_postoju IS NOT NULL')
@@ -740,7 +738,6 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
     if not kroki:
         return
 
-    # 1. Obliczenie czasów dojazdu OSRM oraz buforów (POZA połączeniem z bazą)
     dojazdy_minuty = []
     dojazdy_tekst = []
     postoje_na_trasie_minuty = []
@@ -762,7 +759,6 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
         dojazdy_tekst.append(tekst_dojazdu)
         postoje_na_trasie_minuty.append(bufor_postoju)
 
-    # 2. Czas trwania pobytu w każdym kroku (Reguły stopniowane ADHD)
     czasy_pobytu = []
     for idx, k in enumerate(kroki):
         is_f = (idx == 0)
@@ -781,7 +777,6 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
         dur = oblicz_czas_trwania_okienka(k[3], domyslny_czas=domyslny_czas)
         czasy_pobytu.append(dur)
 
-    # 3. Kaskadowe wyliczenie godzin
     anchor_idx = None
     if anchor_krok_id:
         for idx, k in enumerate(kroki):
@@ -816,7 +811,6 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
             start_times[i] = end_times[i - 1] + timedelta(minutes=czas_odcinka)
             end_times[i] = start_times[i] + timedelta(minutes=czasy_pobytu[i])
     else:
-        # Standardowe przeliczenie w przód
         p_start = sparsuj_godzine_minuty(kroki[0][3].split('-')[0]) if kroki[0][3] else (7, 0)
         cur_dt = datetime(2026, 1, 1, p_start[0], p_start[1])
         for i in range(len(kroki)):
@@ -826,7 +820,6 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
                 czas_odcinka = dojazdy_minuty[i] + postoje_na_trasie_minuty[i]
                 cur_dt = end_times[i] + timedelta(minutes=czas_odcinka)
 
-    # 4. Atomowy, szybki zapis przeliczonych danych do bazy
     with get_db() as conn:
         cursor = conn.cursor()
         krok_ids = [k[0] for k in kroki]
@@ -1108,7 +1101,6 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, c
     przelicz_i_zsynchronizuj_wycieczke(str(id))
     return f"Wycieczka #{id} została zaktualizowana i przeliczona."
 
-# --- ZAAWANSOWANE WSTAWIANIE KROKU Z PILNOWANIEM KOLEJNOŚCI I SKLEPU PRZY DOMKU ---
 def dodaj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne="35.3,24.5", 
                          okienko_zwiedzania="10:00 - 12:00", godzina_ewakuacji="Brak", 
                          czerwona_strefa_ostrzezenie="Brak", strefa_luzu_i_regeneracji="Spokojna strefa", 
@@ -1175,7 +1167,6 @@ def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa=None, wspolrzedne=
     )
     return f"Zaktualizowano krok i automatycznie przeliczono godziny całej wycieczki #{id_wycieczki}."
 
-# --- NIEZAWODNE USUWANIE KROKU Z BAZY DANYCH ---
 def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -1197,15 +1188,11 @@ def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
         if "domek" in nazwa.lower() and ("start" in nazwa.lower() or "powrót" in nazwa.lower() or "baza" in nazwa.lower()):
             return "BLOKADA: Baza wypadowa (Domek) jest nieusuwalna! Możesz usuwać wyłącznie atrakcje, sklepy i plaże na trasie."
         
-        # 1. Usunięcie powiązanych rekordów podrzędnych
         cursor.execute('DELETE FROM posilki_kroku WHERE id_kroku = ?', (krok_id,))
         cursor.execute('DELETE FROM zakupy WHERE id_kroku = ?', (krok_id,))
         cursor.execute('DELETE FROM czasy_dojazdu WHERE id_kroku_z = ? OR id_kroku_do = ?', (krok_id, krok_id))
-        
-        # 2. Usunięcie samego kroku
         cursor.execute('DELETE FROM krok_wycieczki WHERE id = ?', (krok_id,))
 
-        # 3. Renumeracja pozostałych kroków (0, 1, 2, ... N)
         cursor.execute('SELECT id, nazwa, okienko_zwiedzania FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
         pozostale = cursor.fetchall()
         pozostale.sort(key=lambda x: klucz_sortowania_okienka(x[2]))
@@ -1214,11 +1201,9 @@ def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
             cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(idx), row_id))
         conn.commit()
 
-    # 4. Ponowne przeliczenie całego łańcucha czasowego wycieczki
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
     return f"Pomyślnie usunięto krok '{nazwa}' i automatycznie zsynchronizowano harmonogram wycieczki #{id_wycieczki}."
 
-# --- ZARZĄDZANIE BUFORAMI POSTOJÓW NA TRASIE PRZEZ LLM ---
 def zmien_czas_postoju_na_trasie(id_wycieczki, krok_z, krok_do, minuty_postoju):
     with get_db() as conn:
         cursor = conn.cursor()
