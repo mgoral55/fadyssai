@@ -827,6 +827,24 @@ def oblicz_czas_trwania_okienka(okienko_str, domyslny_czas=45):
         pass
     return domyslny_czas
 
+def sparsuj_czas_ogarniania_na_minuty(czas_str):
+    if not czas_str:
+        return 30
+    s = str(czas_str).lower()
+    g_match = re.search(r'(\d+(?:\.\d+)?)\s*h', s)
+    m_match = re.search(r'(\d+)\s*m', s)
+    
+    godziny = float(g_match.group(1)) if g_match else 0.0
+    minuty = int(m_match.group(1)) if m_match else 0
+    total = int(round(godziny * 60)) + minuty
+    
+    if total == 0:
+        try:
+            total = int(float(s) * 60) if '.' in s else int(s)
+        except:
+            total = 30
+    return max(total, 15)
+
 DNI_TYGODNIA_PL = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"]
 MIESIACE_PL = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia"]
 
@@ -854,6 +872,12 @@ def wczytaj_pliki_regul(katalog="rule"):
 def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor_koniec_str=None, anchor_start_str=None, force_pobudka_str=None, force_wyjazd_str=None, force_powrot_str=None):
     with get_db() as conn:
         cursor = conn.cursor()
+        cursor.execute('SELECT szacowany_czas_ogarniania_rano, pobudka FROM wycieczka WHERE id = ?', (str(id_wycieczki),))
+        row_ogarnianie = cursor.fetchone()
+        surowy_ogarniania = row_ogarnianie[0] if row_ogarnianie else '0.5h'
+        pobudka_z_bazy = row_ogarnianie[1] if row_ogarnianie and row_ogarnianie[1] else '06:00'
+        minuty_ogarniania = sparsuj_czas_ogarniania_na_minuty(surowy_ogarniania)
+
         cursor.execute('SELECT id_kroku_z, id_kroku_do, szacowany_czas_postoju FROM czasy_dojazdu WHERE szacowany_czas_postoju IS NOT NULL')
         istniejace_postoje = {(row[0], row[1]): row[2] for row in cursor.fetchall()}
 
@@ -902,56 +926,53 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
         dur = oblicz_czas_trwania_okienka(k[3], domyslny_czas=domyslny_czas)
         czasy_pobytu.append(dur)
 
-    anchor_idx = None
-    if anchor_krok_id:
-        for idx, k in enumerate(kroki):
-            if str(k[0]) == str(anchor_krok_id) or str(k[1]) == str(anchor_krok_id) or str(anchor_krok_id).lower() in str(k[4]).lower():
-                anchor_idx = idx
-                break
-
     start_times = [None] * len(kroki)
     end_times = [None] * len(kroki)
 
+    if force_pobudka_str:
+        pobudka_z_bazy = force_pobudka_str
+
+    g_pob = sparsuj_godzine_minuty(pobudka_z_bazy) or (6, 0)
+    dt_pob = datetime(2026, 1, 1, g_pob[0], g_pob[1])
+    dt_wyj = dt_pob + timedelta(minutes=minuty_ogarniania)
+
+    last_idx = len(kroki) - 1
+
     if force_powrot_str:
-        anchor_idx = len(kroki) - 1
-        anchor_start_str = force_powrot_str
-    elif force_wyjazd_str:
-        anchor_idx = 0
-        anchor_koniec_str = force_wyjazd_str
-    elif force_pobudka_str:
-        g_pob = sparsuj_godzine_minuty(force_pobudka_str) or (6, 0)
-        dt_pob = datetime(2026, 1, 1, g_pob[0], g_pob[1])
-        dt_wyj = dt_pob + timedelta(minutes=90)
-        anchor_idx = 0
-        anchor_koniec_str = dt_wyj.strftime("%H:%M")
+        g_pow = sparsuj_godzine_minuty(force_powrot_str) or (17, 0)
+        dt_powrot_anchor = datetime(2026, 1, 1, g_pow[0], g_pow[1])
+        
+        end_times[last_idx] = dt_powrot_anchor
+        start_times[last_idx] = dt_powrot_anchor - timedelta(minutes=czasy_pobytu[last_idx])
 
-    if anchor_idx is not None and (anchor_koniec_str or anchor_start_str):
-        if anchor_koniec_str:
-            g_end = sparsuj_godzine_minuty(anchor_koniec_str) or (12, 0)
-            dt_anchor_end = datetime(2026, 1, 1, g_end[0], g_end[1])
-            end_times[anchor_idx] = dt_anchor_end
-            start_times[anchor_idx] = dt_anchor_end - timedelta(minutes=czasy_pobytu[anchor_idx])
-        else:
-            g_start = sparsuj_godzine_minuty(anchor_start_str) or (10, 0)
-            dt_anchor_start = datetime(2026, 1, 1, g_start[0], g_start[1])
-            start_times[anchor_idx] = dt_anchor_start
-            end_times[anchor_idx] = dt_anchor_start + timedelta(minutes=czasy_pobytu[anchor_idx])
-
-        for i in range(anchor_idx - 1, -1, -1):
+        for i in range(last_idx - 1, 0, -1):
             czas_odcinka = dojazdy_minuty[i] + postoje_na_trasie_minuty[i]
             end_times[i] = start_times[i + 1] - timedelta(minutes=czas_odcinka)
             start_times[i] = end_times[i] - timedelta(minutes=czasy_pobytu[i])
 
-        for i in range(anchor_idx + 1, len(kroki)):
+        start_times[0] = dt_pob
+        end_times[0] = start_times[1] - timedelta(minutes=(dojazdy_minuty[0] + postoje_na_trasie_minuty[0]))
+    elif force_wyjazd_str:
+        g_wyj = sparsuj_godzine_minuty(force_wyjazd_str) or (6, 30)
+        dt_wyj = datetime(2026, 1, 1, g_wyj[0], g_wyj[1])
+        start_times[0] = dt_pob
+        end_times[0] = dt_wyj
+        
+        cur_dt = dt_wyj
+        for i in range(1, len(kroki)):
             czas_odcinka = dojazdy_minuty[i - 1] + postoje_na_trasie_minuty[i - 1]
-            start_times[i] = end_times[i - 1] + timedelta(minutes=czas_odcinka)
+            start_times[i] = cur_dt + timedelta(minutes=czas_odcinka)
             end_times[i] = start_times[i] + timedelta(minutes=czasy_pobytu[i])
+            cur_dt = end_times[i]
     else:
-        p_start = sparsuj_godzine_minuty(kroki[0][3].split('-')[0]) if kroki[0][3] else (7, 0)
-        cur_dt = datetime(2026, 1, 1, p_start[0], p_start[1])
+        cur_dt = dt_wyj
         for i in range(len(kroki)):
-            start_times[i] = cur_dt
-            end_times[i] = cur_dt + timedelta(minutes=czasy_pobytu[i])
+            if i == 0:
+                start_times[i] = dt_pob
+                end_times[i] = dt_wyj
+            else:
+                start_times[i] = cur_dt
+                end_times[i] = cur_dt + timedelta(minutes=czasy_pobytu[i])
             if i < len(kroki) - 1:
                 czas_odcinka = dojazdy_minuty[i] + postoje_na_trasie_minuty[i]
                 cur_dt = end_times[i] + timedelta(minutes=czas_odcinka)
@@ -969,6 +990,8 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
             nowe_okienko = f"{s_str} - {e_str}"
             cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (nowe_okienko, kroki[i][0]))
             
+            cursor.execute('UPDATE posilki_kroku SET sugerowana_godzina = ? WHERE id_kroku = ?', (s_str, kroki[i][0]))
+
             if i < len(kroki) - 1:
                 cursor.execute('''
                     INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
@@ -977,7 +1000,6 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
 
         dt_wyjazd = end_times[0]
         dt_powrot = start_times[-1]
-        dt_pobudka = dt_wyjazd - timedelta(minutes=zaokraglij_do_5_minut(90))
         roznica_sek = (dt_powrot - dt_wyjazd).total_seconds()
         czas_trwania_h = round(max(roznica_sek / 3600.0, 0.5), 1)
 
@@ -985,7 +1007,7 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
             UPDATE wycieczka 
             SET pobudka = ?, czas_wyjazdu = ?, szacowana_godzina_powrotu = ?, calkowity_czas_wycieczki_godziny = ?, czas_powrotu_do_domku = NULL
             WHERE id = ?
-        ''', (dt_pobudka.strftime("%H:%M"), dt_wyjazd.strftime("%H:%M"), dt_powrot.strftime("%H:%M"), str(czas_trwania_h), str(id_wycieczki)))
+        ''', (pobudka_z_bazy, dt_wyjazd.strftime("%H:%M"), dt_powrot.strftime("%H:%M"), str(czas_trwania_h), str(id_wycieczki)))
         conn.commit()
 
 def init_db():
@@ -1031,6 +1053,7 @@ def init_db():
             czas_wyjazdu TEXT,
             planowana_data TEXT,
             czas_powrotu_do_domku TEXT DEFAULT NULL,
+            szacowany_czas_ogarniania_rano TEXT DEFAULT '0.5h',
             odbyta INTEGER DEFAULT 0
         )
     ''')
@@ -1104,6 +1127,7 @@ def init_db():
             id_kroku INTEGER,
             rodzaj_posilku TEXT CHECK(rodzaj_posilku IN ('śniadanie', 'obiad', 'kolacja', 'przekąska')),
             miejsce TEXT CHECK(miejsce IN ('w domku', 'w kroku', 'restauracja', 'po drodze')),
+            sugerowana_godzina TEXT,
             opis TEXT,
             FOREIGN KEY (id_kroku) REFERENCES krok_wycieczki(id) ON DELETE CASCADE
         )
@@ -1182,8 +1206,8 @@ def init_db():
     if cursor.fetchone()[0] == 0:
         domyslna_data = date.today().strftime("%Y-%m-%d")
         cursor.execute('''
-            INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, planowana_data, odbyta)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            INSERT INTO wycieczka (id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia, calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu, planowana_data, szacowany_czas_ogarniania_rano, odbyta)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ''', (
             "1",
             "Mity i Oceaniczne Głębiny: Pałac w Knossos & Cretaquarium",
@@ -1192,15 +1216,16 @@ def init_db():
             "10.0",
             "17:30",
             "06:00",
-            "07:30",
-            domyslna_data
+            "06:30",
+            domyslna_data,
+            "0.5h"
         ))
 
         kroki_w1 = [
-            ("1", "0", "Nasz Domek (Start)", f"{DOMEK_LAT}, {DOMEK_LON}", "07:00 - 07:30", "Brak", "Brak", "Spokojna baza", "Poziom energii, prosta rada (np. 'Światło dzienne, spokojna muzyka').", "Niski", "Ciepła atmosfera w domku", "Nasz domek wypadowy w Stavros."),
-            ("1", "1", "Pałac w Knossos", "35.2980, 25.1631", "09:00 - 11:30", "11:30", "BEZWZGLĘDNIE EWAKUOWAĆ SIĘ PRZED 12:00! Tłumy i upał.", "Brak - rygor czasowy.", "Poziom tłumu (Niski), szacowany czas zwiedzania.", "Wysoki (tłumy, brak cienia, duchota)", "Użycie aplikacji 3D na iPadzie jako kotwica uwagi, szybka ewakuacja w razie buntu.", "Legendarska stolica minojskiej Krety z ruinami pałacu króla Minosa."),
-            ("1", "2", "Cretaquarium", "35.3326, 25.2825", "13:30 - 15:30", "Brak", "Unikać godzin szczytu.", "Kawiarnia obok", "Poziom stymulacji sensorycznej (Umiarkowany - półmrok, chłód).", "Średni (pogłos w halach, tłum)", "Słuchawki wygłuszające, powolne tempo, półmrok przy akwariach.", "Jedno z największych oceanariów w basenie Morza Śródziemnego."),
-            ("1", "3", "Nasz Domek (Powrót)", f"{DOMEK_LAT}, {DOMEK_LON}", "16:00 - 19:00", "Brak", "Brak", "Pełny relaks", "Poziom energii na koniec dnia, prosta rada (np. 'Wyciszenie w drodze').", "Niski", "Kolacja domowa i odpoczynek", "Koniec wyprawy w naszej bazie.")
+            ("1", "0", "Nasz Domek (Start)", f"{DOMEK_LAT}, {DOMEK_LON}", "06:00 - 06:30", "Brak", "Brak", "Spokojna baza", "Poziom energii, prosta rada (np. 'Światło dzienne, spokojna muzyka').", "Niski", "Ciepła atmosfera w domku", "Nasz domek wypadowy w Stavros."),
+            ("1", "1", "Pałac w Knossos", "35.2980, 25.1631", "08:00 - 10:30", "11:30", "BEZWZGLĘDNIE EWAKUOWAĆ SIĘ PRZED 12:00! Tłumy i upał.", "Brak - rygor czasowy.", "Poziom tłumu (Niski), szacowany czas zwiedzania.", "Wysoki (tłumy, brak cienia, duchota)", "Użycie aplikacji 3D na iPadzie jako kotwica uwagi, szybka ewakuacja w razie buntu.", "Legendarska stolica minojskiej Krety z ruinami pałacu króla Minosa."),
+            ("1", "2", "Cretaquarium", "35.3326, 25.2825", "12:30 - 14:30", "Brak", "Unikać godzin szczytu.", "Kawiarnia obok", "Poziom stymulacji sensorycznej (Umiarkowany - półmrok, chłód).", "Średni (pogłos w halach, tłum)", "Słuchawki wygłuszające, powolne tempo, półmrok przy akwariach.", "Jedno z największych oceanariów w basenie Morza Śródziemnego."),
+            ("1", "3", "Nasz Domek (Powrót)", f"{DOMEK_LAT}, {DOMEK_LON}", "15:00 - 18:00", "Brak", "Brak", "Pełny relaks", "Poziom energii na koniec dnia, prosta rada (np. 'Wyciszenie w drodze').", "Niski", "Kolacja domowa i odpoczynek", "Koniec wyprawy w naszej bazie.")
         ]
         cursor.executemany('''
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis)
@@ -1210,9 +1235,9 @@ def init_db():
         cursor.execute("SELECT id FROM krok_wycieczki WHERE id_wycieczki = '1' ORDER BY id ASC")
         db_krok_ids = [r[0] for r in cursor.fetchall()]
         if len(db_krok_ids) >= 4:
-            cursor.execute("INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, opis) VALUES (?, 'śniadanie', 'w domku', 'Domowe śniadanie')", (db_krok_ids[0],))
-            cursor.execute("INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, opis) VALUES (?, 'obiad', 'w kroku', 'Poziom regeneracji (Wysoki), dostępność strefy wyciszenia.')", (db_krok_ids[1],))
-            cursor.execute("INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, opis) VALUES (?, 'kolacja', 'w domku', 'Kolacja po powrocie')", (db_krok_ids[3],))
+            cursor.execute("INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis) VALUES (?, 'śniadanie', 'w domku', '06:00', 'Domowe śniadanie')", (db_krok_ids[0],))
+            cursor.execute("INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis) VALUES (?, 'obiad', 'w kroku', '12:00', 'Poziom regeneracji (Wysoki), dostępność strefy wyciszenia.')", (db_krok_ids[1],))
+            cursor.execute("INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis) VALUES (?, 'kolacja', 'w domku', '18:00', 'Kolacja po powrocie')", (db_krok_ids[3],))
 
         conn.commit()
     conn.close()
@@ -1221,7 +1246,7 @@ def init_db():
 init_db()
 
 def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, 
-                     planowana_data=None):
+                     planowana_data=None, szacowany_czas_ogarniania_rano=None):
     with get_db() as conn:
         cursor = conn.cursor()
         if tytul_wycieczki is not None:
@@ -1232,7 +1257,10 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, c
             cursor.execute('UPDATE wycieczka SET calosciowa_taktyka_dnia = ? WHERE id = ?', (calosciowa_taktyka_dnia, str(id)))
         if planowana_data is not None:
             cursor.execute('UPDATE wycieczka SET planowana_data = ? WHERE id = ?', (planowana_data, str(id)))
+        if szacowany_czas_ogarniania_rano is not None:
+            cursor.execute('UPDATE wycieczka SET szacowany_czas_ogarniania_rano = ? WHERE id = ?', (szacowany_czas_ogarniania_rano, str(id)))
         conn.commit()
+    
     przelicz_i_zsynchronizuj_wycieczke(str(id))
     return f"Wycieczka #{id} została zaktualizowana i przeliczona."
 
@@ -1401,7 +1429,7 @@ cretai_tools = types.Tool(function_declarations=[
     ),
     types.FunctionDeclaration(
         name="edytuj_wycieczke",
-        description="Aktualizuje parametry wycieczki.",
+        description="Aktualizuje parametry wycieczki, w tym szacowany czas ogarniania się rano (np. '0.5h', '45m'). Zmiana czasu ogarniania automatycznie zmienia czas wyjazdu i przelicza cały harmonogram.",
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={
@@ -1410,6 +1438,7 @@ cretai_tools = types.Tool(function_declarations=[
                 "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Opis"),
                 "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Taktyka"),
                 "planowana_data": types.Schema(type=types.Type.STRING, description="RRRR-MM-DD"),
+                "szacowany_czas_ogarniania_rano": types.Schema(type=types.Type.STRING, description="Szacowany czas ogarniania się rano, np. '0.5h', '1h', '45m'"),
             },
             required=["id"]
         ),
@@ -1834,14 +1863,14 @@ def wczytaj_kontekst_zewnetrzny():
     
     with get_db() as conn:
         try:
-            wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, pobudka, czas_wyjazdu, szacowana_godzina_powrotu, planowana_data FROM wycieczka', conn)
+            wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, pobudka, czas_wyjazdu, szacowana_godzina_powrotu, planowana_data, szacowany_czas_ogarniania_rano FROM wycieczka', conn)
             kroki_df = pd.read_sql('SELECT id, id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji FROM krok_wycieczki ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn)
         except:
             wycieczki_df, kroki_df = pd.DataFrame(), pd.DataFrame()
 
     if not wycieczki_df.empty:
         for _, w in wycieczki_df.iterrows():
-            tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Data: {w.get('planowana_data', '')}\n"
+            tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Data: {w.get('planowana_data', '')} | Czas ogarniania rano: {w.get('szacowany_czas_ogarniania_rano', '0.5h')}\n"
     if not kroki_df.empty:
         for _, k in kroki_df.iterrows():
             tekst += f"- Krok (W#{k['id_wycieczki']}): ID DB: {k['id']} | #{k['krok_wycieczki']}. {k['nazwa']} | Czas: {k['okienko_zwiedzania']}\n"
@@ -1891,6 +1920,7 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
         zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
         system_prompt = f"""Jesteś asystentem podróży CretAi na Kretę, pomagającym zarządzać wycieczką objazdową z dziećmi i rodzicami z ADHD. Dziś: {dzisiaj_str}.
 {zewnetrzny_kontekst}
+- ZASADA CZASU OGARNIANIA RANO: Wycieczka posiada parametr `szacowany_czas_ogarniania_rano` (domyślnie '0.5h'). Pobudka i czas wyjazdu są ściśle powiązane tym czasem. Gdy czas ogarniania się zmienia (np. przez `edytuj_wycieczke`), godzina wyjazdu w planie automatycznie przesuwa się względem pobudki o dokładnie tę wartość. Zawsze uwzględniaj ten parametr przy wszelkich przeliczeniach czasów rannych.
 - ZASADA USUWANIA KROKÓW: Gdy użytkownik prosi o usunięcie, wykasowanie, pominięcie lub rezygnację z atrakcji/sklepu (np. 'usuń Cretaquarium', 'nie jedziemy do akwarium', 'skasuj krok 2'), ZAWSZE natychmiast wywołaj `usun_krok_wycieczki(id_wycieczki='1', krok_wycieczki='nazwa lub numer')`.
 - ZASADA CZASU I HARMONOGRAMU (KASKADOWE PRZELICZANIE):
   1. Gdy użytkownik mówi: 'chcę być w X do godziny HH:MM' (np. 'chcę być w Knossos do 12:00'), oznacza to GODZINĘ WYJAZDU z tego punktu. Wywołaj `edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, godzina_wyjazdu_do='12:00')`.
@@ -2046,15 +2076,6 @@ def edit_pobudka_dialog(wycieczka_id, pobudka_val):
         st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę pobudki!"
         st.rerun()
 
-@st.dialog("Edytuj godzinę wyjazdu")
-def edit_wyjazd_dialog(wycieczka_id, wyjazd_val):
-    g_wyj = sparsuj_godzine_minuty(wyjazd_val) or (7, 30)
-    t_wyj = st.time_input("🚗 Godzina wyjazdu", value=time(g_wyj[0], g_wyj[1]), step=300)
-    if st.button("💾 Zapisz", use_container_width=True):
-        przelicz_i_zsynchronizuj_wycieczke(str(wycieczka_id), force_wyjazd_str=t_wyj.strftime("%H:%M"))
-        st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę wyjazdu!"
-        st.rerun()
-
 @st.dialog("Edytuj godzinę powrotu")
 def edit_powrot_dialog(wycieczka_id, powrot_val):
     g_pow = sparsuj_godzine_minuty(powrot_val) or (17, 33)
@@ -2106,12 +2127,12 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         """, unsafe_allow_html=True)
 
     pobudka_val = w_gen.get('pobudka', '06:00') if pd.notna(w_gen.get('pobudka')) else '06:00'
+    ogarnianie_val = w_gen.get('szacowany_czas_ogarniania_rano', '0.5h') if pd.notna(w_gen.get('szacowany_czas_ogarniania_rano')) else '0.5h'
+    
     if not kroki_df.empty:
         pobudka_val = kroki_df.iloc[0]['okienko_zwiedzania'].split("-")[0].strip() if "-" in str(kroki_df.iloc[0]['okienko_zwiedzania']) else pobudka_val
-        wyjazd_val = kroki_df.iloc[0]['okienko_zwiedzania'].split("-")[1].strip() if "-" in str(kroki_df.iloc[0]['okienko_zwiedzania']) else w_gen.get('czas_wyjazdu', '07:30')
         powrot_val = kroki_df.iloc[-1]['okienko_zwiedzania'].split("-")[0].strip() if "-" in str(kroki_df.iloc[-1]['okienko_zwiedzania']) else w_gen.get('szacowana_godzina_powrotu', '17:33')
     else:
-        wyjazd_val = w_gen.get('czas_wyjazdu', '07:30')
         powrot_val = w_gen.get('szacowana_godzina_powrotu', '17:33')
 
     st.markdown('<div class="section-unified-header">🧭 Logistyka i taktyka</div>', unsafe_allow_html=True)
@@ -2129,13 +2150,12 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 st.rerun()
 
     with col_log2:
-        st.markdown('<div style="text-align: center; font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;">🚗 Wyjazd</div>', unsafe_allow_html=True)
-        with st.popover(wyjazd_val, use_container_width=True):
-            g_wyj = sparsuj_godzine_minuty(wyjazd_val) or (7, 30)
-            t_wyj = st.time_input("Nowa godzina wyjazdu", value=time(g_wyj[0], g_wyj[1]), step=300, key=f"ti_wyj_{wycieczka_id}")
-            if st.button("💾 Zapisz", key=f"btn_save_wyj_{wycieczka_id}", use_container_width=True):
-                przelicz_i_zsynchronizuj_wycieczke(str(wycieczka_id), force_wyjazd_str=t_wyj.strftime("%H:%M"))
-                st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę wyjazdu!"
+        st.markdown('<div style="text-align: center; font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;">🎒 Czas ogarniania</div>', unsafe_allow_html=True)
+        with st.popover(ogarnianie_val, use_container_width=True):
+            nowy_czas_ogarniania = st.text_input("Szacowany czas rano", value=ogarnianie_val, key=f"ti_ogarnianie_{wycieczka_id}")
+            if st.button("💾 Zapisz", key=f"btn_save_ogarnianie_{wycieczka_id}", use_container_width=True):
+                edytuj_wycieczke(wycieczka_id, szacowany_czas_ogarniania_rano=nowy_czas_ogarniania)
+                st.session_state["flash_toast"] = "⏱️ Zaktualizowano czas ogarniania rano i przeliczono wyjazd!"
                 st.rerun()
 
     with col_log3:
@@ -2224,7 +2244,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             gps_url = f"https://www.google.com/maps/search/?api=1&query={coords_clean}"
             nav_btn_html = f'<a href="{gps_url}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>'
 
-        time_end_html = f'<span class="timeline-time-end">do {godzina_koniec}</span>' if (godzina_koniec and godzina_koniec != godzina_start) else ''
+        time_end_html = f'<span class="timeline-time-end">do {godzina_koniec}</span>' if (not is_last and godzina_koniec and godzina_koniec != godzina_start) else ''
 
         timeline_full_html.append('<div class="timeline-step-row-wrapper">')
 
