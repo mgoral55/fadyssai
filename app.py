@@ -84,7 +84,7 @@ div[data-baseweb="select"] > div {
     color: #2F241D !important;
 }
 
-/* EXPANDER */
+/* EXPANDER OGÓLNY */
 [data-testid="stExpander"] {
     border: 1.5px solid #E2DEC8 !important;
     border-radius: 24px !important;
@@ -276,7 +276,7 @@ div.st-key-btn_date_picker button {
     color: #2B2118;
 }
 
-/* TIMELINE */
+/* TIMELINE I HARMONIJKA KROKÓW */
 .day-plan-container {
     background-color: transparent !important;
     margin-bottom: 12px !important;
@@ -293,6 +293,7 @@ div.st-key-btn_date_picker button {
     background-color: #7A9060;
     z-index: 1;
 }
+
 .timeline-row {
     position: relative;
     display: flex;
@@ -306,6 +307,49 @@ div.st-key-btn_date_picker button {
     margin-bottom: 12px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.03);
 }
+
+/* NATYWNY EXPANDER JAKO GŁÓWNA KARTA KROKU */
+.timeline-step-expander {
+    position: relative;
+    z-index: 2;
+    background-color: #F6F0DD;
+    border: 1.5px solid #E2DEC8;
+    border-radius: 20px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    overflow: hidden;
+}
+.timeline-step-expander summary {
+    list-style: none !important;
+    cursor: pointer;
+    padding: 10px 12px;
+    background-color: #F6F0DD;
+    border-radius: 20px;
+    display: block;
+}
+.timeline-step-expander summary::-webkit-details-marker {
+    display: none !important;
+}
+.timeline-step-expander summary::marker {
+    display: none !important;
+}
+.timeline-step-expander[open] summary {
+    border-bottom: 1.5px solid #E2DEC8;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+.timeline-step-expander .timeline-expander-body {
+    padding: 12px 14px;
+    background-color: #F6F0DD;
+}
+
+.timeline-row-inner {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    width: 100%;
+}
+
 .timeline-time {
     width: 58px;
     flex-shrink: 0;
@@ -334,20 +378,6 @@ div.st-key-btn_date_picker button {
     justify-content: center;
     margin-right: 10px;
     z-index: 2;
-}
-.timeline-icon-badge {
-    width: 38px;
-    height: 38px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13pt;
-    font-weight: 900;
-    color: #FFFFFF !important;
-    text-decoration: none !important;
-    border: 2px solid #FFFFFF;
-    cursor: pointer;
 }
 .timeline-icon-badge-static {
     width: 38px;
@@ -387,9 +417,9 @@ div.st-key-btn_date_picker button {
 .step-details-card {
     background-color: #EDE8D6;
     border: 1.5px solid #D6CEBA;
-    border-radius: 24px;
-    padding: 16px;
-    margin: 4px 0 18px 0;
+    border-radius: 18px;
+    padding: 14px;
+    margin-bottom: 8px;
 }
 .step-desc-bubble {
     background-color: #E2DAC4;
@@ -481,7 +511,7 @@ div.st-key-btn_date_picker button {
     flex-direction: column;
     gap: 8px;
     margin-top: 14px;
-    margin-bottom: 10px;
+    margin-bottom: 4px;
 }
 .step-action-vertical-btn {
     background-color: #C3CBB5;
@@ -809,7 +839,7 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
         for i in range(anchor_idx + 1, len(kroki)):
             czas_odcinka = dojazdy_minuty[i - 1] + postoje_na_trasie_minuty[i - 1]
             start_times[i] = end_times[i - 1] + timedelta(minutes=czas_odcinka)
-            end_times[i] = start_times[i] + timedelta(minutes=czasy_pobytu[i])
+            end_times[i] = start_times[i + 1] if False else (start_times[i] + timedelta(minutes=czasy_pobytu[i]))
     else:
         p_start = sparsuj_godzine_minuty(kroki[0][3].split('-')[0]) if kroki[0][3] else (7, 0)
         cur_dt = datetime(2026, 1, 1, p_start[0], p_start[1])
@@ -1991,8 +2021,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
     st.markdown('### 🗺️ Plan na dzień')
     st.markdown('<div class="day-plan-container"><div class="timeline-container"><div class="timeline-line-bg"></div>', unsafe_allow_html=True)
     
-    current_expanded_param = st.query_params.get("expand")
-    
     total_steps = len(kroki_df)
     for idx, (_, k) in enumerate(kroki_df.iterrows()):
         krok_row_id = int(k['id'])
@@ -2041,12 +2069,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             if posiłki_str:
                 opis_tekst = f"<span style='color:#8C5338; font-weight:700;'>🍲 {' / '.join(posiłki_str)}</span>"
 
-        if is_first or is_last:
-            badge_html = f'<div class="timeline-icon-badge-static {badge_class}">{badge_symbol}</div>'
-        else:
-            is_expanded = (current_expanded_param == str(krok_row_id))
-            toggle_expand_url = f"?tab=route" if is_expanded else f"?tab=route&expand={krok_row_id}"
-            badge_html = f'<a href="{toggle_expand_url}" target="_self" class="timeline-icon-badge {badge_class}" title="Rozwiń/Zwiń">{badge_symbol}</a>'
+        badge_html = f'<div class="timeline-icon-badge-static {badge_class}">{badge_symbol}</div>'
 
         nav_btn_html = ""
         if has_nav:
@@ -2055,26 +2078,25 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
         time_end_html = f'<span class="timeline-time-end">do {godzina_koniec}</span>' if (godzina_koniec and godzina_koniec != godzina_start) else ''
 
-        row_html = (
-            f'<div class="timeline-row">'
-            f'<div class="timeline-time">'
-            f'<span class="timeline-time-start">{godzina_start}</span>'
-            f'{time_end_html}'
-            f'</div>'
-            f'<div class="timeline-center-col">'
-            f'{badge_html}'
-            f'</div>'
-            f'<div class="timeline-content-col">'
-            f'<div class="timeline-item-title">{tytul_wyswietlany}</div>'
-            f'<div class="timeline-item-desc">{opis_tekst}</div>'
-            f'</div>'
-            f'{nav_btn_html}'
-            f'</div>'
-        )
-        st.markdown(row_html, unsafe_allow_html=True)
-
-        if not (is_first or is_last) and is_expanded:
-            google_search_url = f"https://www.google.com/search?q={nazwa} Kreta"
+        if is_first or is_last:
+            row_html = (
+                f'<div class="timeline-row">'
+                f'<div class="timeline-time">'
+                f'<span class="timeline-time-start">{godzina_start}</span>'
+                f'{time_end_html}'
+                f'</div>'
+                f'<div class="timeline-center-col">'
+                f'{badge_html}'
+                f'</div>'
+                f'<div class="timeline-content-col">'
+                f'<div class="timeline-item-title">{tytul_wyswietlany}</div>'
+                f'<div class="timeline-item-desc">{opis_tekst}</div>'
+                f'</div>'
+                f'{nav_btn_html}'
+                f'</div>'
+            )
+            st.markdown(row_html, unsafe_allow_html=True)
+        else:
             sklep_maps_url = f"https://www.google.com/maps/search/supermarket/@{coords_clean},15z" if coords_clean else "#"
             resto_maps_url = f"https://www.google.com/maps/search/restaurant/@{coords_clean},15z" if coords_clean else "#"
 
@@ -2114,9 +2136,9 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             taktyka_val = k.get("podsumowanie_taktyki", "Brak szczegółów taktyki")
             regen_val = k.get("strefa_luzu_i_regeneracji", "Brak strefy regeneracji")
 
-            details_html = (
+            # --- RENDEROWANIE GŁÓWNEJ KARTY KROKU JAKO ROZWIJANY EXPANDER ---
+            details_inner_html = (
                 f'<div class="step-details-card">'
-                f'<div style="font-size: 10pt; font-weight: 800; color: #8C5338; margin-bottom: 8px;">🕒 {okienko} | 📌 {nazwa}</div>'
                 f'{pogoda_html}'
                 f'{opis_glowny_html}'
                 f'{evac_html}'
@@ -2131,40 +2153,64 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 f'</div>'
                 f'</details>'
                 f'<div class="step-action-vertical-bar">'
-                f'<a href="{google_search_url}" target="_blank" class="step-action-vertical-btn"><span>🔍</span><span>Google</span></a>'
                 f'<a href="{sklep_maps_url}" target="_blank" class="step-action-vertical-btn"><span>🛒</span><span>Sklep</span></a>'
                 f'<a href="{resto_maps_url}" target="_blank" class="step-action-vertical-btn"><span>🍽️</span><span>Resto</span></a>'
                 f'</div>'
                 f'</div>'
             )
-            st.markdown(details_html, unsafe_allow_html=True)
+
+            expander_html = (
+                f'<details class="timeline-step-expander">'
+                f'<summary>'
+                f'<div class="timeline-row-inner">'
+                f'<div class="timeline-time">'
+                f'<span class="timeline-time-start">{godzina_start}</span>'
+                f'{time_end_html}'
+                f'</div>'
+                f'<div class="timeline-center-col">'
+                f'{badge_html}'
+                f'</div>'
+                f'<div class="timeline-content-col">'
+                f'<div class="timeline-item-title">{tytul_wyswietlany}</div>'
+                f'<div class="timeline-item-desc">{opis_tekst}</div>'
+                f'</div>'
+                f'{nav_btn_html}'
+                f'</div>'
+                f'</summary>'
+                f'<div class="timeline-expander-body">'
+                f'{details_inner_html}'
+                f'</div>'
+                f'</details>'
+            )
+            st.markdown(expander_html, unsafe_allow_html=True)
 
             # --- INTERAKTYWNA SEKCJA ZAKUPÓW Z CHECKBOXAMI ---
             df_zakupy = pobierz_zakupy_dla_kroku(krok_row_id)
-            with st.expander("🛒 Checklista zakupów w tym punkcie", expanded=not df_zakupy.empty):
-                if df_zakupy.empty:
-                    st.markdown("<div style='font-size: 8.5pt; color: #8C827A; font-style: italic; margin-bottom: 8px;'>Brak zaplanowanych zakupów w tym punkcie.</div>", unsafe_allow_html=True)
-                else:
-                    for _, z in df_zakupy.iterrows():
-                        z_id = z['id']
-                        z_nazwa = z['nazwa_produktu']
-                        z_ilosc = z['ilosc']
-                        z_kupione = bool(z['kupione'])
-                        ilosc_txt = f" ({z_ilosc})" if z_ilosc and str(z_ilosc) != "1" else ""
-                        
-                        chk_val = st.checkbox(f"{z_nazwa}{ilosc_txt}", value=z_kupione, key=f"chk_zakup_{z_id}")
-                        if chk_val != z_kupione:
-                            zmien_status_zakupu(z_id, chk_val)
-                            st.rerun()
+            if not df_zakupy.empty or "sklep" in nazwa.lower() or "zakup" in nazwa.lower():
+                with st.expander(f"🛒 Checklista zakupów: {nazwa}", expanded=not df_zakupy.empty):
+                    if df_zakupy.empty:
+                        st.markdown("<div style='font-size: 8.5pt; color: #8C827A; font-style: italic; margin-bottom: 8px;'>Brak zaplanowanych zakupów w tym punkcie.</div>", unsafe_allow_html=True)
+                    else:
+                        for _, z in df_zakupy.iterrows():
+                            z_id = z['id']
+                            z_nazwa = z['nazwa_produktu']
+                            z_ilosc = z['ilosc']
+                            z_kupione = bool(z['kupione'])
+                            ilosc_txt = f" ({z_ilosc})" if z_ilosc and str(z_ilosc) != "1" else ""
+                            
+                            chk_val = st.checkbox(f"{z_nazwa}{ilosc_txt}", value=z_kupione, key=f"chk_zakup_{z_id}")
+                            if chk_val != z_kupione:
+                                zmien_status_zakupu(z_id, chk_val)
+                                st.rerun()
 
-                with st.form(key=f"form_inline_zakup_{krok_row_id}", clear_on_submit=True):
-                    p_nazwa = st.text_input("Nowy produkt", placeholder="np. Makaron, pomidory")
-                    p_ilosc = st.text_input("Ilość", value="1")
-                    if st.form_submit_button("➕ Dodaj do listy", use_container_width=True):
-                        if p_nazwa.strip():
-                            dodaj_produkt_zakupow(int(krok_row_id), p_nazwa.strip(), p_ilosc.strip())
-                            st.session_state["flash_toast"] = "🛒 Dodano produkt!"
-                            st.rerun()
+                    with st.form(key=f"form_inline_zakup_{krok_row_id}", clear_on_submit=True):
+                        p_nazwa = st.text_input("Nowy produkt", placeholder="np. Makaron, pomidory")
+                        p_ilosc = st.text_input("Ilość", value="1")
+                        if st.form_submit_button("➕ Dodaj do listy", use_container_width=True):
+                            if p_nazwa.strip():
+                                dodaj_produkt_zakupow(int(krok_row_id), p_nazwa.strip(), p_ilosc.strip())
+                                st.session_state["flash_toast"] = "🛒 Dodano produkt!"
+                                st.rerun()
 
         if idx < len(kroki_df) - 1:
             k2_row_id = int(kroki_df.iloc[idx + 1]['id'])
