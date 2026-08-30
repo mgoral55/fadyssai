@@ -25,7 +25,7 @@ def get_db():
     conn.execute('PRAGMA busy_timeout = 30000;')
     return conn
 
-# --- 1. KONFIGURACJA STRONY I DESIGN SYSTEM: SAGE & TERRACOTTA TIMELINE ---
+# --- 1. KONFIGURACJA STRONY I DESIGN SYSTEM ---
 st.set_page_config(page_title="CretAi - Kreta", layout="centered", page_icon="🧭")
 
 st.markdown("""
@@ -276,22 +276,33 @@ div.st-key-btn_date_picker button {
     color: #2B2118;
 }
 
-/* TIMELINE I HARMONIJKA KROKÓW */
-.day-plan-container {
-    background-color: transparent !important;
-    margin-bottom: 12px !important;
-}
-.timeline-container {
+/* =========================================================
+   PANCERNA, W 100% CIĄGŁA OŚ CZASU (PIONOWY KRĘGOSŁUP)
+   ========================================================= */
+.timeline-master-container {
     position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    margin-bottom: 16px;
 }
-.timeline-line-bg {
+
+/* JEDNA NIEPRZERWANA LINIA PRZEBIEGAJĄCA PRZEZ CAŁY HARMONOGRAM */
+.timeline-master-continuous-line {
     position: absolute;
-    left: 81px;
-    top: 20px;
-    bottom: 20px;
-    width: 4px;
-    background-color: #7A9060;
+    left: 93px;
+    top: 32px;
+    bottom: 32px;
+    width: 3.5px;
+    background-color: #2B2118;
+    transform: translateX(-50%);
     z-index: 1;
+}
+
+.timeline-step-row-wrapper {
+    position: relative;
+    width: 100%;
+    z-index: 2;
 }
 
 .timeline-row {
@@ -299,23 +310,18 @@ div.st-key-btn_date_picker button {
     display: flex;
     align-items: center;
     min-height: 64px;
-    z-index: 2;
     background-color: #F6F0DD;
     border: 1.5px solid #E2DEC8;
     border-radius: 20px;
     padding: 10px 12px;
-    margin-bottom: 12px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.03);
 }
 
-/* NATYWNY EXPANDER JAKO GŁÓWNA KARTA KROKU */
 .timeline-step-expander {
     position: relative;
-    z-index: 2;
     background-color: #F6F0DD;
     border: 1.5px solid #E2DEC8;
     border-radius: 20px;
-    margin-bottom: 12px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.03);
     overflow: hidden;
 }
@@ -327,9 +333,7 @@ div.st-key-btn_date_picker button {
     border-radius: 20px;
     display: block;
 }
-.timeline-step-expander summary::-webkit-details-marker {
-    display: none !important;
-}
+.timeline-step-expander summary::-webkit-details-marker,
 .timeline-step-expander summary::marker {
     display: none !important;
 }
@@ -356,7 +360,7 @@ div.st-key-btn_date_picker button {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    z-index: 2;
+    z-index: 3;
 }
 .timeline-time-start {
     font-size: 11pt;
@@ -369,6 +373,8 @@ div.st-key-btn_date_picker button {
     color: #8C5338;
     margin-top: 2px;
 }
+
+/* ŚRODKOWA KOLUMNA IKONY */
 .timeline-center-col {
     position: relative;
     width: 46px;
@@ -377,9 +383,12 @@ div.st-key-btn_date_picker button {
     align-items: center;
     justify-content: center;
     margin-right: 10px;
-    z-index: 2;
+    z-index: 3;
 }
+
+/* ODZNAKA / KÓŁKO KROKU */
 .timeline-icon-badge-static {
+    position: relative;
     width: 38px;
     height: 38px;
     border-radius: 50%;
@@ -390,6 +399,8 @@ div.st-key-btn_date_picker button {
     font-weight: 900;
     color: #FFFFFF !important;
     border: 2px solid #FFFFFF;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    z-index: 4;
 }
 
 .badge-pobudka { background-color: #94A77E; }
@@ -402,7 +413,7 @@ div.st-key-btn_date_picker button {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    z-index: 2;
+    z-index: 3;
 }
 .timeline-item-title {
     font-size: 12.5pt;
@@ -545,16 +556,36 @@ div.st-key-btn_date_picker button {
     gap: 1px;
     margin-left: 8px;
     padding: 0 4px;
+    z-index: 4;
 }
 .timeline-nav-btn span:first-child { font-size: 13pt; color: #8C5338; }
 .timeline-nav-btn span:last-child { font-size: 7.5pt; font-weight: 800; color: #2B2118; }
 
-.timeline-transit-row {
+/* PRZESTRZEŃ MIĘDZY KARTAMI Z PLAKIETKĄ DOJAZDU */
+.timeline-transit-spacer {
     position: relative;
+    width: 100%;
+    min-height: 28px;
     display: flex;
-    justify-content: center;
-    margin: 4px 0 8px 0;
+    align-items: center;
+    margin: 4px 0;
+    z-index: 2;
+}
+
+.timeline-transit-badge-box {
+    margin-left: 115px;
+    font-size: 8.5pt;
+    font-weight: 800;
+    color: #8C5338;
+    display: flex;
+    align-items: center;
+    gap: 6px;
     z-index: 3;
+    background-color: rgba(246, 240, 221, 0.95);
+    border: 1px solid #E2DEC8;
+    padding: 3px 10px;
+    border-radius: 10px;
+    width: fit-content;
 }
 
 div[data-testid="stCheckbox"] {
@@ -2019,7 +2050,9 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         """, unsafe_allow_html=True)
 
     st.markdown('### 🗺️ Plan na dzień')
-    st.markdown('<div class="day-plan-container"><div class="timeline-container"><div class="timeline-line-bg"></div>', unsafe_allow_html=True)
+
+    # BUDUJEMY KOMPLETNY, CIĄGŁY BLOK HTML CAŁEGO HARMONOGRAMU
+    timeline_full_html = ['<div class="timeline-master-container">', '<div class="timeline-master-continuous-line"></div>']
     
     total_steps = len(kroki_df)
     for idx, (_, k) in enumerate(kroki_df.iterrows()):
@@ -2069,7 +2102,11 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             if posiłki_str:
                 opis_tekst = f"<span style='color:#8C5338; font-weight:700;'>🍲 {' / '.join(posiłki_str)}</span>"
 
-        badge_html = f'<div class="timeline-icon-badge-static {badge_class}">{badge_symbol}</div>'
+        center_col_html = (
+            f'<div class="timeline-center-col">'
+            f'<div class="timeline-icon-badge-static {badge_class}">{badge_symbol}</div>'
+            f'</div>'
+        )
 
         nav_btn_html = ""
         if has_nav:
@@ -2078,6 +2115,8 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
         time_end_html = f'<span class="timeline-time-end">do {godzina_koniec}</span>' if (godzina_koniec and godzina_koniec != godzina_start) else ''
 
+        timeline_full_html.append('<div class="timeline-step-row-wrapper">')
+
         if is_first or is_last:
             row_html = (
                 f'<div class="timeline-row">'
@@ -2085,9 +2124,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 f'<span class="timeline-time-start">{godzina_start}</span>'
                 f'{time_end_html}'
                 f'</div>'
-                f'<div class="timeline-center-col">'
-                f'{badge_html}'
-                f'</div>'
+                f'{center_col_html}'
                 f'<div class="timeline-content-col">'
                 f'<div class="timeline-item-title">{tytul_wyswietlany}</div>'
                 f'<div class="timeline-item-desc">{opis_tekst}</div>'
@@ -2095,7 +2132,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 f'{nav_btn_html}'
                 f'</div>'
             )
-            st.markdown(row_html, unsafe_allow_html=True)
+            timeline_full_html.append(row_html)
         else:
             sklep_maps_url = f"https://www.google.com/maps/search/supermarket/@{coords_clean},15z" if coords_clean else "#"
             resto_maps_url = f"https://www.google.com/maps/search/restaurant/@{coords_clean},15z" if coords_clean else "#"
@@ -2136,7 +2173,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             taktyka_val = k.get("podsumowanie_taktyki", "Brak szczegółów taktyki")
             regen_val = k.get("strefa_luzu_i_regeneracji", "Brak strefy regeneracji")
 
-            # --- RENDEROWANIE GŁÓWNEJ KARTY KROKU JAKO ROZWIJANY EXPANDER ---
             details_inner_html = (
                 f'<div class="step-details-card">'
                 f'{pogoda_html}'
@@ -2167,9 +2203,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 f'<span class="timeline-time-start">{godzina_start}</span>'
                 f'{time_end_html}'
                 f'</div>'
-                f'<div class="timeline-center-col">'
-                f'{badge_html}'
-                f'</div>'
+                f'{center_col_html}'
                 f'<div class="timeline-content-col">'
                 f'<div class="timeline-item-title">{tytul_wyswietlany}</div>'
                 f'<div class="timeline-item-desc">{opis_tekst}</div>'
@@ -2182,9 +2216,33 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 f'</div>'
                 f'</details>'
             )
-            st.markdown(expander_html, unsafe_allow_html=True)
+            timeline_full_html.append(expander_html)
 
-            # --- INTERAKTYWNA SEKCJA ZAKUPÓW Z CHECKBOXAMI ---
+        timeline_full_html.append('</div>')
+
+        # Przestrzeń między kartami z plakietką dojazdu (przez którą linia przechodzi płynnie w tle)
+        if idx < total_steps - 1:
+            k2_row_id = int(kroki_df.iloc[idx + 1]['id'])
+            match_row = czasy_dojazdu_df[(czasy_dojazdu_df['id_kroku_z'] == krok_row_id) & (czasy_dojazdu_df['id_kroku_do'] == k2_row_id)]
+            transit_html = ""
+            if not match_row.empty:
+                czas_dojazdu_dalej = match_row.iloc[0]['czas_przejazdu']
+                postoj_val = match_row.iloc[0]['szacowany_czas_postoju']
+                if pd.notna(czas_dojazdu_dalej) and str(czas_dojazdu_dalej).strip() != "":
+                    transit_html = f'<div class="timeline-transit-badge-box">🚗 {czas_dojazdu_dalej} | + {postoj_val}m</div>'
+
+            spacer_html = f'<div class="timeline-transit-spacer">{transit_html}</div>'
+            timeline_full_html.append(spacer_html)
+
+    timeline_full_html.append('</div>')
+    
+    st.markdown("".join(timeline_full_html), unsafe_allow_html=True)
+
+    # CHECKLISTY ZAKUPÓW
+    for idx, (_, k) in enumerate(kroki_df.iterrows()):
+        krok_row_id = int(k['id'])
+        nazwa = str(k['nazwa'])
+        if idx != 0 and idx != total_steps - 1:
             df_zakupy = pobierz_zakupy_dla_kroku(krok_row_id)
             if not df_zakupy.empty or "sklep" in nazwa.lower() or "zakup" in nazwa.lower():
                 with st.expander(f"🛒 Checklista zakupów: {nazwa}", expanded=not df_zakupy.empty):
@@ -2212,17 +2270,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                                 st.session_state["flash_toast"] = "🛒 Dodano produkt!"
                                 st.rerun()
 
-        if idx < len(kroki_df) - 1:
-            k2_row_id = int(kroki_df.iloc[idx + 1]['id'])
-            match_row = czasy_dojazdu_df[(czasy_dojazdu_df['id_kroku_z'] == krok_row_id) & (czasy_dojazdu_df['id_kroku_do'] == k2_row_id)]
-            if not match_row.empty:
-                czas_dojazdu_dalej = match_row.iloc[0]['czas_przejazdu']
-                postoj_val = match_row.iloc[0]['szacowany_czas_postoju']
-                if pd.notna(czas_dojazdu_dalej) and str(czas_dojazdu_dalej).strip() != "":
-                    st.markdown(f'<div class="timeline-transit-row"><div style="font-size: 8.5pt; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #8C5338;">Dojazd: <span style="color: #2B2118;">{czas_dojazdu_dalej}</span> | + <span style="color: #2B2118;">{postoj_val} min</span> postoju</div></div>', unsafe_allow_html=True)
-
-    st.markdown('</div></div></div>', unsafe_allow_html=True)
-
     if pokaz_mape:
         punkty_trasy, surowe_wspolrzedne = [], []
         for _, k in kroki_df.iterrows():
@@ -2243,7 +2290,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
             st_folium(m_trasa, width=None, height=260, returned_objects=[], key=f"map_route_{wycieczka_id}")
 
-    # --- SEKCJA: ZADANIA DLA DZIECI ---
     st.markdown("### 🎯 Zadania dla dzieci")
     grupy_zadan = pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df)
     
@@ -2483,7 +2529,7 @@ elif st.session_state.active_tab == "zabytek":
         label_visibility="collapsed"
     )
     
-    docelowy_nr = selected_option.split(".")[0].strip() if selected_option else st.session_state.active_place_id
+    docelowy_nr = selected_option.split(".")[0].strip() if selected_option else (st.session_state.active_place_id)
     if selected_option:
         st.session_state.active_place_id = docelowy_nr
 
