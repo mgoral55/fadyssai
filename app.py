@@ -45,7 +45,7 @@ header[data-testid="stHeader"] {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* PASEK BOCZNY - DOPASOWANY STYL I KOLORYSTYKA */
+/* PASEK BOCZNY */
 [data-testid="stSidebar"] {
     background-color: #F6F0DD !important;
     border-right: 1.5px solid #E2DEC8 !important;
@@ -60,7 +60,7 @@ h1, h2, h3, h4, h5 {
     font-weight: 800;
 }
 
-/* INPUTY I COMBOBOXY W CAŁEJ APLIKACJI ORAZ PANELU BOCZNYM */
+/* INPUTY I COMBOBOXY */
 input, textarea, .stChatInput textarea {
     background-color: #FAF8F2 !important;
     color: #2F241D !important;
@@ -78,7 +78,7 @@ div[data-baseweb="select"] > div {
     color: #2F241D !important;
 }
 
-/* ZINTEGROWANY STYL WIDŻETU EXPANDERA I KALENDARZA */
+/* EXPANDER */
 [data-testid="stExpander"] {
     border: 1.5px solid #E2DEC8 !important;
     border-radius: 24px !important;
@@ -105,55 +105,7 @@ div[data-baseweb="select"] > div {
     padding: 12px 14px !important;
 }
 
-/* DEFINITYWNE ZBLIŻENIE EXPANDERÓW W SEKCJI ZADAŃ */
-div[data-testid="stVerticalBlock"]:has(> div.tasks-group-marker) {
-    gap: 6px !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div.tasks-group-marker) > div {
-    margin-bottom: 0px !important;
-    margin-top: 0px !important;
-}
-div[data-testid="stVerticalBlock"]:has(> div.tasks-group-marker) div[data-testid="stExpander"] {
-    margin-bottom: 0px !important;
-    margin-top: 0px !important;
-}
-
-/* Agresywne zmniejszenie odstępów pionowych w blokach zawierających expandery */
-div[data-testid="stVerticalBlock"] div[data-testid="stExpander"] {
-    margin-bottom: -10px !important;
-}
-
-/* Zmniejszenie odstępu dla samych kontenerów elementów */
-div[data-testid="element-container"]:has(> div[data-testid="stExpander"]) {
-    margin-bottom: 0px !important;
-}
-
-/* Zagnieżdżone expandery */
-[data-testid="stExpander"] [data-testid="stExpander"] {
-    border: 1.5px solid #D6CEBA !important;
-    border-radius: 18px !important;
-    background-color: #EFE8D6 !important;
-    margin-bottom: 6px !important;
-}
-[data-testid="stExpander"] [data-testid="stExpander"] [data-testid="stExpanderDetails"] {
-    background-color: #EFE8D6 !important;
-    border-top: 1px solid #D6CEBA !important;
-}
-
-div[data-baseweb="calendar"] {
-    background-color: #F6F0DD !important;
-    color: #2B2118 !important;
-}
-div[data-baseweb="calendar"] * {
-    color: #2B2118 !important;
-}
-input[type="date"] {
-    background-color: #FAF8F2 !important;
-    color: #2B2118 !important;
-    border: 1.5px solid #D6D2C4 !important;
-}
-
-/* STAŁY PASEK NAWIGACYJNY NA SAMEJ GÓRZE */
+/* NAWIGACJA GÓRNA */
 .top-sticky-nav-container {
     position: sticky;
     top: 0;
@@ -163,7 +115,6 @@ input[type="date"] {
     margin-bottom: 8px;
     border-bottom: 1.5px solid rgba(255, 255, 255, 0.2);
 }
-
 .custom-top-nav-bar {
     display: flex;
     justify-content: space-between;
@@ -194,7 +145,7 @@ input[type="date"] {
     font-weight: 900;
 }
 
-/* Belka nagłówkowa aplikacji */
+/* Belka nagłówkowa */
 .adventure-header {
     background: #2E251E;
     border: none;
@@ -228,7 +179,6 @@ input[type="date"] {
     margin-bottom: 4px;
 }
 
-/* STYL DLA KLIKALNEGO KAFELKA DATY */
 div.st-key-btn_date_picker {
     margin-bottom: 12px !important;
 }
@@ -241,27 +191,10 @@ div.st-key-btn_date_picker button {
     min-height: 48px !important;
     font-size: 1.02rem !important;
     font-weight: 800 !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
     width: 100% !important;
-    transition: all 0.15s ease-in-out !important;
-}
-div.st-key-btn_date_picker button:hover {
-    background-color: #F4EFE6 !important;
-    border-color: #C8C0AC !important;
-    color: #8C5338 !important;
-    transform: translateY(-1px) !important;
-}
-div.st-key-btn_date_picker button p {
-    font-size: 1.02rem !important;
-    font-weight: 800 !important;
-    color: inherit !important;
-    margin: 0 !important;
 }
 
-/* SEKCJA LOGISTYKI I OPISÓW WYCIECZKI */
+/* KARTY */
 .overview-card {
     background-color: #F6F0DD;
     border: 1.5px solid #E2DEC8;
@@ -286,7 +219,6 @@ div.st-key-btn_date_picker button p {
     line-height: 1.4;
 }
 
-/* ZWIJANA KARTA TAKTYKI DNIA I SPECYFIKI */
 .overview-details-card {
     background-color: #F6F0DD;
     border: 1.5px solid #E2DEC8;
@@ -300,7 +232,6 @@ div.st-key-btn_date_picker button p {
     font-weight: 800;
     color: #2B2118;
     cursor: pointer;
-    outline: none;
     list-style: none;
     display: flex;
     justify-content: space-between;
@@ -313,10 +244,6 @@ div.st-key-btn_date_picker button p {
     content: "▼";
     font-size: 8pt;
     color: #8C5338;
-    transition: transform 0.2s;
-}
-.overview-details-card[open] summary::after {
-    transform: rotate(180deg);
 }
 
 .logistics-grid {
@@ -336,9 +263,6 @@ div.st-key-btn_date_picker button p {
     color: #8C5338;
     text-transform: uppercase;
     margin-bottom: 3px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
 }
 .logistics-pill-value {
     font-size: 11pt;
@@ -346,20 +270,13 @@ div.st-key-btn_date_picker button p {
     color: #2B2118;
 }
 
-/* GŁÓWNA KARTA PLANu DNIA - NATURALNE ODSTĘPY */
+/* TIMELINE */
 .day-plan-container {
     background-color: transparent !important;
-    border-radius: 0px !important;
-    padding: 0px !important;
-    box-shadow: none !important;
     margin-bottom: 12px !important;
-    margin-top: 4px !important;
 }
-
-/* TIMELINE CONTAINER & STABILNA LINIOWY UKŁAD HTML/CSS */
 .timeline-container {
     position: relative;
-    padding-left: 0px;
 }
 .timeline-line-bg {
     position: absolute;
@@ -370,8 +287,6 @@ div.st-key-btn_date_picker button p {
     background-color: #7A9060;
     z-index: 1;
 }
-
-/* TIMELINE ITEMS Z BEŻOWĄ KARTĄ KROKU */
 .timeline-row {
     position: relative;
     display: flex;
@@ -397,31 +312,24 @@ div.st-key-btn_date_picker button p {
     font-size: 11pt;
     font-weight: 900;
     color: #2B2118;
-    line-height: 1.1;
 }
 .timeline-time-end {
     font-size: 8.5pt;
     font-weight: 700;
     color: #8C5338;
     margin-top: 2px;
-    line-height: 1.1;
 }
-
 .timeline-center-col {
     position: relative;
     width: 46px;
     flex-shrink: 0;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
     margin-right: 10px;
     z-index: 2;
 }
-
 .timeline-icon-badge {
-    position: relative;
-    z-index: 3;
     width: 38px;
     height: 38px;
     border-radius: 50%;
@@ -432,18 +340,10 @@ div.st-key-btn_date_picker button p {
     font-weight: 900;
     color: #FFFFFF !important;
     text-decoration: none !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
     border: 2px solid #FFFFFF;
     cursor: pointer;
-    transition: transform 0.1s ease;
 }
-.timeline-icon-badge:hover {
-    transform: scale(1.08);
-}
-
 .timeline-icon-badge-static {
-    position: relative;
-    z-index: 3;
     width: 38px;
     height: 38px;
     border-radius: 50%;
@@ -453,10 +353,7 @@ div.st-key-btn_date_picker button p {
     font-size: 13pt;
     font-weight: 900;
     color: #FFFFFF !important;
-    text-decoration: none !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
     border: 2px solid #FFFFFF;
-    cursor: default !important;
 }
 
 .badge-pobudka { background-color: #94A77E; }
@@ -475,40 +372,28 @@ div.st-key-btn_date_picker button p {
     font-size: 12.5pt;
     font-weight: 900;
     color: #2B2118;
-    line-height: 1.25;
-    margin-bottom: 2px;
 }
 .timeline-item-desc {
     font-size: 9.5pt;
     color: #4A3E36;
-    line-height: 1.35;
-    font-weight: 500;
 }
 
-/* KAFLEK SZCZEGÓŁÓW KROKU */
 .step-details-card {
     background-color: #EDE8D6;
     border: 1.5px solid #D6CEBA;
     border-radius: 24px;
     padding: 16px;
     margin: 4px 0 18px 0;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
-    position: relative;
-    z-index: 3;
 }
-
 .step-desc-bubble {
     background-color: #E2DAC4;
     border-radius: 16px;
     padding: 12px 14px;
     font-size: 10pt;
     color: #2B2118;
-    line-height: 1.4;
     font-weight: 600;
     margin-bottom: 10px;
 }
-
-/* KAFLEK EWAKUACJI I OSTRZEŻENIA */
 .step-evac-pill {
     background-color: rgba(220, 80, 80, 0.08);
     border: 1.5px solid rgba(220, 80, 80, 0.3);
@@ -530,7 +415,6 @@ div.st-key-btn_date_picker button p {
     font-weight: 900;
     color: #DC5050;
 }
-
 .step-warn-box {
     background-color: rgba(226, 140, 50, 0.1);
     border: 1.5px solid rgba(226, 140, 50, 0.35);
@@ -543,16 +427,13 @@ div.st-key-btn_date_picker button p {
     font-weight: 800;
     color: #C06C4E;
     text-transform: uppercase;
-    margin-bottom: 3px;
 }
 .step-warn-text {
     font-size: 9pt;
     font-weight: 700;
     color: #2B2118;
-    line-height: 1.35;
 }
 
-/* ZWIJANA KARTA WEWNĄTRZ KROKU */
 .step-combined-card {
     background-color: #E2DAC4;
     border-radius: 18px;
@@ -564,7 +445,6 @@ div.st-key-btn_date_picker button p {
     font-weight: 800;
     color: #8C5338;
     cursor: pointer;
-    outline: none;
     list-style: none;
     display: flex;
     justify-content: space-between;
@@ -577,28 +457,19 @@ div.st-key-btn_date_picker button p {
     content: "▼";
     font-size: 8pt;
     color: #8C5338;
-    transition: transform 0.2s;
-}
-.step-combined-card[open] summary::after {
-    transform: rotate(180deg);
 }
 
 .step-subitem-title {
     font-size: 9.5pt;
     font-weight: 800;
     margin-bottom: 3px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
 }
 .step-subitem-body {
     font-size: 9pt;
     color: #2B2118;
-    line-height: 1.35;
     font-weight: 600;
 }
 
-/* PIONOWA LISTA PRZYCISKÓW NA DOLE KARTY */
 .step-action-vertical-bar {
     display: flex;
     flex-direction: column;
@@ -606,7 +477,6 @@ div.st-key-btn_date_picker button p {
     margin-top: 14px;
     margin-bottom: 10px;
 }
-
 .step-action-vertical-btn {
     background-color: #C3CBB5;
     border: 1.5px solid #ACB79C;
@@ -618,16 +488,10 @@ div.st-key-btn_date_picker button p {
     align-items: center;
     justify-content: center;
     gap: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-    transition: background-color 0.15s ease;
-}
-.step-action-vertical-btn:hover {
-    background-color: #B5BEA5;
 }
 .step-action-vertical-btn span:first-child { font-size: 13pt; }
 .step-action-vertical-btn span:last-child { font-size: 9.5pt; font-weight: 800; color: #2B2118; }
 
-/* PRZYCISK NAWIGUJ BEZ TŁA I RAMKI */
 .timeline-nav-btn {
     flex-shrink: 0;
     width: auto;
@@ -645,37 +509,18 @@ div.st-key-btn_date_picker button p {
     gap: 1px;
     margin-left: 8px;
     padding: 0 4px;
-    box-shadow: none !important;
-    z-index: 3;
 }
-.timeline-nav-btn:hover {
-    background-color: rgba(0,0,0,0.03) !important;
-}
-.timeline-nav-btn span:first-child {
-    font-size: 13pt;
-    color: #8C5338;
-    line-height: 1;
-}
-.timeline-nav-btn span:last-child {
-    font-size: 7.5pt;
-    font-weight: 800;
-    color: #2B2118;
-    line-height: 1;
-}
+.timeline-nav-btn span:first-child { font-size: 13pt; color: #8C5338; }
+.timeline-nav-btn span:last-child { font-size: 7.5pt; font-weight: 800; color: #2B2118; }
 
-/* DOJAZD BEZ RAMKI, BEZPOŚREDNIO NA ZIELONYM TLE Z LINIĄ W TLE */
 .timeline-transit-row {
     position: relative;
     display: flex;
     justify-content: center;
     margin: 4px 0 8px 0;
     z-index: 3;
-    background-color: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
 }
 
-/* CAŁKOWITE USUNIĘCIE CZERNI Z CHECKBOXÓW - BIAŁY ŚRODEK */
 div[data-testid="stCheckbox"] {
     margin-bottom: 6px !important;
     background-color: #FAF8F2 !important;
@@ -688,38 +533,8 @@ div[data-testid="stCheckbox"] label {
     font-size: 9.5pt !important;
     font-weight: 700 !important;
     color: #2B2118 !important;
-    line-height: 1.35 !important;
-}
-/* Natywny input checkbox */
-div[data-testid="stCheckbox"] input[type="checkbox"] {
-    background-color: #FFFFFF !important;
-    border: 2px solid #8C5338 !important;
-    border-radius: 6px !important;
-    accent-color: #8C5338 !important;
-    width: 18px !important;
-    height: 18px !important;
-}
-/* Streamlit BaseWeb checkbox */
-div[data-testid="stCheckbox"] span[role="checkbox"],
-div[data-testid="stCheckbox"] div[data-baseweb="checkbox"] > span,
-div[data-testid="stCheckbox"] span[data-baseweb="checkbox"] {
-    background-color: #FFFFFF !important;
-    border: 2px solid #8C5338 !important;
-    border-radius: 6px !important;
-    box-shadow: none !important;
-}
-div[data-testid="stCheckbox"] span[role="checkbox"][aria-checked="true"],
-div[data-testid="stCheckbox"] span[data-baseweb="checkbox"][aria-checked="true"] {
-    background-color: #8C5338 !important;
-    border-color: #8C5338 !important;
-}
-div[data-testid="stCheckbox"] span[role="checkbox"] svg,
-div[data-testid="stCheckbox"] span[data-baseweb="checkbox"] svg {
-    fill: #FAF8F2 !important;
-    color: #FAF8F2 !important;
 }
 
-/* Pływający kontener AI */
 .floating-ai-container {
     position: fixed;
     bottom: 15px;
@@ -735,7 +550,6 @@ div[data-testid="stCheckbox"] span[data-baseweb="checkbox"] svg {
     justify-content: space-between;
     gap: 8px;
     width: 100%;
-    margin-bottom: 0.4rem;
 }
 .custom-nav-btn {
     flex: 1;
@@ -754,7 +568,6 @@ div[data-testid="stCheckbox"] span[data-baseweb="checkbox"] svg {
     gap: 3px;
 }
 
-/* Przyciski globalne */
 .stButton > button {
     background-color: #2E251E !important;
     color: #FFFFFF !important;
@@ -773,17 +586,6 @@ div[data-testid="stCheckbox"] span[data-baseweb="checkbox"] svg {
     padding: 14px;
     margin-bottom: 10px;
 }
-
-/* KONTENER RAMKI POWIĄZAŃ WYCIECZEK */
-div[data-testid="stVerticalBlock"]:has(> div.trip-box-marker) {
-    background-color: #F6F0DD !important;
-    border: 1.5px solid #E2DEC8 !important;
-    border-radius: 24px !important;
-    padding: 16px 16px 14px 16px !important;
-    margin-top: 6px !important;
-    margin-bottom: 12px !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -796,7 +598,6 @@ DOMEK_LON = 24.0918
 SKLEP_LAT = 35.586222
 SKLEP_LON = 24.091861
 
-# --- NORMALIZACJA KATEGORII I KOLORÓW (STONOWANA PALETA SAGE & TERRACOTTA) ---
 CATEGORIES_CONFIG = {
     "Must have": {"color": "#B35446", "slug": "must_have"},
     "Nice to have": {"color": "#C47C48", "slug": "nice_to_have"},
@@ -877,88 +678,183 @@ def klucz_sortowania_okienka(okienko_str):
         return res[0] * 60 + res[1]
     return 9999
 
+def oblicz_czas_trwania_okienka(okienko_str, domyslny_czas=45):
+    if not okienko_str or "-" not in str(okienko_str):
+        return domyslny_czas
+    try:
+        czesci = str(okienko_str).split("-")
+        g1 = sparsuj_godzine_minuty(czesci[0])
+        g2 = sparsuj_godzine_minuty(czesci[1])
+        if g1 and g2:
+            m1 = g1[0] * 60 + g1[1]
+            m2 = g2[0] * 60 + g2[1]
+            diff = m2 - m1
+            return max(diff, 15)
+    except:
+        pass
+    return domyslny_czas
+
 DNI_TYGODNIA_PL = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"]
 MIESIACE_PL = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia"]
 
-def formatuj_date_pl(data_obj):
-    if not isinstance(data_obj, (date, datetime)):
-        return str(data_obj)
-    dzien = data_obj.day
-    miesiac = MIESIACE_PL[data_obj.month - 1]
-    rok = data_obj.year
-    dzien_tyg = DNI_TYGODNIA_PL[data_obj.weekday()]
-    return f"{dzien} {miesiac} {rok} ({dzien_tyg})"
+# --- FUNKCJA WCZYTUJĄCA REGUŁY Z FOLDERU rule/ ---
+def wczytaj_pliki_regul(katalog="rule"):
+    if not os.path.exists(katalog):
+        return ""
+    tresc_regul = "\n--- REGUŁY Z FOLDERU RULE ---\n"
+    znaleziono = False
+    for plik in sorted(os.listdir(katalog)):
+        sciezka = os.path.join(katalog, plik)
+        if os.path.isfile(sciezka) and plik.lower().endswith(('.txt', '.md', '.json', '.rule', '.csv')):
+            try:
+                with open(sciezka, 'r', encoding='utf-8') as f:
+                    tresc_regul += f"\n[Plik: {plik}]\n{f.read()}\n"
+                    znaleziono = True
+            except:
+                try:
+                    with open(sciezka, 'r', encoding='cp1250') as f:
+                        tresc_regul += f"\n[Plik: {plik}]\n{f.read()}\n"
+                        znaleziono = True
+                except:
+                    pass
+    return tresc_regul if znaleziono else ""
 
-def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki):
+# --- PEŁNY KASKADOWY SILNIK PRZELICZANIA I SYNCHRONIZACJI WYCIECZKI ---
+def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor_koniec_str=None, anchor_start_str=None):
+    """
+    Przelicza harmonogram wycieczki kaskadowo w oparciu o czasy trwania pobytu, czasy dojazdu OSRM
+    oraz szacowane bufory postoju na trasie pobierane z tabeli czasy_dojazdu (lub 15 min jako domyślne).
+    """
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
     
-    cursor.execute('SELECT id, krok_wycieczki, wspolrzedne, okienko_zwiedzania, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
+    # 0. Odczyt dotychczasowych postojów
+    cursor.execute('SELECT id_kroku_z, id_kroku_do, szacowany_czas_postoju FROM czasy_dojazdu WHERE szacowany_czas_postoju IS NOT NULL')
+    istniejace_postoje = {(row[0], row[1]): row[2] for row in cursor.fetchall()}
+
+    # Pobranie kroków w aktualnej kolejności
+    cursor.execute('SELECT id, krok_wycieczki, wspolrzedne, okienko_zwiedzania, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC, id ASC', (str(id_wycieczki),))
     kroki = cursor.fetchall()
     
     if not kroki:
         conn.close()
         return
 
-    kroki.sort(key=lambda x: klucz_sortowania_okienka(x[3]))
-
     krok_ids = [k[0] for k in kroki]
     if krok_ids:
         placeholders = ','.join(['?'] * len(krok_ids))
         cursor.execute(f'DELETE FROM czasy_dojazdu WHERE id_kroku_z IN ({placeholders}) OR id_kroku_do IN ({placeholders})', krok_ids + krok_ids)
 
-    calkowity_czas_minuty = 0
-
+    # 1. Obliczenie czasów dojazdu OSRM oraz pobranie buforu postoju na trasie
+    dojazdy_minuty = []
+    dojazdy_tekst = []
+    postoje_na_trasie_minuty = []
+    
     for idx in range(len(kroki) - 1):
-        k1_id, _, k1_wsp, _, _ = kroki[idx]
-        k2_id, _, k2_wsp, _, _ = kroki[idx + 1]
-        
+        k1_id = kroki[idx][0]
+        k2_id = kroki[idx + 1][0]
+        k1_wsp = kroki[idx][2]
+        k2_wsp = kroki[idx + 1][2]
         lat1, lon1 = sparsuj_wspolrzedne(k1_wsp)
         lat2, lon2 = sparsuj_wspolrzedne(k2_wsp)
-        
         minuty_przejazdu = 25
         tekst_dojazdu = "~25 min"
         if lat1 is not None and lon1 is not None and lat2 is not None and lon2 is not None:
             tekst_dojazdu, minuty_przejazdu = oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2)
-            
-        szacowany_postoj = 15
         
-        cursor.execute('''
-            INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
-            VALUES (?, ?, ?, ?)
-        ''', (k1_id, k2_id, tekst_dojazdu, szacowany_postoj))
+        bufor_postoju = istniejace_postoje.get((k1_id, k2_id), 15)
+        dojazdy_minuty.append(minuty_przejazdu)
+        dojazdy_tekst.append(tekst_dojazdu)
+        postoje_na_trasie_minuty.append(bufor_postoju)
 
-        calkowity_czas_minuty += zaokraglij_do_5_minut(minuty_przejazdu + szacowany_postoj)
+    # 2. Czas trwania pobytu w każdym kroku (Reguły stopniowane ADHD)
+    czasy_pobytu = []
+    for idx, k in enumerate(kroki):
+        is_f = (idx == 0)
+        is_l = (idx == len(kroki) - 1)
+        nazwa_lower = str(k[4]).lower()
+        
+        if "sklep" in nazwa_lower or "market" in nazwa_lower or "zakup" in nazwa_lower:
+            domyslny_czas = 25
+        elif "plaż" in nazwa_lower or "beach" in nazwa_lower:
+            domyslny_czas = 90
+        elif is_f or is_l:
+            domyslny_czas = 30
+        else:
+            domyslny_czas = 60
 
-    pierwsze_okienko = kroki[0][3] or "07:00 - 07:30"
-    ostatnie_okienko = kroki[-1][3] or "18:00 - 18:30"
+        dur = oblicz_czas_trwania_okienka(k[3], domyslny_czas=domyslny_czas)
+        czasy_pobytu.append(dur)
 
-    if "-" in pierwsze_okienko:
-        start_1 = sparsuj_godzine_minuty(pierwsze_okienko.split('-')[1]) or (7, 30)
+    # 3. Kaskadowe wyliczenie godzin
+    anchor_idx = None
+    if anchor_krok_id:
+        for idx, k in enumerate(kroki):
+            if str(k[0]) == str(anchor_krok_id) or str(k[1]) == str(anchor_krok_id) or str(anchor_krok_id).lower() in str(k[4]).lower():
+                anchor_idx = idx
+                break
+
+    start_times = [None] * len(kroki)
+    end_times = [None] * len(kroki)
+
+    if anchor_idx is not None and (anchor_koniec_str or anchor_start_str):
+        if anchor_koniec_str:
+            g_end = sparsuj_godzine_minuty(anchor_koniec_str) or (12, 0)
+            dt_anchor_end = datetime(2026, 1, 1, g_end[0], g_end[1])
+            end_times[anchor_idx] = dt_anchor_end
+            start_times[anchor_idx] = dt_anchor_end - timedelta(minutes=czasy_pobytu[anchor_idx])
+        else:
+            g_start = sparsuj_godzine_minuty(anchor_start_str) or (10, 0)
+            dt_anchor_start = datetime(2026, 1, 1, g_start[0], g_start[1])
+            start_times[anchor_idx] = dt_anchor_start
+            end_times[anchor_idx] = dt_anchor_start + timedelta(minutes=czasy_pobytu[anchor_idx])
+
+        # Przeliczenie wstecz
+        for i in range(anchor_idx - 1, -1, -1):
+            czas_odcinka = dojazdy_minuty[i] + postoje_na_trasie_minuty[i]
+            end_times[i] = start_times[i + 1] - timedelta(minutes=czas_odcinka)
+            start_times[i] = end_times[i] - timedelta(minutes=czasy_pobytu[i])
+
+        # Przeliczenie w przód
+        for i in range(anchor_idx + 1, len(kroki)):
+            czas_odcinka = dojazdy_minuty[i - 1] + postoje_na_trasie_minuty[i - 1]
+            start_times[i] = end_times[i - 1] + timedelta(minutes=czas_odcinka)
+            end_times[i] = start_times[i] + timedelta(minutes=czasy_pobytu[i])
     else:
-        start_1 = sparsuj_godzine_minuty(pierwsze_okienko) or (7, 30)
+        # Standardowe przeliczenie w przód
+        p_start = sparsuj_godzine_minuty(kroki[0][3].split('-')[0]) if kroki[0][3] else (7, 0)
+        cur_dt = datetime(2026, 1, 1, p_start[0], p_start[1])
+        for i in range(len(kroki)):
+            start_times[i] = cur_dt
+            end_times[i] = cur_dt + timedelta(minutes=czasy_pobytu[i])
+            if i < len(kroki) - 1:
+                czas_odcinka = dojazdy_minuty[i] + postoje_na_trasie_minuty[i]
+                cur_dt = end_times[i] + timedelta(minutes=czas_odcinka)
 
-    koniec_n = sparsuj_godzine_minuty(ostatnie_okienko.split('-')[0]) or (18, 0)
+    # 4. Zapisanie przeliczonych okienek i buforów postoju do tabeli czasy_dojazdu
+    for i in range(len(kroki)):
+        s_str = start_times[i].strftime("%H:%M")
+        e_str = end_times[i].strftime("%H:%M")
+        nowe_okienko = f"{s_str} - {e_str}"
+        cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (nowe_okienko, kroki[i][0]))
+        
+        if i < len(kroki) - 1:
+            cursor.execute('''
+                INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
+                VALUES (?, ?, ?, ?)
+            ''', (kroki[i][0], kroki[i + 1][0], dojazdy_tekst[i], postoje_na_trasie_minuty[i]))
 
-    dt_start = datetime(2026, 1, 1, start_1[0], start_1[1])
-    dt_wyjazd = dt_start
+    dt_wyjazd = end_times[0]
+    dt_powrot = start_times[-1]
     dt_pobudka = dt_wyjazd - timedelta(minutes=zaokraglij_do_5_minut(90))
-    dt_powrot = datetime(2026, 1, 1, koniec_n[0], koniec_n[1])
-
     roznica_sek = (dt_powrot - dt_wyjazd).total_seconds()
-    surowe_minuty_trwania = roznica_sek / 60.0
-    zaokraglone_minuty_trwania = zaokraglij_do_5_minut(surowe_minuty_trwania)
-    czas_trwania_h = round(max(zaokraglone_minuty_trwania / 60.0, calkowity_czas_minuty / 60.0, 0.5), 1)
-
-    str_pobudka = dt_pobudka.strftime("%H:%M")
-    str_wyjazd = dt_wyjazd.strftime("%H:%M")
-    str_powrot = dt_powrot.strftime("%H:%M")
+    czas_trwania_h = round(max(roznica_sek / 3600.0, 0.5), 1)
 
     cursor.execute('''
         UPDATE wycieczka 
         SET pobudka = ?, czas_wyjazdu = ?, szacowana_godzina_powrotu = ?, calkowity_czas_wycieczki_godziny = ?, czas_powrotu_do_domku = NULL
         WHERE id = ?
-    ''', (str_pobudka, str_wyjazd, str_powrot, str(czas_trwania_h), str(id_wycieczki)))
+    ''', (dt_pobudka.strftime("%H:%M"), dt_wyjazd.strftime("%H:%M"), dt_powrot.strftime("%H:%M"), str(czas_trwania_h), str(id_wycieczki)))
 
     conn.commit()
     conn.close()
@@ -1112,44 +1008,46 @@ def init_db():
     conn.commit()
 
     if os.path.exists("miejsca.csv"):
-        try:
-            df_csv = pd.read_csv("miejsca.csv", encoding="utf-8-sig")
-        except:
-            df_csv = pd.read_csv("miejsca.csv", encoding="cp1250")
+        cursor.execute('SELECT COUNT(*) FROM miejsca')
+        if cursor.fetchone()[0] == 0:
+            try:
+                df_csv = pd.read_csv("miejsca.csv", encoding="utf-8-sig")
+            except:
+                df_csv = pd.read_csv("miejsca.csv", encoding="cp1250")
+                
+            df_csv.columns = [c.strip() for c in df_csv.columns]
             
-        df_csv.columns = [c.strip() for c in df_csv.columns]
-        
-        for _, row in df_csv.iterrows():
-            cursor.execute('''
-                INSERT OR REPLACE INTO miejsca (
-                    numer_miejsca, nazwa, nazwa_angielska, opis, wspolrzedne, typ,
-                    czas_dojazdu, godziny_otwarcia, najlepsza_pora, orientacyjny_czas,
-                    koszt, konieczna_akcja, zaplecze_gastro, ile_jedzenia, trudnosc_adhd,
-                    potencjal_meltdownu, strategie_meltdown, ochrona_slonce, najlepiej_polaczyc, zadania_dla_dzieci, odwiedzone, Base
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'true')
-            ''', (
-                str(row.get('numer miejsca', '')),
-                str(row.get('nazwa', '')),
-                str(row.get('nazwa angielska', '')),
-                str(row.get('Opis', '')),
-                str(row.get('współrzędne', '')),
-                str(row.get('typ', '')),
-                str(row.get('czas dojazdu ze Stravros', '')),
-                str(row.get('godziny otwarcia', '')),
-                str(row.get('najlepsza pora zwiedzania', '')),
-                str(row.get('orientacyjny czas zwiedzania', '')),
-                str(row.get('koszt zwiedzania dla rodziny 2+2', '')),
-                str(row.get('Konieczna akcja', '')),
-                str(row.get('Zaplecze gastronomiczne', '')),
-                str(row.get('Ile jedzenia', '')),
-                str(row.get('Poziom trudności ADHD', '')),
-                str(row.get('Potencjał meltdownu', '')),
-                str(row.get('Strategie na meltdown', '')),
-                str(row.get('Ochrona przed słońcem', '')),
-                str(row.get('Najlepiej połączyć z', '')),
-                str(row.get('Zadania dla dzieci', ''))
-            ))
-        conn.commit()
+            for _, row in df_csv.iterrows():
+                cursor.execute('''
+                    INSERT OR REPLACE INTO miejsca (
+                        numer_miejsca, nazwa, nazwa_angielska, opis, wspolrzedne, typ,
+                        czas_dojazdu, godziny_otwarcia, najlepsza_pora, orientacyjny_czas,
+                        koszt, konieczna_akcja, zaplecze_gastro, ile_jedzenia, trudnosc_adhd,
+                        potencjal_meltdownu, strategie_meltdown, ochrona_slonce, najlepiej_polaczyc, zadania_dla_dzieci, odwiedzone, Base
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'true')
+                ''', (
+                    str(row.get('numer miejsca', '')),
+                    str(row.get('nazwa', '')),
+                    str(row.get('nazwa angielska', '')),
+                    str(row.get('Opis', '')),
+                    str(row.get('współrzędne', '')),
+                    str(row.get('typ', '')),
+                    str(row.get('czas dojazdu ze Stravros', '')),
+                    str(row.get('godziny otwarcia', '')),
+                    str(row.get('najlepsza pora zwiedzania', '')),
+                    str(row.get('orientacyjny czas zwiedzania', '')),
+                    str(row.get('koszt zwiedzania dla rodziny 2+2', '')),
+                    str(row.get('Konieczna akcja', '')),
+                    str(row.get('Zaplecze gastronomiczne', '')),
+                    str(row.get('Ile jedzenia', '')),
+                    str(row.get('Poziom trudności ADHD', '')),
+                    str(row.get('Potencjał meltdownu', '')),
+                    str(row.get('Strategie na meltdown', '')),
+                    str(row.get('Ochrona przed słońcem', '')),
+                    str(row.get('Najlepiej połączyć z', '')),
+                    str(row.get('Zadania dla dzieci', ''))
+                ))
+            conn.commit()
 
     cursor.execute('SELECT COUNT(*) FROM wycieczka')
     if cursor.fetchone()[0] == 0:
@@ -1170,10 +1068,10 @@ def init_db():
         ))
 
         kroki_w1 = [
-            ("1", "0", "Nasz Domek (Start)", f"{DOMEK_LAT}, {DOMEK_LON}", "07:00 - 07:30", "07:30", "Brak", "Spokojna baza", "Poziom energii, prosta rada (np. 'Światło dzienne, spokojna muzyka').", "Niski", "Ciepła atmosfera w domku", "Nasz domek wypadowy w Stavros."),
+            ("1", "0", "Nasz Domek (Start)", f"{DOMEK_LAT}, {DOMEK_LON}", "07:00 - 07:30", "Brak", "Brak", "Spokojna baza", "Poziom energii, prosta rada (np. 'Światło dzienne, spokojna muzyka').", "Niski", "Ciepła atmosfera w domku", "Nasz domek wypadowy w Stavros."),
             ("1", "1", "Pałac w Knossos", "35.2980, 25.1631", "09:00 - 11:30", "11:30", "BEZWZGLĘDNIE EWAKUOWAĆ SIĘ PRZED 12:00! Tłumy i upał.", "Brak - rygor czasowy.", "Poziom tłumu (Niski), szacowany czas zwiedzania.", "Wysoki (tłumy, brak cienia, duchota)", "Użycie aplikacji 3D na iPadzie jako kotwica uwagi, szybka ewakuacja w razie buntu.", "Legendarska stolica minojskiej Krety z ruinami pałacu króla Minosa."),
-            ("1", "2", "Cretaquarium", "35.3326, 25.2825", "13:30 - 15:30", "15:30", "Unikać godzin szczytu.", "Kawiarnia obok", "Poziom stymulacji sensorycznej (Umiarkowany - półmrok, chłód).", "Średni (pogłos w halach, tłum)", "Słuchawki wygłuszające, powolne tempo, półmrok przy akwariach.", "Jedno z największych oceanariów w basenie Morza Śródziemnego."),
-            ("1", "3", "Nasz Domek (Powrót)", f"{DOMEK_LAT}, {DOMEK_LON}", "16:00 - 19:00", "19:00", "Brak", "Pełny relaks", "Poziom energii na koniec dnia, prosta rada (np. 'Wyciszenie w drodze').", "Niski", "Kolacja domowa i odpoczynek", "Koniec wyprawy w naszej bazie.")
+            ("1", "2", "Cretaquarium", "35.3326, 25.2825", "13:30 - 15:30", "Brak", "Unikać godzin szczytu.", "Kawiarnia obok", "Poziom stymulacji sensorycznej (Umiarkowany - półmrok, chłód).", "Średni (pogłos w halach, tłum)", "Słuchawki wygłuszające, powolne tempo, półmrok przy akwariach.", "Jedno z największych oceanariów w basenie Morza Śródziemnego."),
+            ("1", "3", "Nasz Domek (Powrót)", f"{DOMEK_LAT}, {DOMEK_LON}", "16:00 - 19:00", "Brak", "Brak", "Pełny relaks", "Poziom energii na koniec dnia, prosta rada (np. 'Wyciszenie w drodze').", "Niski", "Kolacja domowa i odpoczynek", "Koniec wyprawy w naszej bazie.")
         ]
         cursor.executemany('''
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis)
@@ -1184,7 +1082,7 @@ def init_db():
         db_krok_ids = [r[0] for r in cursor.fetchall()]
         if len(db_krok_ids) >= 4:
             cursor.execute("INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, opis) VALUES (?, 'śniadanie', 'w domku', 'Domowe śniadanie')", (db_krok_ids[0],))
-            cursor.execute("INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, opis) VALUES (?, 'obiad', 'w kroku', 'Poziom regeneracji (Wysoki), dostępność strefy wyciszenia, czas dojazdu do restauracji (np. 5 min spacerem).')", (db_krok_ids[1],))
+            cursor.execute("INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, opis) VALUES (?, 'obiad', 'w kroku', 'Poziom regeneracji (Wysoki), dostępność strefy wyciszenia.')", (db_krok_ids[1],))
             cursor.execute("INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, opis) VALUES (?, 'kolacja', 'w domku', 'Kolacja po powrocie')", (db_krok_ids[3],))
 
         conn.commit()
@@ -1193,6 +1091,327 @@ def init_db():
 
 init_db()
 
+# --- FUNKCJE CRUD DO ZARZĄDZANIA WYCIECZKAMI I KROKAMI PRZEZ LLM ---
+def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, 
+                     planowana_data=None):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    if tytul_wycieczki is not None:
+        cursor.execute('UPDATE wycieczka SET tytul_wycieczki = ? WHERE id = ?', (tytul_wycieczki, str(id)))
+    if calosciowy_opis_wycieczki is not None:
+        cursor.execute('UPDATE wycieczka SET calosciowy_opis_wycieczki = ? WHERE id = ?', (calosciowy_opis_wycieczki, str(id)))
+    if calosciowa_taktyka_dnia is not None:
+        cursor.execute('UPDATE wycieczka SET calosciowa_taktyka_dnia = ? WHERE id = ?', (calosciowa_taktyka_dnia, str(id)))
+    if planowana_data is not None:
+        cursor.execute('UPDATE wycieczka SET planowana_data = ? WHERE id = ?', (planowana_data, str(id)))
+    conn.commit()
+    conn.close()
+    przelicz_i_zsynchronizuj_wycieczke(str(id))
+    return f"Wycieczka #{id} została zaktualizowana i przeliczona."
+
+# --- ZAAWANSOWANE WSTAWIANIE KROKU Z PILNOWANIEM KOLEJNOŚCI I SKLEPU PRZY DOMKU ---
+def dodaj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne="35.3,24.5", 
+                         okienko_zwiedzania="10:00 - 12:00", godzina_ewakuacji="Brak", 
+                         czerwona_strefa_ostrzezenie="Brak", strefa_luzu_i_regeneracji="Spokojna strefa", 
+                         podsumowanie_taktyki="Brak", opis="Brak"):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    
+    # Pobranie istniejących kroków
+    cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
+    istniejace = cursor.fetchall()
+
+    is_sklep = "sklep" in nazwa.lower() or "market" in nazwa.lower() or "zakup" in nazwa.lower()
+    
+    # Jeśli to zakupy/sklep w drodze powrotnej lub nowy krok pośredni, umieszczamy go tuż przed końcowym domkiem
+    if istniejace and ("domek" in istniejace[-1][2].lower() or "powrót" in istniejace[-1][2].lower()):
+        ostatni_id = istniejace[-1][0]
+        nowy_numer_sklepu = len(istniejace) - 1
+        nowy_numer_domku = len(istniejace)
+        
+        # Przesuwamy końcowy domek na wyższy numer
+        cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(nowy_numer_domku), ostatni_id))
+        target_krok_num = str(nowy_numer_sklepu)
+    else:
+        target_krok_num = str(len(istniejace))
+
+    cursor.execute('''
+        INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, opis)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (str(id_wycieczki), target_krok_num, str(nazwa), str(wspolrzedne), str(okienko_zwiedzania), str(godzina_ewakuacji), str(czerwona_strefa_ostrzezenie), str(strefa_luzu_i_regeneracji), str(podsumowanie_taktyki), str(opis)))
+    conn.commit()
+    conn.close()
+    
+    przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
+    return f"Dodano krok '{nazwa}' do wycieczki #{id_wycieczki} i automatycznie przeliczono cały łańcuch godzin."
+
+def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa=None, wspolrzedne=None, okienko_zwiedzania=None, 
+                          godzina_ewakuacji=None, czerwona_strefa_ostrzezenie=None, strefa_luzu_i_regeneracji=None, 
+                          podsumowanie_taktyki=None, opis=None, godzina_wyjazdu_do=None, godzina_dotarcia_na=None):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    
+    query = '''
+        SELECT id, nazwa FROM krok_wycieczki 
+        WHERE id_wycieczki = ? AND (
+            id = ? OR 
+            krok_wycieczki = ? OR 
+            nazwa LIKE ? OR 
+            ? LIKE ('%' || nazwa || '%')
+        )
+    '''
+    cursor.execute(query, (str(id_wycieczki), str(krok_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%", str(krok_wycieczki)))
+    res = cursor.fetchone()
+    if not res:
+        conn.close()
+        return f"Nie znaleziono kroku '{krok_wycieczki}' w wycieczce #{id_wycieczki}."
+    krok_id = res[0]
+    
+    pola = {
+        "nazwa": nazwa, "wspolrzedne": wspolrzedne, "okienko_zwiedzania": okienko_zwiedzania,
+        "godzina_ewakuacji": godzina_ewakuacji, "czerwona_strefa_ostrzezenie": czerwona_strefa_ostrzezenie,
+        "strefa_luzu_i_regeneracji": strefa_luzu_i_regeneracji, "podsumowanie_taktyki": podsumowanie_taktyki, "opis": opis
+    }
+    for col, val in pola.items():
+        if val is not None:
+            cursor.execute(f'UPDATE krok_wycieczki SET {col} = ? WHERE id = ?', (val, krok_id))
+    conn.commit()
+    conn.close()
+    
+    przelicz_i_zsynchronizuj_wycieczke(
+        str(id_wycieczki), 
+        anchor_krok_id=krok_id, 
+        anchor_koniec_str=godzina_wyjazdu_do,
+        anchor_start_str=godzina_dotarcia_na
+    )
+    return f"Zaktualizowano krok i automatycznie przeliczono godziny całej wycieczki #{id_wycieczki}."
+
+# --- NIEZAWODNE USUWANIE KROKU Z BAZY DANYCH ---
+def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    
+    query = '''
+        SELECT id, nazwa FROM krok_wycieczki 
+        WHERE id_wycieczki = ? AND (
+            id = ? OR 
+            krok_wycieczki = ? OR 
+            nazwa LIKE ? OR 
+            ? LIKE ('%' || nazwa || '%')
+        )
+    '''
+    cursor.execute(query, (str(id_wycieczki), str(krok_wycieczki), str(krok_wycieczki), f"%{krok_wycieczki}%", str(krok_wycieczki)))
+    res = cursor.fetchone()
+    if not res:
+        conn.close()
+        return f"Nie znaleziono kroku '{krok_wycieczki}' do usunięcia."
+        
+    krok_id, nazwa = res
+    if "domek" in nazwa.lower() and ("start" in nazwa.lower() or "powrót" in nazwa.lower() or "baza" in nazwa.lower()):
+        conn.close()
+        return "BLOKADA: Baza wypadowa (Domek) jest nieusuwalna! Możesz usuwać wyłącznie atrakcje, sklepy i plaże na trasie."
+    
+    # 1. Usunięcie powiązanych rekordów podrzędnych
+    cursor.execute('DELETE FROM posilki_kroku WHERE id_kroku = ?', (krok_id,))
+    cursor.execute('DELETE FROM zakupy WHERE id_kroku = ?', (krok_id,))
+    cursor.execute('DELETE FROM czasy_dojazdu WHERE id_kroku_z = ? OR id_kroku_do = ?', (krok_id, krok_id))
+    
+    # 2. Usunięcie samego kroku
+    cursor.execute('DELETE FROM krok_wycieczki WHERE id = ?', (krok_id,))
+    conn.commit()
+
+    # 3. Renumeracja pozostałych kroków (0, 1, 2, ... N)
+    cursor.execute('SELECT id, nazwa, okienko_zwiedzania FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
+    pozostale = cursor.fetchall()
+    pozostale.sort(key=lambda x: klucz_sortowania_okienka(x[2]))
+    
+    for idx, (row_id, _, _) in enumerate(pozostale):
+        cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(idx), row_id))
+    conn.commit()
+    conn.close()
+
+    # 4. Ponowne przeliczenie całego łańcucha czasowego wycieczki
+    przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
+    return f"Pomyślnie usunięto krok '{nazwa}' i automatycznie zsynchronizowano harmonogram wycieczki #{id_wycieczki}."
+
+# --- ZARZĄDZANIE BUFORAMI POSTOJÓW NA TRASIE PRZEZ LLM ---
+def zmien_czas_postoju_na_trasie(id_wycieczki, krok_z, krok_do, minuty_postoju):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    
+    def find_id(k_val):
+        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? AND (id = ? OR krok_wycieczki = ? OR nazwa LIKE ?)', (str(id_wycieczki), str(k_val), str(k_val), f"%{k_val}%"))
+        r = cursor.fetchone()
+        return r[0] if r else None
+
+    id_z = find_id(krok_z)
+    id_do = find_id(krok_do)
+    
+    if not id_z or not id_do:
+        conn.close()
+        return "Nie znaleziono wskazanych kroków trasy."
+        
+    cursor.execute('UPDATE czasy_dojazdu SET szacowany_czas_postoju = ? WHERE id_kroku_z = ? AND id_kroku_do = ?', (int(minuty_postoju), id_z, id_do))
+    conn.commit()
+    conn.close()
+    
+    przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
+    return f"Zaktualizowano bufor postoju na trasie do {minuty_postoju} minut i przeliczono harmonogram."
+
+def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=None, tytul=None):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO notatki (id_wycieczki, id_miejsca, tytul, zawartosc, typ_notatki)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (str(id_wycieczki) if id_wycieczki else None, str(id_miejsca) if id_miejsca else None, tytul, zawartosc, typ_notatki))
+    conn.commit()
+    conn.close()
+    return "Dodano notatkę!"
+
+def dodaj_produkt_zakupow(id_kroku, nazwa_produktu, ilosc="1"):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO zakupy (id_kroku, nazwa_produktu, ilosc, kupione) VALUES (?, ?, ?, 0)', (str(id_kroku), nazwa_produktu, str(ilosc)))
+    conn.commit()
+    conn.close()
+    return f"Dodano produkt '{nazwa_produktu}' do listy zakupów."
+
+def zmien_status_zakupu(zakup_id, kupione):
+    conn = sqlite3.connect('cretai.db')
+    cursor = conn.cursor()
+    cursor.execute('UPDATE zakupy SET kupione = ? WHERE id = ?', (1 if kupione else 0, int(zakup_id)))
+    conn.commit()
+    conn.close()
+
+# --- ZESTAW NARZĘDZI FUNCTION CALLING DLA LLM ---
+cretai_tools = types.Tool(function_declarations=[
+    types.FunctionDeclaration(
+        name="dodaj_notatke",
+        description="Dodaje notatkę do wycieczki lub miejsca.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "zawartosc": types.Schema(type=types.Type.STRING, description="Treść notatki"),
+                "typ_notatki": types.Schema(type=types.Type.STRING, description="'text', 'link' lub 'list'"),
+                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                "id_miejsca": types.Schema(type=types.Type.STRING, description="Numer miejsca"),
+                "tytul": types.Schema(type=types.Type.STRING, description="Tytuł"),
+            },
+            required=["zawartosc"]
+        ),
+    ),
+    types.FunctionDeclaration(
+        name="edytuj_wycieczke",
+        description="Aktualizuje parametry wycieczki.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "id": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Tytuł"),
+                "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Opis"),
+                "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Taktyka"),
+                "planowana_data": types.Schema(type=types.Type.STRING, description="RRRR-MM-DD"),
+            },
+            required=["id"]
+        ),
+    ),
+    types.FunctionDeclaration(
+        name="dodaj_krok_wycieczki",
+        description="Dodaje krok do wycieczki (np. sklep przed powrotem do bazy). Backend automatycznie wstawia go we właściwym miejscu i przelicza godziny!",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer kroku (opcjonalny, backend ustala go sam)"),
+                "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca / atrakcji / 'Sklep przy domku'"),
+                "wspolrzedne": types.Schema(type=types.Type.STRING, description="GPS (np. dla sklepu: '35.586222, 24.091861')"),
+                "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Orientacyjny czas pobytu, np. '17:00 - 17:25'"),
+                "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="KRYTYCZNA godzina graniczna przed upałem/tłumem (np. '11:30') lub 'Brak' jeśli nie dotyczy"),
+                "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Ostrzeżenie o upale/tłumie lub 'Brak'"),
+                "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING, description="Strefa wyciszenia"),
+                "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
+                "opis": types.Schema(type=types.Type.STRING, description="Opis"),
+            },
+            required=["id_wycieczki", "krok_wycieczki", "nazwa"]
+        ),
+    ),
+    types.FunctionDeclaration(
+        name="edytuj_krok_wycieczki",
+        description="Edytuje parametry kroku wycieczki. Obsługuje precyzyjnie godziny wyjazdu 'do...' oraz godziny dotarcia 'na...'. Backend kaskadowo przeliczy godziny wszystkich punktów!",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID z bazy (DB_ID), numer kroku lub nazwa atrakcji"),
+                "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Nowe okienko pobytu, np. '10:00 - 13:00'"),
+                "godzina_wyjazdu_do": types.Schema(type=types.Type.STRING, description="Sztywna godzina WYJAZDU/ZAKOŃCZENIA pobytu w tym miejscu, gdy użytkownik mówi 'chcę być w X do godziny HH:MM'"),
+                "godzina_dotarcia_na": types.Schema(type=types.Type.STRING, description="Sztywna godzina PRZYJAZDU/STARTU pobytu w tym miejscu, gdy użytkownik mówi 'chcę dojechać/dotrzeć do X na/do godziny HH:MM'"),
+                "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
+                "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="Godzina krytyczna lub 'Brak'"),
+            },
+            required=["id_wycieczki", "krok_wycieczki"]
+        ),
+    ),
+    types.FunctionDeclaration(
+        name="usun_krok_wycieczki",
+        description="Usuwa wskazany krok / atrakcję / sklep z wycieczki i natychmiast przelicza cały harmonogram. Używaj ZAWSZE, gdy użytkownik prosi o usunięcie, pominięcie lub wykasowanie punktu.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki (np. '1')"),
+                "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID z bazy (DB_ID), numer kroku lub nazwa usuwanego punktu (np. 'Cretaquarium', 'Sklep', '2')"),
+            },
+            required=["id_wycieczki", "krok_wycieczki"]
+        ),
+    ),
+    types.FunctionDeclaration(
+        name="zmien_czas_postoju_na_trasie",
+        description="Zmienia bufor postoju na trasie między dwoma punktami (np. dodatkowy postój na kawę/toaletę) i przelicza godziny trasy.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                "krok_z": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku startowego odcinka"),
+                "krok_do": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku docelowego odcinka"),
+                "minuty_postoju": types.Schema(type=types.Type.INTEGER, description="Liczba minut postoju na trasie (np. 20, 30)"),
+            },
+            required=["id_wycieczki", "krok_z", "krok_do", "minuty_postoju"]
+        ),
+    ),
+    types.FunctionDeclaration(
+        name="dodaj_produkt_zakupow",
+        description="Dodaje produkt bezpośrednio do checklisty zakupowej powiązanej z konkretnym krokiem wycieczki (np. składniki na obiad w kroku Sklepu).",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "id_kroku": types.Schema(type=types.Type.STRING, description="ID bazy danych kroku wycieczki (DB_ID)"),
+                "nazwa_produktu": types.Schema(type=types.Type.STRING, description="Nazwa produktu zakupowego"),
+                "ilosc": types.Schema(type=types.Type.STRING, description="Ilość przeliczona na 8 osób, np. '1 kg', '12 sztuk', '400g'"),
+            },
+            required=["id_kroku", "nazwa_produktu"]
+        ),
+    )
+])
+
+def wykonaj_narzedzie_bazy(call_name, args):
+    if call_name == "dodaj_notatke":
+        return dodaj_notatke(**args)
+    elif call_name == "edytuj_wycieczke":
+        return edytuj_wycieczke(**args)
+    elif call_name == "dodaj_krok_wycieczki":
+        return dodaj_krok_wycieczki(**args)
+    elif call_name == "edytuj_krok_wycieczki":
+        return edytuj_krok_wycieczki(**args)
+    elif call_name == "usun_krok_wycieczki":
+        return usun_krok_wycieczki(**args)
+    elif call_name == "zmien_czas_postoju_na_trasie":
+        return zmien_czas_postoju_na_trasie(**args)
+    elif call_name == "dodaj_produkt_zakupow":
+        return dodaj_produkt_zakupow(**args)
+    return "Wykonano."
+
+# --- WŁASNE FUNKCJE POMOCNICZE I POBIERANIE KONTEKSTU ---
 def pobierz_status_zadania(klucz_zadania):
     conn = sqlite3.connect('cretai.db')
     cursor = conn.cursor()
@@ -1214,43 +1433,16 @@ def sparsuj_liste_zadan(surowy_tekst):
     s = str(surowy_tekst).strip()
     if not s or s.lower() in ['nan', 'none', 'brak']:
         return []
-    
     linie = re.split(r'[\r\n;]+', s)
     wynik = []
     for l in linie:
         czysta = l.strip()
         if not czysta:
             continue
-        czesci_num = re.split(r'(?<=[.!?])\s+(?=\d+[\.\)])', czysta)
-        if len(czesci_num) > 1:
-            for p in czesci_num:
-                p_clean = re.sub(r'^[\s\*\-\•\d\.\)]+', '', p).strip()
-                if p_clean:
-                    wynik.append(p_clean)
-        else:
-            czysta = re.sub(r'^[\s\*\-\•\d\.\)]+', '', czysta).strip()
-            if czysta:
-                wynik.append(czysta)
+        czysta = re.sub(r'^[\s\*\-\•\d\.\)]+', '', czysta).strip()
+        if czysta:
+            wynik.append(czysta)
     return wynik
-
-def pobierz_zadania_dla_kroku(krok_num, krok_nazwa, krok_opis):
-    conn = sqlite3.connect('cretai.db')
-    query = 'SELECT zadania_dla_dzieci FROM miejsca WHERE numer_miejsca = ? OR nazwa LIKE ? OR ? LIKE ("%" || nazwa || "%")'
-    cursor = conn.cursor()
-    cursor.execute(query, (str(krok_num), f"%{krok_nazwa}%", str(krok_nazwa)))
-    rows = cursor.fetchall()
-    conn.close()
-    
-    zadania_miejsc = []
-    for r in rows:
-        if r and r[0]:
-            zadania_miejsc.extend(sparsuj_liste_zadan(r[0]))
-            
-    if zadania_miejsc:
-        return list(dict.fromkeys(zadania_miejsc))
-        
-    zadania_z_opisu = sparsuj_liste_zadan(krok_opis)
-    return zadania_z_opisu
 
 def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df):
     conn = sqlite3.connect('cretai.db')
@@ -1287,28 +1479,6 @@ def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df):
 
     conn.close()
     return grupy
-
-def renderuj_grupy_zadan_wycieczki(grupy_zadan):
-    if not grupy_zadan:
-        return
-    st.markdown("### 🎯 Zadania dla dzieci")
-    with st.container():
-        st.markdown('<div class="tasks-group-marker"></div>', unsafe_allow_html=True)
-        for tytul_grupy, lista_zadan, prefix in grupy_zadan:
-            if not lista_zadan:
-                continue
-            with st.expander(tytul_grupy, expanded=False):
-                for idx, zad in enumerate(lista_zadan):
-                    klucz = f"{prefix}_task_{idx}"
-                    stan = pobierz_status_zadania(klucz)
-                    nowy_stan = st.checkbox(
-                        zad,
-                        value=stan,
-                        key=f"cb_{klucz}"
-                    )
-                    if nowy_stan != stan:
-                        zapisz_status_zadania(klucz, nowy_stan)
-                        st.rerun()
 
 def pobierz_ustawienia_z_db(uzytkownik):
     conn = sqlite3.connect('cretai.db')
@@ -1489,17 +1659,6 @@ def wyczysc_historie_czatu_w_db(uzytkownik):
     conn.commit()
     conn.close()
 
-def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=None, tytul=None):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO notatki (id_wycieczki, id_miejsca, tytul, zawartosc, typ_notatki)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (str(id_wycieczki) if id_wycieczki else None, str(id_miejsca) if id_miejsca else None, tytul, zawartosc, typ_notatki))
-    conn.commit()
-    conn.close()
-    return "Dodano nową notatkę!"
-
 def pobierz_notatki(id_wycieczki=None, id_miejsca=None):
     conn = sqlite3.connect('cretai.db')
     if id_wycieczki:
@@ -1534,24 +1693,6 @@ def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
                 st.session_state["flash_toast"] = "💾 Dodano notatkę!"
                 st.rerun()
 
-def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, 
-                     calkowity_czas_wycieczki_godziny=None, szacowana_godzina_powrotu=None, 
-                     pobudka=None, czas_wyjazdu=None, planowana_data=None):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    if tytul_wycieczki is not None:
-        cursor.execute('UPDATE wycieczka SET tytul_wycieczki = ? WHERE id = ?', (tytul_wycieczki, str(id)))
-    if calosciowy_opis_wycieczki is not None:
-        cursor.execute('UPDATE wycieczka SET calosciowy_opis_wycieczki = ? WHERE id = ?', (calosciowy_opis_wycieczki, str(id)))
-    if calosciowa_taktyka_dnia is not None:
-        cursor.execute('UPDATE wycieczka SET calosciowa_taktyka_dnia = ? WHERE id = ?', (calosciowa_taktyka_dnia, str(id)))
-    if planowana_data is not None:
-        cursor.execute('UPDATE wycieczka SET planowana_data = ? WHERE id = ?', (planowana_data, str(id)))
-    conn.commit()
-    conn.close()
-    przelicz_i_zsynchronizuj_wycieczke(str(id))
-    return f"Wycieczka #{id} została zaktualizowana."
-
 def pob_posilki_dla_kroku(id_kroku):
     conn = sqlite3.connect('cretai.db')
     df = pd.read_sql('SELECT * FROM posilki_kroku WHERE id_kroku = ?', conn, params=(str(id_kroku),))
@@ -1563,14 +1704,6 @@ def pobierz_zakupy_dla_kroku(id_kroku):
     df = pd.read_sql('SELECT * FROM zakupy WHERE id_kroku = ?', conn, params=(str(id_kroku),))
     conn.close()
     return df
-
-def dodaj_produkt_zakupow(id_kroku, nazwa_produktu, ilosc="1"):
-    conn = sqlite3.connect('cretai.db')
-    cursor = conn.cursor()
-    cursor.execute('INSERT INTO zakupy (id_kroku, nazwa_produktu, ilosc, kupione) VALUES (?, ?, ?, 0)', (str(id_kroku), nazwa_produktu, str(ilosc)))
-    conn.commit()
-    conn.close()
-    return f"Dodano produkt '{nazwa_produktu}'."
 
 def pobierz_wszystkie_miejsca():
     conn = sqlite3.connect('cretai.db')
@@ -1617,26 +1750,23 @@ def pobierz_wycieczki_dla_miejsca(numer_miejsca, nazwa_miejsca):
 def wczytaj_kontekst_zewnetrzny():
     tekst = f"Jesteś asystentem podróży CretAi na Kretę.\n"
     tekst += f"- Lokalizacja naszego DOMEK: {DOMEK_LAT}, {DOMEK_LON}\n"
-    tekst += f"- Lokalizacja SKLEP: {SKLEP_LAT}, {SKLEP_LON}\n"
+    tekst += f"- Lokalizacja SKLEP (Sklep przy domku): {SKLEP_LAT}, {SKLEP_LON}\n"
+    tekst += wczytaj_pliki_regul("rule")
+    
     conn = sqlite3.connect('cretai.db')
     try:
-        miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, typ, czas_dojazdu FROM miejsca', conn)
         wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, pobudka, czas_wyjazdu, szacowana_godzina_powrotu, planowana_data FROM wycieczka', conn)
-        kroki_df = pd.read_sql('SELECT id, id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji FROM krok_wycieczki', conn)
+        kroki_df = pd.read_sql('SELECT id, id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji FROM krok_wycieczki ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn)
     except:
-        miejsca_df, wycieczki_df, kroki_df = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        wycieczki_df, kroki_df = pd.DataFrame(), pd.DataFrame()
     conn.close()
-
-    if not kroki_df.empty:
-        kroki_df['sort_key'] = kroki_df['okienko_zwiedzania'].apply(klucz_sortowania_okienka)
-        kroki_df = kroki_df.sort_values(by='sort_key').drop(columns=['sort_key'])
 
     if not wycieczki_df.empty:
         for _, w in wycieczki_df.iterrows():
             tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Data: {w.get('planowana_data', '')}\n"
     if not kroki_df.empty:
         for _, k in kroki_df.iterrows():
-            tekst += f"- Krok (W#{k['id_wycieczki']}): {k['nazwa']} | Czas: {k['okienko_zwiedzania']}\n"
+            tekst += f"- Krok (W#{k['id_wycieczki']}): ID DB: {k['id']} | #{k['krok_wycieczki']}. {k['nazwa']} | Czas: {k['okienko_zwiedzania']}\n"
     return tekst
 
 def pobierz_trase_osrm(punkty):
@@ -1660,71 +1790,7 @@ def dodaj_marker_domku(m):
     domek_icon = folium.DivIcon(html=domek_icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=domek_icon, tooltip="Nasz Domek").add_to(m)
 
-cretai_tools = types.Tool(function_declarations=[
-    types.FunctionDeclaration(
-        name="dodaj_notatke",
-        description="Dodaje notatkę do wycieczki lub miejsca.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "zawartosc": types.Schema(type=types.Type.STRING, description="Treść notatki"),
-                "typ_notatki": types.Schema(type=types.Type.STRING, description="'text', 'link' lub 'list'"),
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "id_miejsca": types.Schema(type=types.Type.STRING, description="Numer miejsca"),
-                "tytul": types.Schema(type=types.Type.STRING, description="Tytuł"),
-            },
-            required=["zawartosc"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="edytuj_wycieczke",
-        description="Aktualizuje parametry wycieczki.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Tytuł"),
-                "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Opis"),
-                "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Taktyka"),
-                "planowana_data": types.Schema(type=types.Type.STRING, description="RRRR-MM-DD"),
-            },
-            required=["id"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="dodaj_krok_wycieczki",
-        description="Dodaje krok do wycieczki.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer kroku"),
-                "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca"),
-                "wspolrzedne": types.Schema(type=types.Type.STRING, description="GPS"),
-                "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="np. '10:00 - 12:00'"),
-                "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="np. '12:00'"),
-                "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Ostrzeżenie o upale/tłumie"),
-                "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING, description="Strefa wyciszenia"),
-                "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
-                "opis": types.Schema(type=types.Type.STRING, description="Opis"),
-            },
-            required=["id_wycieczki", "krok_wycieczki", "nazwa"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="usun_krok_wycieczki",
-        description="Usuwa krok z wycieczki.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku"),
-            },
-            required=["id_wycieczki", "krok_wycieczki"]
-        ),
-    )
-])
-
+# --- GLOBALNY CZAT AI Z OBSŁUGĄ FUNCTION CALLING ---
 def renderuj_globalny_czat_ai(uzytkownik, inline=False):
     if not inline:
         st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
@@ -1746,7 +1812,25 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
 
         dzisiaj_str = date.today().strftime("%Y-%m-%d")
         zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
-        system_prompt = f"Jesteś asystentem podróży CretAi na Kretę. Dziś: {dzisiaj_str}.\n{zewnetrzny_kontekst}"
+        system_prompt = f"""Jesteś asystentem podróży CretAi na Kretę, pomagającym zarządzać wycieczką objazdową z dziećmi i rodzicami z ADHD. Dziś: {dzisiaj_str}.
+{zewnetrzny_kontekst}
+- ZASADA USUWANIA KROKÓW: Gdy użytkownik prosi o usunięcie, wykasowanie, pominięcie lub rezygnację z atrakcji/sklepu (np. 'usuń Cretaquarium', 'nie jedziemy do akwarium', 'skasuj krok 2'), ZAWSZE natychmiast wywołaj `usun_krok_wycieczki(id_wycieczki='1', krok_wycieczki='nazwa lub numer')`.
+- ZASADA CZASU I HARMONOGRAMU (KASKADOWE PRZELICZANIE):
+  1. Gdy użytkownik mówi: 'chcę być w X do godziny HH:MM' (np. 'chcę być w Knossos do 12:00'), oznacza to GODZINĘ WYJAZDU z tego punktu. Wywołaj `edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, godzina_wyjazdu_do='12:00')`.
+  2. Gdy użytkownik mówi: 'chcę dotrzeć/dojechać do X na/do godziny HH:MM' (np. 'chcę dotrzeć do Knossos na 10:00'), oznacza to GODZINĘ PRZYJAZDU. Wywołaj `edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, godzina_dotarcia_na='10:00')`.
+  3. Gdy użytkownik prosi o zmianę postoju w trasie (np. 'dodaj 30 min na kawę w drodze'), wywołaj `zmien_czas_postoju_na_trasie(id_wycieczki, krok_z, krok_do, minuty_postoju)`.
+  4. Backend automatycznie przelicza cały łańcuch godzin, synchronizuje dojazdy OSRM oraz czyta z bazy czasy postojów w trasie.
+  5. REGUŁA NA CZAS POBYTU W PUNKTACH:
+     - Duże atrakcje / Pałace / Parki: 90-120 min.
+     - Plaże / Wypoczynek: 90-150 min.
+     - Punkty widokowe / Zdjęcia: 20-30 min.
+     - Sklepy / Markety: 20-25 min.
+  6. POJĘCIE 'godzina_ewakuacji': To wyłącznie krytyczna granica termiczna/sensoryczna (np. '11:30' przed upałem w ruinach). Dla sklepów, plaż czy punktów bez zagrożenia ZAWSZE podawaj 'Brak'.
+- ZASADA DOTYCZĄCA ZAKUPÓW I JEDZENIA:
+  1. Gdy użytkownik pisze 'dodaj zakupy w drodze powrotnej' lub prosi o zakupy przed powrotem do bazy, ZAWSZE dodaj nasz 'Sklep przy domku' (współrzędne: {SKLEP_LAT}, {SKLEP_LON}) jako krok trasy za pomocą `dodaj_krok_wycieczki(id_wycieczki='1', krok_wycieczki='sklep', nazwa='Sklep przy domku', wspolrzedne='{SKLEP_LAT}, {SKLEP_LON}')`, o ile takiego kroku jeszcze nie ma. NIGDY nie dodawaj kolejnego Domku jako krok sklepu!
+  2. Gdy użytkownik pisze np. 'dodaj zakupy na spaghetti carbonara' (lub jakiekolwiek inne danie/posiłek), o ile nie zaznaczy inaczej, ZAWSZE przeliczaj proporcje składników DOKŁADNIE NA 8 OSÓB (np. dla carbonary na 8 osób: makaron spaghetti 800g-1kg, guanciale/boczek 400g, jajka 10-12 sztuk, ser pecorino/parmezan 200g, pieprz czarny).
+  3. Dodaj poszczególne składniki BEZPOŚREDNIO do checklisty zakupowej tego kroku sklepu za pomocą wielokrotnego wywołania `dodaj_produkt_zakupow(id_kroku, nazwa_produktu, ilosc)`, podając ID z bazy tego kroku.
+  4. BEZWZGLĘDNY ZAKAZ dodawania produktów spożywczych/zakupów do ogólnych notatek lub do zadań dla dzieci! Mają trafić wyłącznie do tabeli zakupów w danym kroku sklepu."""
         
         chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
         chat_container = st.container(height=200)
@@ -1762,17 +1846,48 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                 with st.chat_message("user"):
                     st.markdown(prompt)
                 with st.chat_message("assistant"):
+                    assistant_reply = ""
                     try:
                         if wybrany_dostawca == "Google Gemini":
                             client = genai.Client(api_key=api_key_input)
                             aktualna_historia_db = pobierz_historie_czatu_z_db(uzytkownik)
                             contents = [item["raw_content"] for item in aktualna_historia_db if "raw_content" in item]
-                            response = client.models.generate_content(
-                                model=wybrany_model,
-                                contents=contents,
-                                config=types.GenerateContentConfig(tools=[cretai_tools], system_instruction=system_prompt)
-                            )
-                            assistant_reply = response.text if hasattr(response, "text") and response.text else "Zaktualizowano."
+                            if not contents:
+                                contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
+
+                            for _ in range(5):
+                                response = client.models.generate_content(
+                                    model=wybrany_model,
+                                    contents=contents,
+                                    config=types.GenerateContentConfig(tools=[cretai_tools], system_instruction=system_prompt)
+                                )
+
+                                candidate = response.candidates[0] if response.candidates else None
+                                has_fc = False
+                                if candidate and candidate.content and candidate.content.parts:
+                                    for p in candidate.content.parts:
+                                        if p.function_call:
+                                            has_fc = True
+                                            break
+
+                                if has_fc or response.function_calls:
+                                    model_content = candidate.content
+                                    contents.append(model_content)
+                                    calls = response.function_calls if response.function_calls else [p.function_call for p in model_content.parts if p.function_call]
+                                    
+                                    function_responses_parts = []
+                                    for call in calls:
+                                        args = call.args
+                                        call_name = call.name
+                                        wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
+                                        function_responses_parts.append(
+                                            types.Part.from_function_response(name=call_name, response={"result": wynik_bazy})
+                                        )
+                                    contents.append(types.Content(role="user", parts=function_responses_parts))
+                                else:
+                                    text_parts = [p.text for p in candidate.content.parts if hasattr(p, "text") and p.text] if candidate and candidate.content and candidate.content.parts else []
+                                    assistant_reply = "".join(text_parts) if text_parts else (response.text if hasattr(response, "text") else "Zaktualizowano bazę danych.")
+                                    break
                         else:
                             client_c = anthropic.Anthropic(api_key=api_key_input)
                             resp = client_c.messages.create(
@@ -1782,6 +1897,10 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                                 messages=[{"role": "user", "content": prompt}]
                             )
                             assistant_reply = "".join([b.text for b in resp.content if hasattr(b, "text")])
+
+                        if not assistant_reply:
+                            assistant_reply = "Operacja wykonana i zsynchronizowana w harmonogramie."
+
                         zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
                         st.markdown(assistant_reply)
                     except Exception as e:
@@ -1791,7 +1910,6 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
     if not inline:
         st.markdown('</div>', unsafe_allow_html=True)
 
-# Sprawdzenie parametrów URL
 if "tab" in st.query_params:
     st.session_state.active_tab = st.query_params["tab"]
 elif "active_tab" not in st.session_state:
@@ -1804,18 +1922,15 @@ if "place" in st.query_params:
 if "active_place_id" not in st.session_state:
     st.session_state.active_place_id = None
 
-# Wybrane miejsce na mapie zbiorczej w wycieczkach
 if "map_tab_selected_place" not in st.session_state:
     st.session_state.map_tab_selected_place = None
 
-# Obsługa stanu filtrów kategorii (Single-choice: None = wszystkie)
 if "selected_category" not in st.session_state:
     st.session_state.selected_category = None
 
 df_miejsca = pobierz_wszystkie_miejsca()
 wycieczki_options = pobierz_skrocone_opcje_wycieczek()
 
-# --- 1. ORYGINALNE PRZYCISKI NAWIGACJI NA SAMEJ GÓRZE ---
 active_zabytek = "active" if st.session_state.active_tab == "zabytek" else ""
 active_map = "active" if st.session_state.active_tab == "map" else ""
 active_route = "active" if st.session_state.active_tab == "route" else ""
@@ -1848,17 +1963,13 @@ def edit_date_dialog(wycieczka_id, aktualna_data):
 def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False):
     conn = sqlite3.connect('cretai.db')
     wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
-    kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
+    kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn, params=(str(wycieczka_id),))
     czasy_dojazdu_df = pd.read_sql('SELECT * FROM czasy_dojazdu', conn)
     conn.close()
     
     if wycieczka_row.empty:
         st.info("Brak danych wycieczki.")
         return
-
-    if not kroki_df.empty:
-        kroki_df['sort_key'] = kroki_df['okienko_zwiedzania'].apply(klucz_sortowania_okienka)
-        kroki_df = kroki_df.sort_values(by='sort_key').drop(columns=['sort_key'])
 
     w_gen = wycieczka_row.iloc[0]
     tytul_wycieczki = w_gen.get('tytul_wycieczki', 'Wycieczka')
@@ -1961,11 +2072,11 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             badge_class = "badge-powrot"
             has_nav = True
             coords_clean = f"{DOMEK_LAT}, {DOMEK_LON}"
-        elif "obiad" in nazwa.lower() or "lunch" in nazwa.lower() or "jedzenie" in nazwa.lower() or "przerwa" in nazwa.lower():
-            badge_symbol = "🍴"
+        elif "obiad" in nazwa.lower() or "lunch" in nazwa.lower() or "jedzenie" in nazwa.lower() or "przerwa" in nazwa.lower() or "sklep" in nazwa.lower() or "zakupy" in nazwa.lower():
+            badge_symbol = "🛒" if "sklep" in nazwa.lower() or "zakupy" in nazwa.lower() else "🍴"
             tytul_wyswietlany = nazwa
             badge_class = "badge-obiad"
-            has_nav = False
+            has_nav = bool(coords_clean and ',' in coords_clean)
         else:
             badge_symbol = krok_num if (krok_num and krok_num != "0") else str(idx)
             tytul_wyswietlany = nazwa
@@ -1980,8 +2091,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 p_rodzaj = str(prow.get('rodzaj_posilku', '')).strip().lower()
                 if p_rodzaj in ['śniadanie', 'obiad', 'kolacja']:
                     posiłki_str.append(p_rodzaj.capitalize())
-                elif p_rodzaj == 'przekąska':
-                    posiłki_str.append("Przekąska")
             if posiłki_str:
                 opis_tekst = f"<span style='color:#8C5338; font-weight:700;'>🍲 {' / '.join(posiłki_str)}</span>"
 
@@ -1990,7 +2099,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         else:
             is_expanded = (current_expanded_param == str(krok_row_id))
             toggle_expand_url = f"?tab=route" if is_expanded else f"?tab=route&expand={krok_row_id}"
-            badge_html = f'<a href="{toggle_expand_url}" target="_self" class="timeline-icon-badge {badge_class}" title="Kliknij, aby rozwinąć/zwinąć szczegóły">{badge_symbol}</a>'
+            badge_html = f'<a href="{toggle_expand_url}" target="_self" class="timeline-icon-badge {badge_class}" title="Rozwiń/Zwiń">{badge_symbol}</a>'
 
         nav_btn_html = ""
         if has_nav:
@@ -2027,8 +2136,8 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             if pogoda_kroku:
                 pogoda_html = (
                     f'<div style="background-color: #FAF8F2; border: 1.5px solid #D8D2BC; border-radius: 16px; padding: 10px 14px; margin-bottom: 12px; text-align: center;">'
-                    f'<div style="font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 3px;">☀️ PROGNOZA POGODY ({pogoda_kroku["data"]})</div>'
-                    f'<div style="font-size: 10.5pt; font-weight: 800; color: #2B2118;">{pogoda_kroku["temp"]}°C (odczuwalna {pogoda_kroku["feel"]}°C), {pogoda_kroku["desc"]} 💨 {pogoda_kroku["wind"]} km/h | ☀️ UV {pogoda_kroku["uv"]}</div>'
+                    f'<div style="font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 3px;">☀️ POGODA ({pogoda_kroku["data"]})</div>'
+                    f'<div style="font-size: 10.5pt; font-weight: 800; color: #2B2118;">{pogoda_kroku["temp"]}°C (odcz. {pogoda_kroku["feel"]}°C), {pogoda_kroku["desc"]} 💨 {pogoda_kroku["wind"]} km/h | UV {pogoda_kroku["uv"]}</div>'
                     f'</div>'
                 )
 
@@ -2058,20 +2167,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             taktyka_val = k.get("podsumowanie_taktyki", "Brak szczegółów taktyki")
             regen_val = k.get("strefa_luzu_i_regeneracji", "Brak strefy regeneracji")
 
-            df_zakupy = pobierz_zakupy_dla_kroku(k['id'])
-            zakupy_items_html = ""
-            if df_zakupy.empty:
-                zakupy_items_html = "<div style='font-size: 8.5pt; color: #8C827A; font-style: italic; margin-bottom: 8px;'>Brak zaplanowanych zakupów w tym punkcie.</div>"
-            else:
-                for _, z in df_zakupy.iterrows():
-                    z_id = z['id']
-                    z_nazwa = z['nazwa_produktu']
-                    z_ilosc = z['ilosc']
-                    z_kupione = bool(z['kupione'])
-                    check_icon = "☑️" if z_kupione else "⬜"
-                    ilosc_txt = f" ({z_ilosc})" if z_ilosc and z_ilosc != "1" else ""
-                    zakupy_items_html += f"<div style='font-size: 9pt; color: #2B2118; font-weight: 700; margin-bottom: 4px;'>{check_icon} {z_nazwa}{ilosc_txt}</div>"
-
             details_html = (
                 f'<div class="step-details-card">'
                 f'<div style="font-size: 10pt; font-weight: 800; color: #8C5338; margin-bottom: 8px;">🕒 {okienko} | 📌 {nazwa}</div>'
@@ -2082,16 +2177,10 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 f'<details class="step-combined-card">'
                 f'<summary>🎯 Taktyka & Regeneracja</summary>'
                 f'<div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">'
-                f'<div class="step-subitem-title" style="color: #8C5338;">🎯 Taktyka: Wyciszenie</div>'
+                f'<div class="step-subitem-title" style="color: #8C5338;">🎯 Taktyka</div>'
                 f'<div class="step-subitem-body">{taktyka_val}</div>'
-                f'<div class="step-subitem-title" style="color: #6D8257; margin-top: 8px;">🌿 Regeneracja: Strefa luzu</div>'
+                f'<div class="step-subitem-title" style="color: #6D8257; margin-top: 8px;">🌿 Regeneracja</div>'
                 f'<div class="step-subitem-body">{regen_val}</div>'
-                f'</div>'
-                f'</details>'
-                f'<details class="step-combined-card">'
-                f'<summary>🛒 Zakupy</summary>'
-                f'<div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">'
-                f'{zakupy_items_html}'
                 f'</div>'
                 f'</details>'
                 f'<div class="step-action-vertical-bar">'
@@ -2103,11 +2192,28 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             )
             st.markdown(details_html, unsafe_allow_html=True)
 
-            with st.expander("➕ Dodaj pozycję zakupową"):
-                with st.form(key=f"form_inline_zakup_{krok_row_id}"):
-                    p_nazwa = st.text_input("Nazwa produktu", placeholder="np. Woda, owoce")
+            # --- INTERAKTYWNA SEKCJA ZAKUPÓW Z CHECKBOXAMI ---
+            df_zakupy = pobierz_zakupy_dla_kroku(krok_row_id)
+            with st.expander("🛒 Checklista zakupów w tym punkcie", expanded=not df_zakupy.empty):
+                if df_zakupy.empty:
+                    st.markdown("<div style='font-size: 8.5pt; color: #8C827A; font-style: italic; margin-bottom: 8px;'>Brak zaplanowanych zakupów w tym punkcie.</div>", unsafe_allow_html=True)
+                else:
+                    for _, z in df_zakupy.iterrows():
+                        z_id = z['id']
+                        z_nazwa = z['nazwa_produktu']
+                        z_ilosc = z['ilosc']
+                        z_kupione = bool(z['kupione'])
+                        ilosc_txt = f" ({z_ilosc})" if z_ilosc and str(z_ilosc) != "1" else ""
+                        
+                        chk_val = st.checkbox(f"{z_nazwa}{ilosc_txt}", value=z_kupione, key=f"chk_zakup_{z_id}")
+                        if chk_val != z_kupione:
+                            zmien_status_zakupu(z_id, chk_val)
+                            st.rerun()
+
+                with st.form(key=f"form_inline_zakup_{krok_row_id}", clear_on_submit=True):
+                    p_nazwa = st.text_input("Nowy produkt", placeholder="np. Makaron, pomidory")
                     p_ilosc = st.text_input("Ilość", value="1")
-                    if st.form_submit_button("💾 Zapisz produkt", use_container_width=True):
+                    if st.form_submit_button("➕ Dodaj do listy", use_container_width=True):
                         if p_nazwa.strip():
                             dodaj_produkt_zakupow(int(krok_row_id), p_nazwa.strip(), p_ilosc.strip())
                             st.session_state["flash_toast"] = "🛒 Dodano produkt!"
@@ -2120,11 +2226,10 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 czas_dojazdu_dalej = match_row.iloc[0]['czas_przejazdu']
                 postoj_val = match_row.iloc[0]['szacowany_czas_postoju']
                 if pd.notna(czas_dojazdu_dalej) and str(czas_dojazdu_dalej).strip() != "":
-                    st.markdown(f'<div class="timeline-transit-row"><div style="font-size: 8.5pt; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #8C5338;"><span>🚗</span> Dojazd: <span style="color: #2B2118;">{czas_dojazdu_dalej}</span> | ⏱️ Postój: <span style="color: #2B2118;">{postoj_val} min</span></div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="timeline-transit-row"><div style="font-size: 8.5pt; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #8C5338;"><span>🚗</span> Dojazd: <span style="color: #2B2118;">{czas_dojazdu_dalej}</span> | ⏱️ Postój na trasie: <span style="color: #2B2118;">{postoj_val} min</span></div></div>', unsafe_allow_html=True)
 
     st.markdown('</div></div></div>', unsafe_allow_html=True)
 
-    # MAPA TRASY NA SAMYM DOLE SZCZEGÓŁÓW WYCIECZKI
     if pokaz_mape:
         punkty_trasy, surowe_wspolrzedne = [], []
         for _, k in kroki_df.iterrows():
@@ -2145,7 +2250,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
             st_folium(m_trasa, width=None, height=260, returned_objects=[], key=f"map_route_{wycieczka_id}")
 
-    # 1. SEKCJA: ZADANIA DLA DZIECI
     st.markdown("### 🎯 Zadania dla dzieci")
     with st.container():
         st.markdown('<div class="tasks-group-marker"></div>', unsafe_allow_html=True)
@@ -2167,10 +2271,8 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                             zapisz_status_zadania(klucz, nowy_stan)
                             st.rerun()
 
-    # 2. SEKCJA: NOTATKI
     renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
 
-    # 3. SEKCJA: ASYSTENT AI
     st.markdown("### 🤖 Asystent AI")
     renderuj_globalny_czat_ai(aktualny_uzytkownik, inline=True)
 
@@ -2193,7 +2295,6 @@ elif st.session_state.active_tab == "map":
 """, unsafe_allow_html=True)
     
     opcje_wycieczek_lista = [None] + wycieczki_options
-    
     selected_idx = 0
     if "selected_trip_from_click" in st.session_state and st.session_state["selected_trip_from_click"]:
         for i, opt in enumerate(opcje_wycieczek_lista):
@@ -2215,7 +2316,6 @@ elif st.session_state.active_tab == "map":
     dodaj_marker_domku(m_all)
     
     map_coords_lookup = {}
-    
     for _, row in df_miejsca.iterrows():
         lat, lon = sparsuj_wspolrzedne(row.get('wspolrzedne'))
         if lat is not None and lon is not None:
@@ -2223,16 +2323,10 @@ elif st.session_state.active_tab == "map":
             nazwa = str(row.get('nazwa', ''))
             kat = kategoryzuj_typ(row.get('typ'))
             kolor = pobierz_kolor_kategorii(kat)
-            
             map_coords_lookup[(round(lat, 4), round(lon, 4))] = (num, nazwa)
             
             icon_html = f'<div style="background-color:{kolor};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:2px solid white;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">{num}</div>'
-            
-            folium.Marker(
-                [lat, lon], 
-                icon=folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13)), 
-                tooltip=f"#{num} {nazwa}"
-            ).add_to(m_all)
+            folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13)), tooltip=f"#{num} {nazwa}").add_to(m_all)
             
     map_out = st_folium(m_all, width=None, height=340, returned_objects=["last_object_clicked"], key="map_all_trips_view")
     
@@ -2292,20 +2386,10 @@ elif st.session_state.active_tab == "zabytek":
         flex-wrap: nowrap !important;
         gap: 6px !important;
         margin-bottom: 0px !important;
-        padding-bottom: 0px !important;
     }
     div[data-testid="stHorizontalBlock"] > div {
         flex: 1 1 0px !important;
         min-width: 0 !important;
-        margin-bottom: 0px !important;
-        padding-bottom: 0px !important;
-    }
-    div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] {
-        margin-bottom: 0px !important;
-        padding-bottom: 0px !important;
-    }
-    .st-key-row2_filter_container {
-        margin-top: -10px !important;
     }
     """]
 
@@ -2314,80 +2398,42 @@ elif st.session_state.active_tab == "zabytek":
         is_all_active = (active_cat is None)
         slug = conf["slug"]
         
-        if is_selected or is_all_active:
-            bg_col = conf["color"]
-            border_col = conf["color"]
-            opacity = "1.0"
-            border_width = "2px" if is_selected else "1.5px"
-            text_col = "#FAF8F2"
-        else:
-            bg_col = "#E0DCCE"
-            border_col = "#C8C2B0"
-            opacity = "0.45"
-            border_width = "1.5px"
-            text_col = "#2F241D"
+        bg_col = conf["color"] if (is_selected or is_all_active) else "#E0DCCE"
+        border_col = conf["color"] if (is_selected or is_all_active) else "#C8C2B0"
+        opacity = "1.0" if (is_selected or is_all_active) else "0.45"
+        text_col = "#FAF8F2" if (is_selected or is_all_active) else "#2F241D"
         
         button_styles.append(f"""
         div.st-key-btn_cat_filter_{slug} button {{
             background-color: {bg_col} !important;
             color: {text_col} !important;
-            border: {border_width} solid {border_col} !important;
+            border: 1.5px solid {border_col} !important;
             opacity: {opacity} !important;
-            padding: 0px 2px !important;
             height: 32px !important;
-            min-height: 32px !important;
-            max-height: 32px !important;
             border-radius: 10px !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            text-align: center !important;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
             width: 100% !important;
-            margin-bottom: 0px !important;
-        }}
-        div.st-key-btn_cat_filter_{slug} button p {{
-            color: {text_col} !important;
-            font-size: 8pt !important;
-            font-weight: 800 !important;
-            line-height: 1.0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            white-space: nowrap !important;
-            overflow: hidden !important;
-            text-overflow: ellipsis !important;
-            text-align: center !important;
         }}
         """)
 
     st.markdown(f"<style>{''.join(button_styles)}</style>", unsafe_allow_html=True)
 
-    row1_cats = all_cats[:3]
     cols_row1 = st.columns(3, gap="small")
-    for idx, cat_name in enumerate(row1_cats):
+    for idx, cat_name in enumerate(all_cats[:3]):
         slug = CATEGORIES_CONFIG[cat_name]["slug"]
         with cols_row1[idx]:
             btn_label = f"✓ {cat_name}" if active_cat == cat_name else cat_name
             if st.button(btn_label, key=f"btn_cat_filter_{slug}", use_container_width=True):
-                if st.session_state.selected_category == cat_name:
-                    st.session_state.selected_category = None
-                else:
-                    st.session_state.selected_category = cat_name
+                st.session_state.selected_category = None if active_cat == cat_name else cat_name
                 st.rerun()
 
-    row2_cats = all_cats[3:]
-    with st.container(key="row2_filter_container"):
-        cols_row2 = st.columns(3, gap="small")
-        for idx, cat_name in enumerate(row2_cats):
-            slug = CATEGORIES_CONFIG[cat_name]["slug"]
-            with cols_row2[idx]:
-                btn_label = f"✓ {cat_name}" if active_cat == cat_name else cat_name
-                if st.button(btn_label, key=f"btn_cat_filter_{slug}", use_container_width=True):
-                    if st.session_state.selected_category == cat_name:
-                        st.session_state.selected_category = None
-                    else:
-                        st.session_state.selected_category = cat_name
-                    st.rerun()
+    cols_row2 = st.columns(3, gap="small")
+    for idx, cat_name in enumerate(all_cats[3:]):
+        slug = CATEGORIES_CONFIG[cat_name]["slug"]
+        with cols_row2[idx]:
+            btn_label = f"✓ {cat_name}" if active_cat == cat_name else cat_name
+            if st.button(btn_label, key=f"btn_cat_filter_{slug}", use_container_width=True):
+                st.session_state.selected_category = None if active_cat == cat_name else cat_name
+                st.rerun()
 
     df_miejsca_filtrowane = df_miejsca.copy()
     if not df_miejsca_filtrowane.empty:
@@ -2399,48 +2445,19 @@ elif st.session_state.active_tab == "zabytek":
     dodaj_marker_domku(m_miejsca)
 
     marker_coords_dict = {}
-
     if not df_miejsca_filtrowane.empty:
         for _, row in df_miejsca_filtrowane.iterrows():
-            coords = row.get('wspolrzedne')
-            lat, lon = sparsuj_wspolrzedne(coords)
+            lat, lon = sparsuj_wspolrzedne(row.get('wspolrzedne'))
             if lat is not None and lon is not None:
                 num = str(row.get('numer_miejsca', ''))
                 kat = row.get('kategoria_normalizowana', 'Other')
                 kolor = pobierz_kolor_kategorii(kat)
-                
                 marker_coords_dict[(round(lat, 4), round(lon, 4))] = num
                 
-                icon_html = f'''
-                <div style="
-                    background-color: {kolor};
-                    color: #FFFFFF;
-                    border-radius: 50%;
-                    width: 26px;
-                    height: 26px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 11px;
-                    font-weight: 900;
-                    border: 2px solid #FFFFFF;
-                    box-shadow: 0 2px 5px rgba(0,0,0,0.25);
-                    cursor: pointer;
-                ">{num}</div>
-                '''
-                
-                folium.Marker(
-                    [lat, lon],
-                    icon=folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))
-                ).add_to(m_miejsca)
+                icon_html = f'<div style="background-color:{kolor};color:#FFFFFF;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:2px solid #FFFFFF;box-shadow:0 2px 5px rgba(0,0,0,0.25);">{num}</div>'
+                folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))).add_to(m_miejsca)
 
-    map_output = st_folium(
-        m_miejsca, 
-        width=None, 
-        height=320, 
-        returned_objects=["last_object_clicked"], 
-        key="map_places_view"
-    )
+    map_output = st_folium(m_miejsca, width=None, height=320, returned_objects=["last_object_clicked"], key="map_places_view")
 
     if map_output and map_output.get("last_object_clicked"):
         c_lat = map_output["last_object_clicked"].get("lat")
@@ -2448,20 +2465,12 @@ elif st.session_state.active_tab == "zabytek":
         if c_lat is not None and c_lng is not None:
             key_lookup = (round(c_lat, 4), round(c_lng, 4))
             clicked_id = marker_coords_dict.get(key_lookup)
-            
-            if not clicked_id:
-                for (mlat, mlon), num_id in marker_coords_dict.items():
-                    if abs(mlat - c_lat) < 0.005 and abs(mlon - c_lng) < 0.005:
-                        clicked_id = num_id
-                        break
-
             if clicked_id and st.session_state.active_place_id != str(clicked_id):
                 st.session_state.active_place_id = str(clicked_id)
                 st.query_params["place"] = str(clicked_id)
                 st.rerun()
 
     miejsca_opcje_lista = [f"{r['numer_miejsca']}. {r['nazwa']}" for _, r in df_miejsca_filtrowane.iterrows()]
-    
     domyslny_indeks = 0
     if st.session_state.active_place_id:
         for idx, opt in enumerate(miejsca_opcje_lista):
@@ -2478,12 +2487,9 @@ elif st.session_state.active_tab == "zabytek":
         label_visibility="collapsed"
     )
     
-    docelowy_nr = None
+    docelowy_nr = selected_option.split(".")[0].strip() if selected_option else st.session_state.active_place_id
     if selected_option:
-        docelowy_nr = selected_option.split(".")[0].strip()
         st.session_state.active_place_id = docelowy_nr
-    elif st.session_state.active_place_id:
-        docelowy_nr = st.session_state.active_place_id
 
     if docelowy_nr:
         p_row = df_miejsca[df_miejsca['numer_miejsca'] == str(docelowy_nr)]
@@ -2492,85 +2498,21 @@ elif st.session_state.active_tab == "zabytek":
             kat_p = kategoryzuj_typ(p.get('typ'))
             kolor_p = pobierz_kolor_kategorii(kat_p)
             coords_p = str(p.get('wspolrzedne', '')).replace(" ", "")
-            numer_p = str(p.get('numer_miejsca', '')).strip()
-            nazwa_p = str(p.get('nazwa', '')).strip()
-            pelny_tytul = f"{numer_p}. {nazwa_p}" if numer_p else nazwa_p
 
             st.markdown(f"""
             <div class="overview-card" style="margin-top: 10px;">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                    <div style="font-size: 15pt; font-weight: 900; color: #2B2118; line-height: 1.2;">{pelny_tytul}</div>
-                    <span style="background-color: {kolor_p}; color: #FAF8F2; font-size: 8.5pt; font-weight: 800; padding: 3px 10px; border-radius: 12px; white-space: nowrap;">{kat_p}</span>
+                    <div style="font-size: 15pt; font-weight: 900; color: #2B2118; line-height: 1.2;">{p.get('numer_miejsca')}. {p.get('nazwa')}</div>
+                    <span style="background-color: {kolor_p}; color: #FAF8F2; font-size: 8.5pt; font-weight: 800; padding: 3px 10px; border-radius: 12px;">{kat_p}</span>
                 </div>
                 <div class="overview-card-text">{p.get('opis', '')}</div>
             </div>
             """, unsafe_allow_html=True)
 
-            st.markdown(f"""
-            <div class="overview-card">
-                <div class="overview-card-title"><span>ℹ️</span> INFORMACJE PRAKTYCZNE</div>
-                <div class="logistics-grid">
-                    <div class="logistics-pill">
-                        <div class="logistics-pill-title">🚗 Czas dojazdu</div>
-                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('czas_dojazdu', '—')}</div>
-                    </div>
-                    <div class="logistics-pill">
-                        <div class="logistics-pill-title">⏱️ Czas na miejscu</div>
-                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('orientacyjny_czas', '—')}</div>
-                    </div>
-                    <div class="logistics-pill">
-                        <div class="logistics-pill-title">💶 Koszt (2+2)</div>
-                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('koszt', '—')}</div>
-                    </div>
-                    <div class="logistics-pill">
-                        <div class="logistics-pill-title">🕒 Godziny otwarcia</div>
-                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('godziny_otwarcia', '—')}</div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            st.markdown(f"""
-            <div class="overview-card">
-                <div class="overview-card-title"><span>📊</span> POZIOM TRUDNOŚCI</div>
-                <div class="overview-card-text">{p.get('trudnosc_adhd', 'Średni')}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            st.markdown(f"""
-            <div class="overview-card">
-                <div class="overview-card-title"><span>☀️</span> OCHRONA PRZED SŁOŃCEM</div>
-                <div class="overview-card-text">{p.get('ochrona_slonce', 'Standardowa')}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            st.markdown(f"""
-            <details class="overview-details-card">
-                <summary>🧠 SPECYFIKA ADHD & SENSORYKA</summary>
-                <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
-                    <div style="font-size: 9.5pt; color: #2B2118; margin-bottom: 6px;"><b>Potencjał meltdownu:</b> {p.get('potencjal_meltdownu', 'Średni')}</div>
-                    <div style="font-size: 9.5pt; color: #2B2118;"><b>Strategia zaradcza:</b> {p.get('strategie_meltdown', 'Brak')}</div>
-                </div>
-            </details>
-            """, unsafe_allow_html=True)
-
-            zadania_miejsca = sparsuj_liste_zadan(p.get('zadania_dla_dzieci', ''))
-            if zadania_miejsca:
-                zadania_html_list = "".join([f"<div style='font-size: 9.5pt; color: #2B2118; margin-bottom: 6px;'>• {z}</div>" for z in zadania_miejsca])
-                st.markdown(f"""
-                <details class="overview-details-card">
-                    <summary><b>🎯 Zadania dla dzieci</b></summary>
-                    <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
-                        {zadania_html_list}
-                    </div>
-                </details>
-                """, unsafe_allow_html=True)
-
             if coords_p and ',' in coords_p:
                 st.markdown(f"""
                 <div class="step-action-vertical-bar">
                     <a href="https://www.google.com/maps/search/?api=1&query={coords_p}" target="_blank" class="step-action-vertical-btn"><span>🧭</span><span>Nawiguj do tego miejsca</span></a>
-                    <a href="https://www.google.com/search?q={p['nazwa']} Kreta" target="_blank" class="step-action-vertical-btn"><span>🔍</span><span>Szukaj w Google</span></a>
                 </div>
                 """, unsafe_allow_html=True)
 
