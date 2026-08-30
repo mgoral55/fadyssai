@@ -2197,10 +2197,11 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
             st_folium(m_trasa, width=None, height=260, returned_objects=[], key=f"map_route_{wycieczka_id}")
 
+    # --- SEKCJA: ZADANIA DLA DZIECI ---
     st.markdown("### 🎯 Zadania dla dzieci")
-    with st.container():
-        st.markdown('<div class="tasks-group-marker"></div>', unsafe_allow_html=True)
-        grupy_zadan = pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df)
+    grupy_zadan = pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df)
+    
+    with st.expander("Rozwiń listę zadań dla dzieci", expanded=False):
         if grupy_zadan:
             for tytul_grupy, lista_zadan, prefix in grupy_zadan:
                 if not lista_zadan:
@@ -2217,6 +2218,8 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                         if nowy_stan != stan:
                             zapisz_status_zadania(klucz, nowy_stan)
                             st.rerun()
+        else:
+            st.markdown("<div style='font-size: 9pt; color: #8C827A; font-style: italic;'>Brak zadań dla tej wycieczki.</div>", unsafe_allow_html=True)
 
     renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
 
