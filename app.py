@@ -356,7 +356,6 @@ div.st-key-btn_date_picker {
 }
 .overview-details-card summary {
     font-size: 10pt;
-    font-weight: 800;
     color: #2B2118;
     cursor: pointer;
     list-style: none;
@@ -1451,6 +1450,11 @@ def zmien_status_zakupu(zakup_id, kupione):
         cursor.execute('UPDATE zakupy SET kupione = ? WHERE id = ?', (1 if kupione else 0, int(zakup_id)))
         conn.commit()
 
+def pobierz_zakupy_dla_kroku(id_kroku):
+    with get_db() as conn:
+        df = pd.read_sql('SELECT * FROM zakupy WHERE id_kroku = ? ORDER BY id ASC', conn, params=(str(id_kroku),))
+    return df
+
 # Deklaracja narzędzi bazy danych CRUD oraz natywnego Google Search
 cretai_tools = [
     types.Tool(
@@ -2205,6 +2209,18 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę powrotu!"
                 st.rerun()
 
+    # --- SEKCJA TAKTYKA (PRZENIESIONA NAD PLAN) ---
+    if pd.notna(w_gen.get('calosciowa_taktyka_dnia')) and str(w_gen['calosciowa_taktyka_dnia']).strip():
+        st.markdown('<div class="section-unified-header">🧠 Taktyka</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <details class="overview-details-card" style="margin-top: 6px;">
+            <summary style="font-weight: normal !important;">🧠 Taktyka dnia</summary>
+            <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
+                <div class="section-body-text" style="margin-bottom: 0;">{w_gen['calosciowa_taktyka_dnia']}</div>
+            </div>
+        </details>
+        """, unsafe_allow_html=True)
+
     st.markdown('<div class="section-unified-header">🗺️ Plan na dzień</div>', unsafe_allow_html=True)
 
     total_steps = len(kroki_df)
@@ -2410,6 +2426,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 f'<div class="step-subitem-body">{regen_val}</div>'
                 f'</div>'
                 f'</details>'
+                f'###SHOPPING_LIST_PLACEHOLDER_{krok_row_id}###'
                 f'<div class="step-action-vertical-bar">'
                 f'<a href="{sklep_maps_url}" target="_blank" class="step-action-vertical-btn"><span>🛒</span><span>Sklepy w pobliżu</span></a>'
                 f'<a href="{resto_maps_url}" target="_blank" class="step-action-vertical-btn"><span>🍽️</span><span>Gastro w pobliżu</span></a>'
@@ -2461,18 +2478,71 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
     timeline_full_html.append('</div>')
     
-    st.markdown("".join(timeline_full_html), unsafe_allow_html=True)
+    full_timeline_string = "".join(timeline_full_html)
 
-    if pd.notna(w_gen.get('calosciowa_taktyka_dnia')) and str(w_gen['calosciowa_taktyka_dnia']).strip():
-        st.markdown('<div class="section-unified-header">🧠 Taktyka</div>', unsafe_allow_html=True)
-        st.markdown(f"""
-        <details class="overview-details-card" style="margin-top: 6px;">
-            <summary>🧠 Taktyka dnia</summary>
-            <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
-                <div class="section-body-text" style="margin-bottom: 0;">{w_gen['calosciowa_taktyka_dnia']}</div>
-            </div>
-        </details>
-        """, unsafe_allow_html=True)
+    # Wstrzyknięcie kart zakupów dla poszczególnych kroków
+    for _, k in kroki_df.iterrows():
+        krok_row_id = int(k['id'])
+        ph = f"###SHOPPING_LIST_PLACEHOLDER_{krok_row_id}###"
+        if ph in full_timeline_string:
+            df_zak = pobierz_zakupy_dla_kroku(krok_row_id)
+            if not df_zak.empty:
+                zak_items_html = []
+                for _, zrow in df_zak.iterrows():
+                    z_id = zrow['id']
+                    z_nazwa = str(zrow['nazwa_produktu'])
+                    z_ilosc = str(zrow['ilosc']) if pd.notna(zrow['ilosc']) and str(zrow['ilosc']).strip() else ""
+                    z_kup = bool(zrow['kupione'])
+                    
+                    strike_style = "text-decoration: line-through; opacity: 0.6;" if z_kup else ""
+                    checked_attr = "checked" if z_kup else ""
+                    ilosc_badge = f'<span style="font-size: 8pt; background: #D1C7AE; color: #2B2118; padding: 2px 6px; border-radius: 8px; font-weight: 800; margin-left: auto;">{z_ilosc}</span>' if z_ilosc else ""
+                    
+                    zak_items_html.append(
+                        f'<div style="display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,0.05);">'
+                        f'<input type="checkbox" {checked_attr} disabled style="accent-color: #8C5338; width: 16px; height: 16px;">'
+                        f'<span style="font-size: 9.5pt; font-weight: 700; color: #2B2118; {strike_style}">{z_nazwa}</span>'
+                        f'{ilosc_badge}'
+                        f'</div>'
+                    )
+
+                card_zakupy_html = (
+                    f'<details class="step-combined-card" style="margin-top: 8px; margin-bottom: 8px;">'
+                    f'<summary>🛒 Lista zakupów ({len(df_zak)})</summary>'
+                    f'<div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">'
+                    f'{"".join(zak_items_html)}'
+                    f'</div>'
+                    f'</details>'
+                )
+                full_timeline_string = full_timeline_string.replace(ph, card_zakupy_html)
+            else:
+                full_timeline_string = full_timeline_string.replace(ph, "")
+
+    st.markdown(full_timeline_string, unsafe_allow_html=True)
+
+    # Interaktywna obsługa checklisty zakupów dla kroków (jeśli występują w wycieczce)
+    kroki_z_zakupami = []
+    for _, k in kroki_df.iterrows():
+        df_zak = pobierz_zakupy_dla_kroku(k['id'])
+        if not df_zak.empty:
+            kroki_z_zakupami.append((int(k['id']), str(k['nazwa']), df_zak))
+
+    if kroki_z_zakupami:
+        st.markdown('<div class="section-unified-header">🛒 Zakupy Dnia</div>', unsafe_allow_html=True)
+        with st.expander("🛒 Lista zakupów", expanded=False):
+            for k_id, k_nazwa, df_zak in kroki_z_zakupami:
+                st.markdown(f"<div style='font-size: 10pt; font-weight: 800; color: #8C5338; margin-top: 4px; margin-bottom: 4px;'>📍 {k_nazwa}</div>", unsafe_allow_html=True)
+                for _, zrow in df_zak.iterrows():
+                    z_id = zrow['id']
+                    z_nazwa = str(zrow['nazwa_produktu'])
+                    z_ilosc = f" ({zrow['ilosc']})" if pd.notna(zrow['ilosc']) and str(zrow['ilosc']).strip() else ""
+                    z_kup = bool(zrow['kupione'])
+                    
+                    label_prod = f"{z_nazwa}{z_ilosc}"
+                    nowy_status = st.checkbox(label_prod, value=z_kup, key=f"cb_zakup_krok_{z_id}")
+                    if nowy_status != z_kup:
+                        zmien_status_zakupu(z_id, nowy_status)
+                        st.rerun()
 
     if pokaz_mape:
         punkty_trasy, surowe_wspolrzedne = [], []
