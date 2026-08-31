@@ -691,10 +691,11 @@ div.st-key-btn_date_picker {
 
 div[data-testid="stCheckbox"] {
     margin-bottom: 6px !important;
-    background-color: #FAF8F2 !important;
-    border: 1.2px solid #E2DEC8 !important;
-    border-radius: 14px !important;
-    padding: 8px 12px !important;
+    background-color: #B4C29D !important;
+    border: none !important;
+    border-radius: 0px !important;
+    padding: 0px !important;
+    box-shadow: none !important;
     accent-color: #8C5338 !important;
 }
 div[data-testid="stCheckbox"] label {
@@ -858,7 +859,7 @@ def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
     url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
-        with urllib.request.urlopen(req, timeout=0.4) as response:
+        with urllib.request.urlopen(req, timeout=0.3) as response:
             data = json.loads(response.read().decode())
             if 'routes' in data and len(data['routes']) > 0:
                 duration_sec = data['routes'][0]['duration']
@@ -874,11 +875,10 @@ def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
     except:
         pass
     
-    # Matematyczny fallback: szacowanie z odległości euklidesowej (średnia prędkość 45 km/h na Krecie)
     try:
         dlat = (lat2 - lat1) * 111.0
         dlon = (lon2 - lon1) * 85.0
-        dist_km = math.sqrt(dlat*dlat + dlon*dlon) * 1.3  # współczynnik krętości dróg
+        dist_km = math.sqrt(dlat*dlat + dlon*dlon) * 1.3
         est_min = max(int(round((dist_km / 45.0) * 60)), 10)
         est_min = zaokraglij_do_5_minut(est_min)
         if est_min < 60:
@@ -950,7 +950,7 @@ def sparsuj_czas_ogarniania_na_minuty(czas_str):
 DNI_TYGODNIA_PL = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"]
 MIESIACE_PL = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia"]
 
-def wczytaj_pliki_regul(katalog="rule", max_chars_per_file=400):
+def wczytaj_pliki_regul(katalog="rule", max_chars_per_file=300):
     if not os.path.exists(katalog):
         return ""
     tresc_regul = "\n--- REGUŁY ---\n"
@@ -1362,6 +1362,99 @@ def init_db():
 
 init_db()
 
+# --- FUNKCJE STATUSÓW (ODWIEDZONE / ODBYTA) Z DOPASOWANIEM WIELU MIEJSC ---
+def przelacz_status_miejsca(numer_miejsca, aktualny_stan):
+    nowy_stan = 0 if aktualny_stan else 1
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE miejsca SET odwiedzone = ? WHERE numer_miejsca = ?', (nowy_stan, str(numer_miejsca)))
+        conn.commit()
+    return nowy_stan
+
+def przelacz_status_wycieczki(id_wycieczki, aktualny_stan):
+    nowy_stan = 0 if aktualny_stan else 1
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE wycieczka SET odbyta = ? WHERE id = ?', (nowy_stan, str(id_wycieczki)))
+        
+        # Pobierz wszystkie kroki wycieczki
+        cursor.execute('SELECT krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
+        kroki = cursor.fetchall()
+        
+        cursor.execute('SELECT numer_miejsca, nazwa FROM miejsca')
+        wszystkie_miejsca = cursor.fetchall()
+        
+        for k_num, k_nazwa in kroki:
+            if not k_nazwa or "domek" in k_nazwa.lower():
+                continue
+            
+            k_clean = re.sub(r'[^\w\s]', '', str(k_nazwa).lower()).strip()
+            
+            for m_id, m_nazwa in wszystkie_miejsca:
+                m_clean = re.sub(r'[^\w\s]', '', str(m_nazwa).lower()).strip()
+                
+                # Dopasowanie po numerze miejsca, pełnej nazwie lub zawieraniu
+                if str(k_num) == str(m_id) or m_clean in k_clean or k_clean in m_clean:
+                    cursor.execute('UPDATE miejsca SET odwiedzone = ? WHERE numer_miejsca = ?', (nowy_stan, m_id))
+                
+        conn.commit()
+    return nowy_stan
+
+@st.dialog("Potwierdzenie statusu wycieczki")
+def potwierdz_zakonczenie_wycieczki_dialog(wycieczka_id, tytul, stan_akt):
+    akcja_txt = "cofnąć status ukończenia wycieczki (powiązane miejsca zostaną odznaczone)" if stan_akt else "oznaczyć wycieczkę jako ukończoną (powiązane miejsca zostaną automatycznie oznaczone jako odwiedzone)"
+    
+    st.markdown(f"Czy na pewno chcesz {akcja_txt} dla: **{tytul}**?")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Tak", use_container_width=True):
+            przelacz_status_wycieczki(wycieczka_id, stan_akt)
+            st.session_state["flash_toast"] = "🏁 Zaktualizowano status wycieczki i miejsc!"
+            st.rerun()
+    with col2:
+        if st.button("Anuluj", use_container_width=True):
+            st.rerun()
+
+@st.dialog("Potwierdzenie statusu miejsca")
+def potwierdz_odwiedzenie_dialog(num_m, nazwa_m, stan_akt):
+    akcja_txt = "cofnąć oznaczenie jako odwiedzone" if stan_akt else "oznaczyć jako odwiedzone"
+    st.markdown(f"Czy na pewno chcesz {akcja_txt} miejsce: **{nazwa_m}**?")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Tak", use_container_width=True):
+            przelacz_status_miejsca(num_m, stan_akt)
+            st.session_state["flash_toast"] = "✅ Zaktualizowano status miejsca!"
+            st.rerun()
+    with c2:
+        if st.button("Anuluj", use_container_width=True):
+            st.rerun()
+
+# --- NARZĘDZIE WYSZUKIWANIA MIEJSCA W BAZIE ---
+def szukaj_miejsca_w_bazie(nazwa_zapytania):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT numer_miejsca, nazwa, wspolrzedne, orientacyjny_czas, godziny_otwarcia, 
+                   konieczna_akcja, ochrona_slonce, potencjal_meltdownu, strategie_meltdown, opis
+            FROM miejsca 
+            WHERE nazwa LIKE ? OR numer_miejsca = ?
+        ''', (f"%{nazwa_zapytania}%", str(nazwa_zapytania)))
+        row = cursor.fetchone()
+        if row:
+            return {
+                "numer_miejsca": row[0],
+                "nazwa": row[1],
+                "wspolrzedne": row[2],
+                "orientacyjny_czas": row[3],
+                "godziny_otwarcia": row[4],
+                "konieczna_akcja": row[5],
+                "ochrona_slonce": row[6],
+                "potencjal_meltdownu": row[7],
+                "strategie_meltdown": row[8],
+                "opis": row[9]
+            }
+    return None
+
 def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, 
                      planowana_data=None, szacowany_czas_ogarniania_rano=None, czas_wyjazdu=None):
     with get_db() as conn:
@@ -1391,16 +1484,22 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, c
     przelicz_i_zsynchronizuj_wycieczke(str(id), force_wyjazd_str=czas_wyjazdu if czas_wyjazdu else None)
     return f"Wycieczka #{id} została zaktualizowana i przeliczona."
 
-def dodaj_krok_wycieczki(id_wycieczki, krok_wycieczki=None, nazwa="", wspolrzedne=None, 
-                         okienko_zwiedzania="10:00 - 10:30", godzina_ewakuacji="Brak", 
-                         czerwona_strefa_ostrzezenie="Brak", strefa_luzu_i_regeneracji="Spokojna strefa", 
-                         podsumowanie_taktyki="Brak", opis=""):
+def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy="", okienko_zwiedzania="12:00 - 13:00", podsumowanie_taktyki="Brak"):
+    miejsce_info = szukaj_miejsca_w_bazie(nazwa_z_bazy)
+    if not miejsce_info:
+        return f"BŁĄD: Nie znaleziono miejsca '{nazwa_z_bazy}' w lokalnej bazie miejsc!"
+
+    nazwa = miejsce_info['nazwa']
+    wspolrzedne = miejsce_info['wspolrzedne']
+    godzina_ewakuacji = miejsce_info['konieczna_akcja'] or "Brak"
+    czerwona_strefa = miejsce_info['ochrona_slonce'] or "Brak"
+    strefa_luzu = miejsce_info['strategie_meltdown'] or "Spokojna strefa"
+    opis = miejsce_info['opis'] or ""
+
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
         istniejace = cursor.fetchall()
-
-        wsp_val = str(wspolrzedne).strip() if wspolrzedne is not None and str(wspolrzedne).strip() and str(wspolrzedne).lower() != 'none' else ""
 
         if istniejace and ("domek" in istniejace[-1][2].lower() or "powrót" in istniejace[-1][2].lower()):
             ostatni_id = istniejace[-1][0]
@@ -1415,11 +1514,11 @@ def dodaj_krok_wycieczki(id_wycieczki, krok_wycieczki=None, nazwa="", wspolrzedn
         cursor.execute('''
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, opis)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (str(id_wycieczki), target_krok_num, str(nazwa), wsp_val, str(okienko_zwiedzania), str(godzina_ewakuacji), str(czerwona_strefa_ostrzezenie), str(strefa_luzu_i_regeneracji), str(podsumowanie_taktyki), str(opis)))
+        ''', (str(id_wycieczki), target_krok_num, str(nazwa), str(wspolrzedne), str(okienko_zwiedzania), str(godzina_ewakuacji), str(czerwona_strefa), str(strefa_luzu), str(podsumowanie_taktyki), str(opis)))
         conn.commit()
     
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
-    return f"Dodano krok '{nazwa}' do wycieczki #{id_wycieczki} i automatycznie przeliczono cały łańcuch godzin."
+    return f"Pomyślnie pobrano z bazy i dodano miejsce '{nazwa}' do wycieczki #{id_wycieczki} oraz przeliczono harmonogram."
 
 def dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki, pozycja="koniec"):
     with get_db() as conn:
@@ -1576,27 +1675,6 @@ def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
     return f"Pomyślnie usunięto krok '{nazwa}' i automatycznie zsynchronizowano harmonogram wycieczki #{id_wycieczki}."
 
-def zmien_czas_postoju_na_trasie(id_wycieczki, krok_z, krok_do, minuty_postoju):
-    with get_db() as conn:
-        cursor = conn.cursor()
-        
-        def find_id(k_val):
-            cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? AND (id = ? OR krok_wycieczki = ? OR nazwa LIKE ?)', (str(id_wycieczki), str(k_val), str(k_val), f"%{k_val}%"))
-            r = cursor.fetchone()
-            return r[0] if r else None
-
-        id_z = find_id(krok_z)
-        id_do = find_id(krok_do)
-        
-        if not id_z or not id_do:
-            return "Nie znaleziono wskazanych kroków trasy."
-            
-        cursor.execute('UPDATE czasy_dojazdu SET szacowany_czas_postoju = ? WHERE id_kroku_z = ? AND id_kroku_do = ?', (int(minuty_postoju), id_z, id_do))
-        conn.commit()
-    
-    przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
-    return f"Zaktualizowano bufor postoju na trasie do {minuty_postoju} minut i przeliczono harmonogram."
-
 def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=None, tytul=None):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -1639,6 +1717,17 @@ cretai_tools = [
     types.Tool(
         function_declarations=[
             types.FunctionDeclaration(
+                name="szukaj_miejsca_w_bazie",
+                description="Wyszukuje miejsce WYŁĄCZNIE w lokalnej bazie danych miejsc po nazwie. Zwraca szczegóły i współrzędne.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "nazwa_zapytania": types.Schema(type=types.Type.STRING, description="Nazwa miejsca, np. 'Spinalonga', 'Knossos'"),
+                    },
+                    required=["nazwa_zapytania"]
+                ),
+            ),
+            types.FunctionDeclaration(
                 name="dodaj_notatke",
                 description="Dodaje notatkę do wycieczki lub miejsca.",
                 parameters=types.Schema(
@@ -1655,16 +1744,13 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="edytuj_wycieczke",
-                description="Aktualizuje parametry wycieczki (czas ogarniania rano, wyjazd, data itp.).",
+                description="Aktualizuje parametry wycieczki.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
                         "id": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
                         "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Tytuł"),
-                        "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Opis"),
-                        "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Taktyka"),
                         "planowana_data": types.Schema(type=types.Type.STRING, description="RRRR-MM-DD"),
-                        "szacowany_czas_ogarniania_rano": types.Schema(type=types.Type.STRING, description="Czas do wyjazdu, np. '0.5h', '45m'"),
                         "czas_wyjazdu": types.Schema(type=types.Type.STRING, description="Godzina wyjazdu, np. '06:30'"),
                     },
                     required=["id"]
@@ -1672,22 +1758,16 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="dodaj_krok_wycieczki",
-                description="Dodaje krok do wycieczki (sklep, rynek, atrakcja, plaża).",
+                description="Dodaje miejsce z lokalnej bazy miejsc do wycieczki po jego nazwie z bazy.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
                         "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                        "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer kroku (opcjonalny)"),
-                        "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca"),
-                        "wspolrzedne": types.Schema(type=types.Type.STRING, description="GPS 'lat, lon' lub None"),
-                        "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Czas pobytu np. '10:00 - 10:30'"),
-                        "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="Godzina ewakuacji lub 'Brak'"),
-                        "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Ostrzeżenie lub 'Brak'"),
-                        "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING, description="Strefa regeneracji"),
+                        "nazwa_z_bazy": types.Schema(type=types.Type.STRING, description="Dokładna nazwa miejsca z bazy miejsc (np. 'Spinalonga')"),
+                        "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Okienko czasu np. '13:00 - 14:30'"),
                         "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
-                        "opis": types.Schema(type=types.Type.STRING, description="Opis"),
                     },
-                    required=["id_wycieczki", "nazwa"]
+                    required=["id_wycieczki", "nazwa_z_bazy"]
                 ),
             ),
             types.FunctionDeclaration(
@@ -1698,18 +1778,14 @@ cretai_tools = [
                     properties={
                         "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
                         "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID kroku, numer lub nazwa"),
-                        "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Okienko, np. '10:00 - 13:00'"),
-                        "godzina_wyjazdu_do": types.Schema(type=types.Type.STRING, description="Godzina wyjazdu z punktu"),
-                        "godzina_dotarcia_na": types.Schema(type=types.Type.STRING, description="Godzina dotarcia do punktu"),
-                        "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
-                        "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="Godzina krytyczna lub 'Brak'"),
+                        "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Okienko np. '10:00 - 13:00'"),
                     },
                     required=["id_wycieczki", "krok_wycieczki"]
                 ),
             ),
             types.FunctionDeclaration(
                 name="usun_krok_wycieczki",
-                description="Usuwa wskazany krok / atrakcję / sklep / rynek z wycieczki.",
+                description="Usuwa wskazany krok z wycieczki.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1720,22 +1796,8 @@ cretai_tools = [
                 ),
             ),
             types.FunctionDeclaration(
-                name="zmien_czas_postoju_na_trasie",
-                description="Zmienia bufor postoju na trasie między dwoma punktami.",
-                parameters=types.Schema(
-                    type=types.Type.OBJECT,
-                    properties={
-                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                        "krok_z": types.Schema(type=types.Type.STRING, description="Krok startowy odcinka"),
-                        "krok_do": types.Schema(type=types.Type.STRING, description="Krok docelowy odcinka"),
-                        "minuty_postoju": types.Schema(type=types.Type.INTEGER, description="Liczba minut postoju"),
-                    },
-                    required=["id_wycieczki", "krok_z", "krok_do", "minuty_postoju"]
-                ),
-            ),
-            types.FunctionDeclaration(
                 name="dodaj_produkt_zakupow",
-                description="Dodaje produkt do listy zakupów wycieczki.",
+                description="Dodaje produkt do listy zakupów.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1752,7 +1814,10 @@ cretai_tools = [
 ]
 
 def wykonaj_narzedzie_bazy(call_name, args):
-    if call_name == "dodaj_notatke":
+    if call_name == "szukaj_miejsca_w_bazie":
+        res = szukaj_miejsca_w_bazie(**args)
+        return str(res) if res else "Brak miejsca w bazie."
+    elif call_name == "dodaj_notatke":
         return dodaj_notatke(**args)
     elif call_name == "edytuj_wycieczke":
         return edytuj_wycieczke(**args)
@@ -1762,8 +1827,6 @@ def wykonaj_narzedzie_bazy(call_name, args):
         return edytuj_krok_wycieczki(**args)
     elif call_name == "usun_krok_wycieczki":
         return usun_krok_wycieczki(**args)
-    elif call_name == "zmien_czas_postoju_na_trasie":
-        return zmien_czas_postoju_na_trasie(**args)
     elif call_name == "dodaj_produkt_zakupow":
         return dodaj_produkt_zakupow(**args)
     return "Wykonano."
@@ -1885,13 +1948,13 @@ with st.sidebar:
 </div>
 """, unsafe_allow_html=True)
 
-# --- ZCACHE'OWANA POGODA (1 ZAPYTANIE / H) ---
-@st.cache_data(ttl=3600)
+# --- ZCACHE'OWANA POGODA (8 GODZIN CACHE) ---
+@st.cache_data(ttl=28800)
 def pobierz_prognoze_pogody(lat, lon, data_docelowa):
     try:
         url = f"https://wttr.in/{lat},{lon}?format=j1"
         req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
-        with urllib.request.urlopen(req, timeout=0.8) as response:
+        with urllib.request.urlopen(req, timeout=0.5) as response:
             data = json.loads(response.read().decode())
             weather_list = data.get('weather', [])
             for day in weather_list:
@@ -2056,19 +2119,27 @@ def pobierz_aktywna_wycieczke_id():
         res = cursor.fetchone()
     return str(res[0]) if res else "1"
 
-def pobierz_skrocone_opcje_wycieczek():
+def pobierz_skrocone_opcje_wycieczek(pokaz_ukonczone=False):
     with get_db() as conn:
-        df_w = pd.read_sql('SELECT id, tytul_wycieczki FROM wycieczka WHERE odbyta = 0', conn)
+        query = 'SELECT id, tytul_wycieczki, odbyta FROM wycieczka'
+        if not pokaz_ukonczone:
+            query += ' WHERE odbyta = 0'
+        df_w = pd.read_sql(query, conn)
     if df_w.empty:
         return []
     opcje = []
     for _, row in df_w.iterrows():
         wid = str(row['id'])
         pelny = str(row['tytul_wycieczki'])
+        odbyta = bool(row.get('odbyta', 0))
         skrocony = pelny.split(':')[0] if ':' in pelny else pelny
         if len(skrocony) > 35:
             skrocony = skrocony[:35] + "..."
-        opcje.append(f"{wid}. {skrocony}")
+        
+        if odbyta:
+            opcje.append(f"{wid}. {skrocony} (ukończona)")
+        else:
+            opcje.append(f"{wid}. {skrocony}")
     return opcje
 
 def pobierz_wycieczki_dla_miejsca(numer_miejsca, nazwa_miejsca):
@@ -2085,14 +2156,15 @@ def pobierz_wycieczki_dla_miejsca(numer_miejsca, nazwa_miejsca):
 def wczytaj_kontekst_zewnetrzny(aktywne_id_wycieczki="1"):
     tekst = "CretAi Assistant • Kreta\n"
     tekst += f"Baza/Domek: {DOMEK_LAT}, {DOMEK_LON} | Sklep: {SKLEP_LAT}, {SKLEP_LON}\n"
-    tekst += wczytaj_pliki_regul("rule", max_chars_per_file=400)
+    tekst += wczytaj_pliki_regul("rule", max_chars_per_file=300)
     
     with get_db() as conn:
         try:
             wycieczka_df = pd.read_sql('SELECT id, tytul_wycieczki, planowana_data, szacowany_czas_ogarniania_rano, czas_wyjazdu FROM wycieczka WHERE id = ?', conn, params=(str(aktywne_id_wycieczki),))
             kroki_df = pd.read_sql('SELECT id, krok_wycieczki, nazwa, okienko_zwiedzania FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn, params=(str(aktywne_id_wycieczki),))
+            miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, opis, ochrona_slonce FROM miejsca', conn)
         except:
-            wycieczka_df, kroki_df = pd.DataFrame(), pd.DataFrame()
+            wycieczka_df, kroki_df, miejsca_df = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     if not wycieczka_df.empty:
         w = wycieczka_df.iloc[0]
@@ -2100,6 +2172,11 @@ def wczytaj_kontekst_zewnetrzny(aktywne_id_wycieczki="1"):
     if not kroki_df.empty:
         for _, k in kroki_df.iterrows():
             tekst += f"- ID DB:{k['id']} | #{k['krok_wycieczki']} {k['nazwa']} ({k['okienko_zwiedzania']})\n"
+            
+    if not miejsca_df.empty:
+        tekst += "\nDOSTĘPNA BAZA MIEJSC (musisz używać funkcji dodaj_krok_wycieczki z nazwa_z_bazy z tej listy):\n"
+        for _, m in miejsca_df.iterrows():
+            tekst += f"- #{m['numer_miejsca']} {m['nazwa']} | {m['opis']} (Słońce: {m['ochrona_slonce']})\n"
     return tekst
 
 def pobierz_trase_osrm(punkty):
@@ -2109,7 +2186,7 @@ def pobierz_trase_osrm(punkty):
     url = f"http://router.project-osrm.org/route/v1/driving/{wsp_str}?overview=full&geometries=geojson"
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
-        with urllib.request.urlopen(req, timeout=0.8) as response:
+        with urllib.request.urlopen(req, timeout=0.5) as response:
             data = json.loads(response.read().decode())
             if 'routes' in data and len(data['routes']) > 0:
                 geojson_coords = data['routes'][0]['geometry']['coordinates']
@@ -2123,7 +2200,7 @@ def dodaj_marker_domku(m):
     domek_icon = folium.DivIcon(html=domek_icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=domek_icon, tooltip="Nasz Domek").add_to(m)
 
-# --- ULEPSZONA FUNKCJA CZATU AI Z ŻELAZNYMI REGUŁAMI AuDHD ---
+# --- ZOPTYMALIZOWANY CZAT AI ---
 def renderuj_globalny_czat_ai(uzytkownik, inline=False):
     if not inline:
         st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
@@ -2150,7 +2227,7 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"] if isinstance(message["content"], str) else "")
 
-        prompt = st.chat_input("Napisz np. 'dodaj sklep rano', 'wyjazd o 7:30'...", key=f"chat_input_{uzytkownik}_{'inline' if inline else 'float'}")
+        prompt = st.chat_input("Napisz np. 'dodaj spinalonge po cretaquarium', 'wyjazd o 7:30'...", key=f"chat_input_{uzytkownik}_{'inline' if inline else 'float'}")
         if prompt:
             zapisz_wiadomosc_w_db(uzytkownik, "user", prompt)
             with chat_container:
@@ -2162,19 +2239,17 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                     akt_wyc_id = pobierz_aktywna_wycieczke_id()
                     zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny(akt_wyc_id)
                     
-                    system_prompt = f"""Jesteś nadrzędnym strażnikiem logistyki i dobrostanu rodziny z AuDHD (rodzice + dzieci z ADHD) podróżującej po słonecznej Krecie. Dziś jest {dzisiaj_str}.
+                    system_prompt = f"""Jesteś strażnikiem AuDHD na Kretę. Dziś: {dzisiaj_str}.
 {zewnetrzny_kontekst}
-
-ZAPAMIĘTAJ I BEZWZGLĘDNIE EGZEKWUJ NASTĘPUJĄCE ŻELAZNE REGUŁY AuDHD:
-1. 🍲 ŻELAZNA KOTWICA POSIŁKÓW: Żaden uczestnik nie może być pozbawiony jedzenia/przekąski dłużej niż 3,5 godziny. Sprawdzaj przerwy między posiłkami w planie.
-2. ☀️ OCHRONA PRZED SŁOŃCEM I UPAŁEM (11:30–15:30): W tych godzinach dzieci NIE MOGĄ przebywać w otwartych, bezdrzewnych miejscach o wysokim nasłonecznieniu (np. otwarte ruiny). Wtedy obowiązkowo musi być chłód, półmrok, klimatyzacja (np. akwarium, muzeum zadaszone, sjesta w domku).
-3. 🌿 BUFORY I REGENERACJA: Między intensywnymi punktami musi być min. 45 minut buforu (przejazd / strefa ciszy). Zawsze planuj godziny ewakuacji i strefy luzu.
-4. 🛑 OBOWIĄZKOWA WALIDACJA PRZED ZMIANĄ BAZY: Zanim wywołasz jakiekolwiek narzędzie CRUD (edycja, dodanie kroku, zmiana godzin), przeanalizuj plan pod kątem powyższych zasad. 
-   - Jeśli plan narusza zasady głodu, upału lub zmęczenia: **STANOWCZO ODMÓW ZMIANY**, wyświetl dobitne, czytelne ostrzeżenie (użyj ikon 🚨 i pogrubień) oraz zaproponuj bezpieczne usprawnienie/alternatywę.
-   - Jeśli plan jest poprawny: wykonaj narzędzie i skomentuj krótko korzyść logistyczną dla dzieci z AuDHD."""
+ZASADA BRAKU INTERNETU: Nie masz dostępu do sieci. Korzystaj WYŁĄCZNIE z powyższej lokalnej bazy miejsc, wbudowanych reguł oraz załączonych dokumentów/źródeł. 
+ŻELAZNE ZASADY:
+1. Posiłki co max 3,5h.
+2. Upał/Słońce 11:30–15:30: Brak otwartych ruin. Wymagany chłód/klimatyzacja.
+3. Bufory min. 45 min, ewakuacje.
+4. BEZWZGLĘDNY NAKAZ UŻYCIA NARĘDZIA: Jeśli użytkownik prosi o modyfikację trasy/bazy (np. dodanie miejsca), MUSISZ wywołać funkcję narzędzia (np. `dodaj_krok_wycieczki`). Nie odpowiadaj samym tekstem!"""
 
                     try:
-                        with st.status("🧭 Weryfikuję zasady AuDHD i przeliczam plan...", expanded=False) as status:
+                        with st.status("🧭 Przetwarzam zapytanie...", expanded=False) as status:
                             if wybrany_dostawca == "Google Gemini":
                                 client = genai.Client(api_key=api_key_input)
                                 
@@ -2186,8 +2261,8 @@ ZAPAMIĘTAJ I BEZWZGLĘDNIE EGZEKWUJ NASTĘPUJĄCE ŻELAZNE REGUŁY AuDHD:
 
                                 executed_actions = []
 
-                                for loop_idx in range(2):
-                                    status.update(label=f"🧭 Weryfikuję reguły i bazę... (krok {loop_idx+1})")
+                                for loop_idx in range(3):
+                                    status.update(label=f"🧭 Wykonuję operację... (krok {loop_idx+1})")
                                     
                                     response = None
                                     for attempt in range(2):
@@ -2198,27 +2273,31 @@ ZAPAMIĘTAJ I BEZWZGLĘDNIE EGZEKWUJ NASTĘPUJĄCE ŻELAZNE REGUŁY AuDHD:
                                                 config=types.GenerateContentConfig(
                                                     tools=cretai_tools,
                                                     system_instruction=system_prompt,
-                                                    temperature=0.1,
-                                                    max_output_tokens=350
+                                                    temperature=0.0,
+                                                    max_output_tokens=220
                                                 )
                                             )
                                             break
                                         except Exception as api_err:
                                             if "429" in str(api_err) and attempt == 0:
-                                                status.write("⏳ Chwilowy limit RPM, ponawiam za 3s...")
-                                                py_time.sleep(3)
+                                                status.write("⏳ Limit RPM, ponawiam za 2s...")
+                                                py_time.sleep(2)
                                                 continue
                                             raise api_err
 
                                     candidate = response.candidates[0] if response and response.candidates else None
-                                    calls = response.function_calls if hasattr(response, 'function_calls') and response.function_calls else []
                                     
-                                    if not calls and candidate and candidate.content and candidate.content.parts:
-                                        calls = [p.function_call for p in candidate.content.parts if p.function_call]
+                                    calls = []
+                                    if hasattr(response, 'function_calls') and response.function_calls:
+                                        calls = response.function_calls
+                                    elif candidate and candidate.content and candidate.content.parts:
+                                        for p in candidate.content.parts:
+                                            if hasattr(p, 'function_call') and p.function_call:
+                                                calls.append(p.function_call)
 
                                     if calls:
-                                        model_content = candidate.content
-                                        contents.append(model_content)
+                                        if candidate and candidate.content:
+                                            contents.append(candidate.content)
                                         
                                         function_responses_parts = []
                                         for call in calls:
@@ -2245,13 +2324,13 @@ ZAPAMIĘTAJ I BEZWZGLĘDNIE EGZEKWUJ NASTĘPUJĄCE ŻELAZNE REGUŁY AuDHD:
                                         break
                                 
                                 if not assistant_reply.strip() and executed_actions:
-                                    assistant_reply = "✅ **Zaktualizowano plan z uwzględnieniem zasad AuDHD:**\n* " + "\n* ".join(executed_actions)
+                                    assistant_reply = "✅ **Zaktualizowano plan w bazie danych:**\n* " + "\n* ".join(executed_actions)
 
                             else:
                                 client_c = anthropic.Anthropic(api_key=api_key_input)
                                 resp = client_c.messages.create(
                                     model=wybrany_model,
-                                    max_tokens=350,
+                                    max_tokens=220,
                                     system=system_prompt,
                                     messages=[{"role": "user", "content": prompt}]
                                 )
@@ -2260,11 +2339,11 @@ ZAPAMIĘTAJ I BEZWZGLĘDNIE EGZEKWUJ NASTĘPUJĄCE ŻELAZNE REGUŁY AuDHD:
                             status.update(label="✅ Gotowe!", state="complete")
 
                         if not assistant_reply:
-                            assistant_reply = "✅ Zweryfikowano plan pod kątem AuDHD i zaktualizowano bazę danych."
+                            assistant_reply = "✅ Wykonano operację na bazie danych."
 
                         zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
                         st.markdown(assistant_reply)
-                        st.session_state["flash_toast"] = "🧭 Harmonogram zweryfikowany!"
+                        st.session_state["flash_toast"] = "🧭 Zaktualizowano harmonogram!"
                         st.rerun()
 
                     except Exception as e:
@@ -2274,25 +2353,13 @@ ZAPAMIĘTAJ I BEZWZGLĘDNIE EGZEKWUJ NASTĘPUJĄCE ŻELAZNE REGUŁY AuDHD:
 
                         if "429" in surowy_komunikat or kod_bledu == 429 or "RESOURCE_EXHAUSTED" in surowy_komunikat:
                             naglowek_bledu = "⏳ Przekroczono limit zapytań (429 Rate Limit)"
-                            komunikat_dla_rodzica = "Wyczerpano limit zapytań (RPM/RPD) dla darmowego klucza API. Odczekaj chwilę lub wygeneruj nowy klucz w Google AI Studio."
-                        elif "401" in surowy_komunikat or "403" in surowy_komunikat or kod_bledu in [401, 403] or "API_KEY_INVALID" in surowy_komunikat:
+                            komunikat_dla_rodzica = "Wyczerpano limit zapytań dla klucza API. Odczekaj chwilę."
+                        elif "401" in surowy_komunikat or "403" in surowy_komunikat or kod_bledu in [401, 403]:
                             naglowek_bledu = "🔑 Błąd uwierzytelnienia klucza API"
-                            komunikat_dla_rodzica = "Wprowadzony klucz API jest nieprawidłowy lub wygasł. Sprawdź ustawienia w menu bocznym."
-                        elif "503" in surowy_komunikat or kod_bledu == 503 or "UNAVAILABLE" in surowy_komunikat:
-                            naglowek_bledu = "☁️ Serwery AI są przeciążone (503)"
-                            komunikat_dla_rodzica = "Serwery dostawcy AI są chwilowo niedostępne. Spróbuj wysłać wiadomość ponownie za moment."
+                            komunikat_dla_rodzica = "Wprowadzony klucz API jest nieprawidłowy lub wygasł."
                         else:
                             naglowek_bledu = f"⚠️ Błąd połączenia z API ({nazwa_wyjatku})"
-                            komunikat_dla_rodzica = "Nie udało się zrealizować zapytania przez AI. Sprawdź połączenie z internetem."
-
-                        szczegoly_serwera = surowy_komunikat
-                        try:
-                            if hasattr(e, 'response') and hasattr(e.response, 'text'):
-                                szczegoly_serwera = e.response.text
-                            elif hasattr(e, 'message') and e.message:
-                                szczegoly_serwera = e.message
-                        except:
-                            pass
+                            komunikat_dla_rodzica = "Nie udało się zrealizować zapytania przez AI."
 
                         st.markdown(f"""
                         <div style="background-color: rgba(220, 80, 80, 0.15); border: 2px solid #DC5050; border-radius: 16px; padding: 12px; margin: 8px 0;">
@@ -2300,9 +2367,6 @@ ZAPAMIĘTAJ I BEZWZGLĘDNIE EGZEKWUJ NASTĘPUJĄCE ŻELAZNE REGUŁY AuDHD:
                             <div style="font-size: 9pt; color: #2B2118; margin-top: 4px;">{komunikat_dla_rodzica}</div>
                         </div>
                         """, unsafe_allow_html=True)
-                        
-                        with st.expander("🛠️ Szczegóły odpowiedzi serwera API", expanded=False):
-                            st.code(szczegoly_serwera, language="json" if "{" in szczegoly_serwera else "text")
 
     if not inline:
         st.markdown('</div>', unsafe_allow_html=True)
@@ -2325,8 +2389,14 @@ if "map_tab_selected_place" not in st.session_state:
 if "selected_category" not in st.session_state:
     st.session_state.selected_category = None
 
+# Stan filtrów ukrywania w sesji (domyślnie False, czyli ukryte)
+if "show_visited_places" not in st.session_state:
+    st.session_state.show_visited_places = False
+
+if "show_completed_trips" not in st.session_state:
+    st.session_state.show_completed_trips = False
+
 df_miejsca = pobierz_wszystkie_miejsca()
-wycieczki_options = pobierz_skrocone_opcje_wycieczek()
 
 active_zabytek = "active" if st.session_state.active_tab == "zabytek" else ""
 active_map = "active" if st.session_state.active_tab == "map" else ""
@@ -2443,7 +2513,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę powrotu!"
                 st.rerun()
 
-    # --- SEKCJA TAKTYKA ---
     if pd.notna(w_gen.get('calosciowa_taktyka_dnia')) and str(w_gen['calosciowa_taktyka_dnia']).strip():
         st.markdown('<div class="section-unified-header">🧠 Taktyka</div>', unsafe_allow_html=True)
         st.markdown(f"""
@@ -2945,10 +3014,8 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                             zmien_status_zakupu(z_id, nowy_status)
                             st.rerun()
 
-    # --- SEKCJA NOTATKI ---
     renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
 
-    # --- SEKCJA ZADANIA DLA DZIECI ---
     st.markdown('<div class="section-unified-header">🎯 Zadania dla dzieci</div>', unsafe_allow_html=True)
     grupy_zadan = pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df)
     
@@ -2972,6 +3039,14 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         else:
             st.markdown("<div style='font-size: 9pt; color: #8C827A; font-style: italic;'>Brak zadań dla tej wycieczki.</div>", unsafe_allow_html=True)
 
+    # --- PRZYCISK ZAKOŃCZENIA WYCIECZKI ---
+    czy_odbyta = bool(w_gen.get('odbyta', 0))
+    st.markdown('<div class="section-unified-header">🏁 Status Wycieczki</div>', unsafe_allow_html=True)
+    
+    btn_finish_label = "✓ Wycieczka ukończona (cofnij)" if czy_odbyta else "🏁 Oznacz całą wycieczkę jako ukończoną"
+    if st.button(btn_finish_label, key=f"btn_finish_trip_{wycieczka_id}", use_container_width=True):
+        potwierdz_zakonczenie_wycieczki_dialog(wycieczka_id, tytul_wycieczki, czy_odbyta)
+
     st.markdown('<div class="section-unified-header">🤖 Asystent AI</div>', unsafe_allow_html=True)
     renderuj_globalny_czat_ai(aktualny_uzytkownik, inline=True)
 
@@ -2993,7 +3068,11 @@ elif st.session_state.active_tab == "map":
 </div>
 """, unsafe_allow_html=True)
     
-    opcje_wycieczek_lista = [None] + wycieczki_options
+    # --- FILTR POKAZYWANIA UKOŃCZONYCH WYCIECZEK ---
+    st.session_state.show_completed_trips = st.checkbox("Pokaż ukończone wycieczki", value=st.session_state.show_completed_trips)
+    
+    wycieczki_options_filtrowane = pobierz_skrocone_opcje_wycieczek(pokaz_ukonczone=st.session_state.show_completed_trips)
+    opcje_wycieczek_lista = [None] + wycieczki_options_filtrowane
     selected_idx = 0
     if "selected_trip_from_click" in st.session_state and st.session_state["selected_trip_from_click"]:
         for i, opt in enumerate(opcje_wycieczek_lista):
@@ -3020,8 +3099,13 @@ elif st.session_state.active_tab == "map":
         if lat is not None and lon is not None:
             num = str(row.get('numer_miejsca', ''))
             nazwa = str(row.get('nazwa', ''))
-            kat = kategoryzuj_typ(row.get('typ'))
-            kolor = pobierz_kolor_kategorii(kat)
+            is_visited = bool(row.get('odwiedzone', 0))
+            if is_visited:
+                kolor = "#A8A29E"
+            else:
+                kat = kategoryzuj_typ(row.get('typ'))
+                kolor = pobierz_kolor_kategorii(kat)
+
             map_coords_lookup[(round(lat, 4), round(lon, 4))] = (num, nazwa)
             
             icon_html = f'<div style="background-color:{kolor};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:2px solid white;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">{num}</div>'
@@ -3134,11 +3218,24 @@ elif st.session_state.active_tab == "zabytek":
                 st.session_state.selected_category = None if active_cat == cat_name else cat_name
                 st.rerun()
 
+    # --- CHECKBOX RENDEROWANY I ODCZYTYWANY PRZED FILTROWANIEM I MAPĄ ---
+    st.markdown("<div style='margin-top: 6px;'></div>", unsafe_allow_html=True)
+    st.checkbox(
+        "Pokaż odwiedzone miejsca", 
+        value=st.session_state.get("show_visited_places", False), 
+        key="show_visited_places",
+        on_change=lambda: st.session_state.update(show_visited_places=st.session_state.show_visited_places)
+    )
+
     df_miejsca_filtrowane = df_miejsca.copy()
     if not df_miejsca_filtrowane.empty:
         df_miejsca_filtrowane['kategoria_normalizowana'] = df_miejsca_filtrowane['typ'].apply(kategoryzuj_typ)
         if st.session_state.selected_category is not None:
             df_miejsca_filtrowane = df_miejsca_filtrowane[df_miejsca_filtrowane['kategoria_normalizowana'] == st.session_state.selected_category]
+        
+        # Filtrowanie odwiedzonych miejsc natychmiast
+        if not st.session_state.show_visited_places:
+            df_miejsca_filtrowane = df_miejsca_filtrowane[df_miejsca_filtrowane['odwiedzone'] == 0]
 
     m_miejsca = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="CartoDB positron")
     dodaj_marker_domku(m_miejsca)
@@ -3149,14 +3246,20 @@ elif st.session_state.active_tab == "zabytek":
             lat, lon = sparsuj_wspolrzedne(row.get('wspolrzedne'))
             if lat is not None and lon is not None:
                 num = str(row.get('numer_miejsca', ''))
-                kat = row.get('kategoria_normalizowana', 'Other')
-                kolor = pobierz_kolor_kategorii(kat)
+                is_visited = bool(row.get('odwiedzone', 0))
+                if is_visited:
+                    kolor = "#A8A29E"
+                else:
+                    kat = row.get('kategoria_normalizowana', 'Other')
+                    kolor = pobierz_kolor_kategorii(kat)
+
                 marker_coords_dict[(round(lat, 4), round(lon, 4))] = num
                 
                 icon_html = f'<div style="background-color:{kolor};color:#FFFFFF;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:2px solid #FFFFFF;box-shadow:0 2px 5px rgba(0,0,0,0.25);">{num}</div>'
                 folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))).add_to(m_miejsca)
 
-    map_output = st_folium(m_miejsca, width=None, height=320, returned_objects=["last_object_clicked"], key="map_places_view")
+    map_key = f"map_places_view_{st.session_state.show_visited_places}_{st.session_state.selected_category}"
+    map_output = st_folium(m_miejsca, width=None, height=320, returned_objects=["last_object_clicked"], key=map_key)
 
     if map_output and map_output.get("last_object_clicked"):
         c_lat = map_output["last_object_clicked"].get("lat")
@@ -3182,7 +3285,7 @@ elif st.session_state.active_tab == "zabytek":
         options=[None] + miejsca_opcje_lista,
         index=domyslny_indeks,
         format_func=lambda x: "🔍 Wybierz z listy..." if x is None else x,
-        key="place_selectbox_selector",
+        key=f"place_selectbox_selector_{st.session_state.show_visited_places}",
         label_visibility="collapsed"
     )
     
@@ -3197,6 +3300,7 @@ elif st.session_state.active_tab == "zabytek":
             kat_p = kategoryzuj_typ(p.get('typ'))
             kolor_p = pobierz_kolor_kategorii(kat_p)
             coords_p = str(p.get('wspolrzedne', '')).replace(" ", "")
+            czy_odwiedzone = bool(p.get('odwiedzone', 0))
 
             st.markdown(f"""
             <div class="overview-card" style="margin-top: 10px;">
@@ -3278,6 +3382,10 @@ elif st.session_state.active_tab == "zabytek":
                     <a href="https://www.google.com/search?q={p['nazwa']} Kreta" target="_blank" class="step-action-vertical-btn"><span>🔍</span><span>Szukaj w Google</span></a>
                 </div>
                 """, unsafe_allow_html=True)
+
+            btn_tekst_odwiedzone = "✓ Miejsce odwiedzone" if czy_odwiedzone else "🎯 Oznacz jako odwiedzone"
+            if st.button(btn_tekst_odwiedzone, key=f"btn_toggle_vis_{docelowy_nr}", use_container_width=True):
+                potwierdz_odwiedzenie_dialog(docelowy_nr, p.get('nazwa'), czy_odwiedzone)
 
             renderuj_sekcje_notatek(id_miejsca=str(docelowy_nr))
 
