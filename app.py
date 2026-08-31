@@ -1411,16 +1411,40 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
     if not inline:
         st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
     with st.expander(f"💬 Asystent AI ({uzytkownik})", expanded=False):
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.markdown(f"<div style='font-size: 8.5pt; font-weight: 800; padding-top: 6px;'>🧠 TRYB AuDHD • {uzytkownik}</div>", unsafe_allow_html=True)
-        with col2:
-            if st.button("🗑️ Czyść", key=f"btn_clear_{uzytkownik}_{'inline' if inline else 'float'}", use_container_width=True):
+        
+        # Pasek górny z przyciskami w jednej linii (Czyść, Kopiuj ostatnią, Ponów ostatnią)
+        chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
+        
+        col_h1, col_h2, col_h3, col_h4 = st.columns([2, 1, 1, 1])
+        with col_h1:
+            st.markdown(f"<div style='font-size: 8pt; font-weight: 800; padding-top: 6px;'>🧠 AuDHD • {uzytkownik}</div>", unsafe_allow_html=True)
+        with col_h2:
+            if st.button("🗑️", key=f"btn_clear_{uzytkownik}_{'inline' if inline else 'float'}", use_container_width=True, help="Wyczyść historię"):
                 wyczysc_historie_czatu_w_db(uzytkownik)
                 st.session_state["flash_toast"] = "🗑️ Wyczyszczono czat."
                 st.rerun()
+        with col_h3:
+            ostatnia_odpowiedz = next((m["content"] for m in reversed(chat_historia_z_db) if m["role"] == "model"), None)
+            if st.button("📋", key=f"btn_copy_top_{uzytkownik}_{'inline' if inline else 'float'}", use_container_width=True, disabled=not ostatnia_odpowiedz, help="Kopiuj ostatnią odpowiedź"):
+                if ostatnia_odpowiedz:
+                    safe_text = json.dumps(ostatnia_odpowiedz)
+                    st.components.v1.html(f"""
+                        <script>
+                            navigator.clipboard.writeText({safe_text});
+                        </script>
+                    """, height=0)
+                    st.session_state["flash_toast"] = "📋 Skopiowano odpowiedź do schowka!"
+                    st.rerun()
+        with col_h4:
+            if st.button("🔄", key=f"btn_retry_top_{uzytkownik}_{'inline' if inline else 'float'}", use_container_width=True, disabled=not any(m["role"] == "user" for m in chat_historia_z_db), help="Ponów ostatnie zapytanie"):
+                ostatni_prompt = next((m["content"] for m in reversed(chat_historia_z_db) if m["role"] == "user"), None)
+                if ostatni_prompt:
+                    with get_db() as conn:
+                        conn.cursor().execute('DELETE FROM czat_historia WHERE uzytkownik = ? AND id = (SELECT MAX(id) FROM czat_historia WHERE uzytkownik = ?)', (uzytkownik, uzytkownik))
+                        conn.commit()
+                    st.session_state["flash_toast"] = f"🔄 Ponawiam wiadomość, {uzytkownik}..."
+                    st.rerun()
 
-        chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
         chat_container = st.container(height=190)
         with chat_container:
             for message in chat_historia_z_db:
