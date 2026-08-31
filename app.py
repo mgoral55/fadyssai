@@ -1444,115 +1444,123 @@ def zmien_status_zakupu(zakup_id, kupione):
         cursor.execute('UPDATE zakupy SET kupione = ? WHERE id = ?', (1 if kupione else 0, int(zakup_id)))
         conn.commit()
 
-cretai_tools = types.Tool(function_declarations=[
-    types.FunctionDeclaration(
-        name="dodaj_notatke",
-        description="Dodaje notatkę do wycieczki lub miejsca.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "zawartosc": types.Schema(type=types.Type.STRING, description="Treść notatki"),
-                "typ_notatki": types.Schema(type=types.Type.STRING, description="'text', 'link' lub 'list'"),
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "id_miejsca": types.Schema(type=types.Type.STRING, description="Numer miejsca"),
-                "tytul": types.Schema(type=types.Type.STRING, description="Tytuł"),
-            },
-            required=["zawartosc"]
-        ),
+# Deklaracja narzędzi bazy danych CRUD oraz natywnego Google Search
+cretai_tools = [
+    types.Tool(
+        function_declarations=[
+            types.FunctionDeclaration(
+                name="dodaj_notatke",
+                description="Dodaje notatkę do wycieczki lub miejsca.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "zawartosc": types.Schema(type=types.Type.STRING, description="Treść notatki"),
+                        "typ_notatki": types.Schema(type=types.Type.STRING, description="'text', 'link' lub 'list'"),
+                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                        "id_miejsca": types.Schema(type=types.Type.STRING, description="Numer miejsca"),
+                        "tytul": types.Schema(type=types.Type.STRING, description="Tytuł"),
+                    },
+                    required=["zawartosc"]
+                ),
+            ),
+            types.FunctionDeclaration(
+                name="edytuj_wycieczke",
+                description="Aktualizuje parametry wycieczki, w tym szacowany czas ogarniania się rano (np. '0.5h', '45m'). Zmiana czasu ogarniania automatycznie zmienia czas wyjazdu i przelicza cały harmonogram.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "id": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                        "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Tytuł"),
+                        "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Opis"),
+                        "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Taktyka"),
+                        "planowana_data": types.Schema(type=types.Type.STRING, description="RRRR-MM-DD"),
+                        "szacowany_czas_ogarniania_rano": types.Schema(type=types.Type.STRING, description="Szacowany czas ogarniania się rano, np. '0.5h', '1h', '45m'"),
+                    },
+                    required=["id"]
+                ),
+            ),
+            types.FunctionDeclaration(
+                name="dodaj_krok_wycieczki",
+                description="Dodaje krok do wycieczki (np. sklep przed powrotem do bazy). Backend automatycznie wstawia go we właściwym miejscu i przelicza godziny!",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                        "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer kroku (opcjonalny, backend ustala go sam)"),
+                        "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca / atrakcji / 'Sklep przy domku'"),
+                        "wspolrzedne": types.Schema(type=types.Type.STRING, description="GPS (np. dla sklepu: '35.586222, 24.091861')"),
+                        "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Orientacyjny czas pobytu, np. '17:00 - 17:25'"),
+                        "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="KRYTYCZNA godzina graniczna przed upałem/tłumem (np. '11:30') lub 'Brak' jeśli nie dotyczy"),
+                        "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Ostrzeżenie o upale/tłumie lub 'Brak'"),
+                        "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING, description="Strefa wyciszenia"),
+                        "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
+                        "opis": types.Schema(type=types.Type.STRING, description="Opis"),
+                    },
+                    required=["id_wycieczki", "krok_wycieczki", "nazwa"]
+                ),
+            ),
+            types.FunctionDeclaration(
+                name="edytuj_krok_wycieczki",
+                description="Edytuje parametry kroku wycieczki. Obsługuje precyzyjnie godziny wyjazdu 'do...' oraz godziny dotarcia 'na...'. Backend kaskadowo przeliczy godziny wszystkich punktów!",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                        "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID z bazy (DB_ID), numer kroku lub nazwa atrakcji"),
+                        "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Nowe okienko pobytu, np. '10:00 - 13:00'"),
+                        "godzina_wyjazdu_do": types.Schema(type=types.Type.STRING, description="Sztywna godzina WYJAZDU/ZAKOŃCZENIA pobytu w tym miejscu, gdy użytkownik mówi 'chcę być w X do godziny HH:MM'"),
+                        "godzina_dotarcia_na": types.Schema(type=types.Type.STRING, description="Sztywna godzina PRZYJAZDU/STARTU pobytu w tym miejscu, gdy użytkownik mówi 'chcę dojechać/dotrzeć do X na/do godziny HH:MM'"),
+                        "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
+                        "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="Godzina krytyczna lub 'Brak'"),
+                    },
+                    required=["id_wycieczki", "krok_wycieczki"]
+                ),
+            ),
+            types.FunctionDeclaration(
+                name="usun_krok_wycieczki",
+                description="Usuwa wskazany krok / atrakcję / sklep z wycieczki i natychmiast przelicza cały harmonogram. Używaj ZAWSZE, gdy użytkownik prosi o usunięcie, pominięcie lub wykasowanie punktu.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki (np. '1')"),
+                        "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID z bazy (DB_ID), numer kroku lub nazwa usuwanego punktu (np. 'Cretaquarium', 'Sklep', '2')"),
+                    },
+                    required=["id_wycieczki", "krok_wycieczki"]
+                ),
+            ),
+            types.FunctionDeclaration(
+                name="zmien_czas_postoju_na_trasie",
+                description="Zmienia bufor postoju na trasie między dwoma punktami (np. dodatkowy postój na kawę/toaletę) i przelicza godziny trasy.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                        "krok_z": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku startowego odcinka"),
+                        "krok_do": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku docelowego odcinka"),
+                        "minuty_postoju": types.Schema(type=types.Type.INTEGER, description="Liczba minut postoju na trasie (np. 20, 30)"),
+                    },
+                    required=["id_wycieczki", "krok_z", "krok_do", "minuty_postoju"]
+                ),
+            ),
+            types.FunctionDeclaration(
+                name="dodaj_produkt_zakupow",
+                description="Dodaje produkt bezpośrednio do checklisty zakupowej powiązanej z konkretnym krokiem wycieczki (np. składniki na obiad w kroku Sklepu).",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "id_kroku": types.Schema(type=types.Type.STRING, description="ID bazy danych kroku wycieczki (DB_ID)"),
+                        "nazwa_produktu": types.Schema(type=types.Type.STRING, description="Nazwa produktu zakupowego"),
+                        "ilosc": types.Schema(type=types.Type.STRING, description="Ilość przeliczona na 8 osób, np. '1 kg', '12 sztuk', '400g'"),
+                    },
+                    required=["id_kroku", "nazwa_produktu"]
+                ),
+            )
+        ]
     ),
-    types.FunctionDeclaration(
-        name="edytuj_wycieczke",
-        description="Aktualizuje parametry wycieczki, w tym szacowany czas ogarniania się rano (np. '0.5h', '45m'). Zmiana czasu ogarniania automatycznie zmienia czas wyjazdu i przelicza cały harmonogram.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Tytuł"),
-                "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Opis"),
-                "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Taktyka"),
-                "planowana_data": types.Schema(type=types.Type.STRING, description="RRRR-MM-DD"),
-                "szacowany_czas_ogarniania_rano": types.Schema(type=types.Type.STRING, description="Szacowany czas ogarniania się rano, np. '0.5h', '1h', '45m'"),
-            },
-            required=["id"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="dodaj_krok_wycieczki",
-        description="Dodaje krok do wycieczki (np. sklep przed powrotem do bazy). Backend automatycznie wstawia go we właściwym miejscu i przelicza godziny!",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer kroku (opcjonalny, backend ustala go sam)"),
-                "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca / atrakcji / 'Sklep przy domku'"),
-                "wspolrzedne": types.Schema(type=types.Type.STRING, description="GPS (np. dla sklepu: '35.586222, 24.091861')"),
-                "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Orientacyjny czas pobytu, np. '17:00 - 17:25'"),
-                "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="KRYTYCZNA godzina graniczna przed upałem/tłumem (np. '11:30') lub 'Brak' jeśli nie dotyczy"),
-                "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Ostrzeżenie o upale/tłumie lub 'Brak'"),
-                "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING, description="Strefa wyciszenia"),
-                "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
-                "opis": types.Schema(type=types.Type.STRING, description="Opis"),
-            },
-            required=["id_wycieczki", "krok_wycieczki", "nazwa"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="edytuj_krok_wycieczki",
-        description="Edytuje parametry kroku wycieczki. Obsługuje precyzyjnie godziny wyjazdu 'do...' oraz godziny dotarcia 'na...'. Backend kaskadowo przeliczy godziny wszystkich punktów!",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID z bazy (DB_ID), numer kroku lub nazwa atrakcji"),
-                "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Nowe okienko pobytu, np. '10:00 - 13:00'"),
-                "godzina_wyjazdu_do": types.Schema(type=types.Type.STRING, description="Sztywna godzina WYJAZDU/ZAKOŃCZENIA pobytu w tym miejscu, gdy użytkownik mówi 'chcę być w X do godziny HH:MM'"),
-                "godzina_dotarcia_na": types.Schema(type=types.Type.STRING, description="Sztywna godzina PRZYJAZDU/STARTU pobytu w tym miejscu, gdy użytkownik mówi 'chcę dojechać/dotrzeć do X na/do godziny HH:MM'"),
-                "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
-                "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="Godzina krytyczna lub 'Brak'"),
-            },
-            required=["id_wycieczki", "krok_wycieczki"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="usun_krok_wycieczki",
-        description="Usuwa wskazany krok / atrakcję / sklep z wycieczki i natychmiast przelicza cały harmonogram. Używaj ZAWSZE, gdy użytkownik prosi o usunięcie, pominięcie lub wykasowanie punktu.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki (np. '1')"),
-                "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID z bazy (DB_ID), numer kroku lub nazwa usuwanego punktu (np. 'Cretaquarium', 'Sklep', '2')"),
-            },
-            required=["id_wycieczki", "krok_wycieczki"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="zmien_czas_postoju_na_trasie",
-        description="Zmienia bufor postoju na trasie między dwoma punktami (np. dodatkowy postój na kawę/toaletę) i przelicza godziny trasy.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "krok_z": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku startowego odcinka"),
-                "krok_do": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku docelowego odcinka"),
-                "minuty_postoju": types.Schema(type=types.Type.INTEGER, description="Liczba minut postoju na trasie (np. 20, 30)"),
-            },
-            required=["id_wycieczki", "krok_z", "krok_do", "minuty_postoju"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="dodaj_produkt_zakupow",
-        description="Dodaje produkt bezpośrednio do checklisty zakupowej powiązanej z konkretnym krokiem wycieczki (np. składniki na obiad w kroku Sklepu).",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_kroku": types.Schema(type=types.Type.STRING, description="ID bazy danych kroku wycieczki (DB_ID)"),
-                "nazwa_produktu": types.Schema(type=types.Type.STRING, description="Nazwa produktu zakupowego"),
-                "ilosc": types.Schema(type=types.Type.STRING, description="Ilość przeliczona na 8 osób, np. '1 kg', '12 sztuk', '400g'"),
-            },
-            required=["id_kroku", "nazwa_produktu"]
-        ),
+    types.Tool(
+        google_search=types.GoogleSearch()
     )
-])
+]
 
 def wykonaj_narzedzie_bazy(call_name, args):
     if call_name == "dodaj_notatke":
@@ -1990,7 +1998,10 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                                 response = client.models.generate_content(
                                     model=wybrany_model,
                                     contents=contents,
-                                    config=types.GenerateContentConfig(tools=[cretai_tools], system_instruction=system_prompt)
+                                    config=types.GenerateContentConfig(
+                                        tools=cretai_tools,
+                                        system_instruction=system_prompt
+                                    )
                                 )
 
                                 candidate = response.candidates[0] if response.candidates else None
@@ -2018,6 +2029,17 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                                 else:
                                     text_parts = [p.text for p in candidate.content.parts if hasattr(p, "text") and p.text] if candidate and candidate.content and candidate.content.parts else []
                                     assistant_reply = "".join(text_parts) if text_parts else (response.text if hasattr(response, "text") else "Zaktualizowano bazę danych.")
+                                    
+                                    # Pobranie ewentualnych źródeł z Google Search
+                                    if candidate and hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
+                                        gm = candidate.grounding_metadata
+                                        if hasattr(gm, 'grounding_chunks') and gm.grounding_chunks:
+                                            links = []
+                                            for chunk in gm.grounding_chunks:
+                                                if hasattr(chunk, 'web') and chunk.web:
+                                                    links.append(f"[{chunk.web.title}]({chunk.web.uri})")
+                                            if links:
+                                                assistant_reply += "\n\n🌐 **Źródła:** " + ", ".join(links[:3])
                                     break
                         else:
                             client_c = anthropic.Anthropic(api_key=api_key_input)
