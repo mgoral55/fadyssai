@@ -2123,14 +2123,14 @@ def dodaj_marker_domku(m):
     domek_icon = folium.DivIcon(html=domek_icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=domek_icon, tooltip="Nasz Domek").add_to(m)
 
-# --- ULEPSZONA FUNKCJA CZATU AI ---
+# --- ULEPSZONA FUNKCJA CZATU AI Z ŻELAZNYMI REGUŁAMI AuDHD ---
 def renderuj_globalny_czat_ai(uzytkownik, inline=False):
     if not inline:
         st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
     with st.expander(f"💬 Asystent AI ({uzytkownik})", expanded=False):
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.markdown(f"<span style='font-size: 9pt; font-weight: 800;'>🧠 TRYB ADHD • {uzytkownik}</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='font-size: 9pt; font-weight: 800;'>🧠 TRYB AuDHD • {uzytkownik}</span>", unsafe_allow_html=True)
         with col2:
             if st.button("🗑️ Wyczyść", key=f"btn_clear_{uzytkownik}_{'inline' if inline else 'float'}", use_container_width=True):
                 wyczysc_historie_czatu_w_db(uzytkownik)
@@ -2162,15 +2162,19 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                     akt_wyc_id = pobierz_aktywna_wycieczke_id()
                     zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny(akt_wyc_id)
                     
-                    system_prompt = f"""Jesteś asystentem podróży CretAi na Kretę dla rodziców dzieci z ADHD. Dziś: {dzisiaj_str}.
+                    system_prompt = f"""Jesteś nadrzędnym strażnikiem logistyki i dobrostanu rodziny z AuDHD (rodzice + dzieci z ADHD) podróżującej po słonecznej Krecie. Dziś jest {dzisiaj_str}.
 {zewnetrzny_kontekst}
-- ZASADA SŁOŃCA I ADHD: Odpowiadaj maksymalnie krótko i w punktach.
-- ZASADA ZAPISU: Zawsze wywołuj odpowiednie narzędzie CRUD do bazy danych, a następnie krótko potwierdź zmiany.
-- ZASADA MIEJSC: Brak GPS -> zapytaj w 1 zdaniu o współrzędne lub dodaj ze wspolrzedne=None.
-- ZASADA CZASU: 'wyjeżdżamy o HH:MM' -> edytuj_wycieczke. 'być w X do HH:MM' -> edytuj_krok_wycieczki(godzina_wyjazdu_do)."""
+
+ZAPAMIĘTAJ I BEZWZGLĘDNIE EGZEKWUJ NASTĘPUJĄCE ŻELAZNE REGUŁY AuDHD:
+1. 🍲 ŻELAZNA KOTWICA POSIŁKÓW: Żaden uczestnik nie może być pozbawiony jedzenia/przekąski dłużej niż 3,5 godziny. Sprawdzaj przerwy między posiłkami w planie.
+2. ☀️ OCHRONA PRZED SŁOŃCEM I UPAŁEM (11:30–15:30): W tych godzinach dzieci NIE MOGĄ przebywać w otwartych, bezdrzewnych miejscach o wysokim nasłonecznieniu (np. otwarte ruiny). Wtedy obowiązkowo musi być chłód, półmrok, klimatyzacja (np. akwarium, muzeum zadaszone, sjesta w domku).
+3. 🌿 BUFORY I REGENERACJA: Między intensywnymi punktami musi być min. 45 minut buforu (przejazd / strefa ciszy). Zawsze planuj godziny ewakuacji i strefy luzu.
+4. 🛑 OBOWIĄZKOWA WALIDACJA PRZED ZMIANĄ BAZY: Zanim wywołasz jakiekolwiek narzędzie CRUD (edycja, dodanie kroku, zmiana godzin), przeanalizuj plan pod kątem powyższych zasad. 
+   - Jeśli plan narusza zasady głodu, upału lub zmęczenia: **STANOWCZO ODMÓW ZMIANY**, wyświetl dobitne, czytelne ostrzeżenie (użyj ikon 🚨 i pogrubień) oraz zaproponuj bezpieczne usprawnienie/alternatywę.
+   - Jeśli plan jest poprawny: wykonaj narzędzie i skomentuj krótko korzyść logistyczną dla dzieci z AuDHD."""
 
                     try:
-                        with st.status("🧭 Dopasowuję plan dnia...", expanded=False) as status:
+                        with st.status("🧭 Weryfikuję zasady AuDHD i przeliczam plan...", expanded=False) as status:
                             if wybrany_dostawca == "Google Gemini":
                                 client = genai.Client(api_key=api_key_input)
                                 
@@ -2183,7 +2187,7 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                                 executed_actions = []
 
                                 for loop_idx in range(2):
-                                    status.update(label=f"🧭 Przeliczam trasę i bazę... (krok {loop_idx+1})")
+                                    status.update(label=f"🧭 Weryfikuję reguły i bazę... (krok {loop_idx+1})")
                                     
                                     response = None
                                     for attempt in range(2):
@@ -2195,7 +2199,7 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                                                     tools=cretai_tools,
                                                     system_instruction=system_prompt,
                                                     temperature=0.1,
-                                                    max_output_tokens=300
+                                                    max_output_tokens=350
                                                 )
                                             )
                                             break
@@ -2241,13 +2245,13 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                                         break
                                 
                                 if not assistant_reply.strip() and executed_actions:
-                                    assistant_reply = "✅ **Zaktualizowano plan wycieczki:**\n* " + "\n* ".join(executed_actions)
+                                    assistant_reply = "✅ **Zaktualizowano plan z uwzględnieniem zasad AuDHD:**\n* " + "\n* ".join(executed_actions)
 
                             else:
                                 client_c = anthropic.Anthropic(api_key=api_key_input)
                                 resp = client_c.messages.create(
                                     model=wybrany_model,
-                                    max_tokens=300,
+                                    max_tokens=350,
                                     system=system_prompt,
                                     messages=[{"role": "user", "content": prompt}]
                                 )
@@ -2256,11 +2260,11 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                             status.update(label="✅ Gotowe!", state="complete")
 
                         if not assistant_reply:
-                            assistant_reply = "✅ Operacja została wykonana, a harmonogram w bazie przeliczony."
+                            assistant_reply = "✅ Zweryfikowano plan pod kątem AuDHD i zaktualizowano bazę danych."
 
                         zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
                         st.markdown(assistant_reply)
-                        st.session_state["flash_toast"] = "🧭 Harmonogram zaktualizowany!"
+                        st.session_state["flash_toast"] = "🧭 Harmonogram zweryfikowany!"
                         st.rerun()
 
                     except Exception as e:
@@ -3244,7 +3248,7 @@ elif st.session_state.active_tab == "zabytek":
 
             st.markdown(f"""
             <details class="overview-details-card">
-                <summary>🧠 SPECYFIKA ADHD & SENSORYKA</summary>
+                <summary>🧠 SPECYFIKA AuDHD & SENSORYKA</summary>
                 <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
                     <div style="font-size: 9.5pt; color: #2B2118; margin-bottom: 6px;"><b>Potencjał meltdownu:</b> {p.get('potencjal_meltdownu', 'Średni')}</div>
                     <div style="font-size: 9.5pt; color: #2B2118;"><b>Strategia zaradcza:</b> {p.get('strategie_meltdown', 'Brak')}</div>
