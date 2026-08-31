@@ -386,12 +386,22 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
     if force_powrot_str:
         g_pow = sparsuj_godzine_minuty(force_powrot_str) or (17, 0)
         dt_powrot_anchor = datetime(2026, 1, 1, g_pow[0], g_pow[1])
+        
         end_times[last_idx] = dt_powrot_anchor
         start_times[last_idx] = dt_powrot_anchor - timedelta(minutes=czasy_pobytu[last_idx])
+
         for i in range(last_idx - 1, 0, -1):
             end_times[i] = start_times[i + 1] - timedelta(minutes=dojazdy_minuty[i])
             start_times[i] = end_times[i] - timedelta(minutes=czasy_pobytu[i])
-        start_times[0], end_times[0] = dt_pob, start_times[1] - timedelta(minutes=dojazdy_minuty[0])
+
+        # Wyznaczenie nowego czasu wyjazdu z domku (end_times[0]) na podstawie powrotu i pracy wstecz
+        end_times[0] = start_times[1] - timedelta(minutes=dojazdy_minuty[0])
+        
+        # Przeliczenie czasu pobudki zachowując nienaruszony czas ogarniania rano (minuty_ogarniania)
+        dt_pob = end_times[0] - timedelta(minutes=minuty_ogarniania)
+        pobudka_z_bazy = dt_pob.strftime("%H:%M")
+        start_times[0] = dt_pob
+
     elif force_wyjazd_str:
         g_wyj = sparsuj_godzine_minuty(force_wyjazd_str) or (6, 30)
         dt_wyj = datetime(2026, 1, 1, g_wyj[0], g_wyj[1])
