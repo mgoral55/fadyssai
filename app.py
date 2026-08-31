@@ -726,6 +726,52 @@ def init_db():
 
 init_db()
 
+# --- SYSTEM WERYFIKACJI I MIGAWEK BAZY DANYCH ---
+def pobierz_migawke_bazy(id_wycieczki):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?", (str(id_wycieczki),))
+        kroki = {row[0]: row[1] for row in cursor.fetchall()}
+        
+        cursor.execute("SELECT id, tytul, zawartosc FROM notatki WHERE id_wycieczki = ?", (str(id_wycieczki),))
+        notatki = {row[0]: (row[1] or row[2][:30]) for row in cursor.fetchall()}
+        
+        cursor.execute("""
+            SELECT p.id, p.rodzaj_posilku, k.nazwa 
+            FROM posilki_kroku p 
+            JOIN krok_wycieczki k ON p.id_kroku = k.id 
+            WHERE k.id_wycieczki = ?
+        """, (str(id_wycieczki),))
+        posilki = {row[0]: f"{row[1]} ({row[2]})" for row in cursor.fetchall()}
+        
+        cursor.execute("SELECT id, nazwa_produktu, id_kroku FROM zakupy WHERE id_wycieczki = ?", (str(id_wycieczki),))
+        zakupy = {row[0]: (row[1], row[2]) for row in cursor.fetchall()}
+
+    return {"kroki": kroki, "notatki": notatki, "posilki": posilki, "zakupy": zakupy}
+
+def weryfikuj_zmiany_w_bazie(stan_przed, stan_po):
+    nowe_elementy = []
+    
+    nowe_kroki_ids = set(stan_po["kroki"].keys()) - set(stan_przed["kroki"].keys())
+    for k_id in nowe_kroki_ids:
+        nowe_elementy.append(f"📍 Dodano krok trasy: **{stan_po['kroki'][k_id]}** (ID: #{k_id})")
+        
+    nowe_notatki_ids = set(stan_po["notatki"].keys()) - set(stan_przed["notatki"].keys())
+    for n_id in nowe_notatki_ids:
+        nowe_elementy.append(f"📌 Zapisano notatkę: *{stan_po['notatki'][n_id]}*")
+        
+    nowe_posilki_ids = set(stan_po["posilki"].keys()) - set(stan_przed["posilki"].keys())
+    for p_id in nowe_posilki_ids:
+        nowe_elementy.append(f"🍲 Zaplanowano posiłek: **{stan_po['posilki'][p_id]}**")
+        
+    nowe_zakupy_ids = set(stan_po["zakupy"].keys()) - set(stan_przed["zakupy"].keys())
+    for z_id in nowe_zakupy_ids:
+        nazwa_p, id_k = stan_po["zakupy"][z_id]
+        lok = f"w kroku #{id_k}" if id_k else "na całą wycieczkę"
+        nowe_elementy.append(f"🛒 Dodano do zakupów ({lok}): **{nazwa_p}**")
+        
+    return nowe_elementy
+
 def przelacz_status_miejsca(numer_miejsca, aktualny_stan):
     nowy_stan = 0 if aktualny_stan else 1
     with get_db() as conn:
@@ -806,16 +852,16 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, c
         conn.commit()
     
     przelicz_i_zsynchronizuj_wycieczke(str(id), force_wyjazd_str=czas_wyjazdu if czas_wyjazdu else None)
-    return f"Wycieczka #{id} została zaktualizowana i przeliczona."
+    return {"success": True, "action": "edytuj_wycieczke", "message": f"Wycieczka #{id} została zaktualizowana i przeliczona."}
 
 def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy="", okienko_zwiedzania="12:00 - 13:00", podsumowanie_taktyki="Brak"):
     miejsce_info = szukaj_miejsca_w_bazie(nazwa_z_bazy)
     if not miejsce_info:
-        return f"⛔ BŁĄD: Nie znaleziono miejsca '{nazwa_z_bazy}' w lokalnej bazie miejsc!"
+        return {"success": False, "action": "dodaj_krok_wycieczki", "error": f"⛔ BŁĄD: Nie znaleziono miejsca '{nazwa_z_bazy}' w lokalnej bazie miejsc!"}
 
     bezpieczny, powod_odmowy = sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, miejsce_info['nazwa'], okienko_zwiedzania)
     if not bezpieczny:
-        return powod_odmowy
+        return {"success": False, "action": "dodaj_krok_wycieczki", "error": powod_odmowy}
 
     nazwa, wspolrzedne = miejsce_info['nazwa'], miejsce_info['wspolrzedne']
     godzina_ewakuacji = miejsce_info['konieczna_akcja'] or "Brak"
@@ -838,10 +884,11 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy="", okienko_zwiedzania="12:0
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, opis)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (str(id_wycieczki), target_krok_num, str(nazwa), str(wspolrzedne), str(okienko_zwiedzania), str(godzina_ewakuacji), str(czerwona_strefa), str(strefa_luzu), str(podsumowanie_taktyki), str(opis)))
+        nowy_id_kroku = cursor.lastrowid
         conn.commit()
     
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
-    return f"Pomyślnie pobrano z bazy i dodano miejsce '{nazwa}' do wycieczki #{id_wycieczki} oraz przeliczono harmonogram."
+    return {"success": True, "action": "dodaj_krok_wycieczki", "id_kroku": nowy_id_kroku, "message": f"Pomyślnie dodano miejsce '{nazwa}' (ID: #{nowy_id_kroku}) do wycieczki #{id_wycieczki}."}
 
 def wstaw_krok_specjalny(id_wycieczki, nazwa, wspolrzedne, okienko_def, strefa_luzu, taktyka, opis, pozycja="start", sprawdz_offset=False):
     with get_db() as conn:
@@ -873,10 +920,11 @@ def wstaw_krok_specjalny(id_wycieczki, nazwa, wspolrzedne, okienko_def, strefa_l
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, opis)
             VALUES (?, ?, ?, ?, ?, 'Brak', 'Brak', ?, ?, ?)
         ''', (str(id_wycieczki), str(target_krok_num), nazwa, wspolrzedne, okienko_def, strefa_luzu, taktyka, opis))
+        nowy_id_kroku = cursor.lastrowid
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
-    return f"Dodano '{nazwa}' i przeliczono harmonogram."
+    return {"success": True, "action": "wstaw_krok_specjalny", "id_kroku": nowy_id_kroku, "nazwa_kroku": nazwa, "message": f"Dodano '{nazwa}' (ID: #{nowy_id_kroku}) i przeliczono harmonogram."}
 
 def dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki, pozycja="koniec"):
     return wstaw_krok_specjalny(
@@ -894,7 +942,7 @@ def dodaj_rynek_w_chanii_do_wycieczki(id_wycieczki, pozycja="start"):
 
     rynek_info, _ = pobierz_dane_rynku_dla_daty(plan_data)
     if not rynek_info:
-        return "Dzisiaj w Chanii nie ma targu miejskiego (Laiki)."
+        return {"success": False, "action": "dodaj_rynek", "error": "Dzisiaj w Chanii nie ma targu miejskiego (Laiki)."}
 
     return wstaw_krok_specjalny(
         id_wycieczki=id_wycieczki, nazwa="Rynek w Chanii", wspolrzedne=rynek_info['coords'],
@@ -909,13 +957,13 @@ def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa=None, wspolrzedne=
         cursor = conn.cursor()
         res = znajdz_id_kroku_w_db(cursor, id_wycieczki, krok_wycieczki)
         if not res:
-            return f"Nie znaleziono kroku '{krok_wycieczki}' w wycieczce #{id_wycieczki}."
+            return {"success": False, "action": "edytuj_krok_wycieczki", "error": f"Nie znaleziono kroku '{krok_wycieczki}' w wycieczce #{id_wycieczki}."}
         krok_id, stary_nazwa = res[0], res[1]
         
         if okienko_zwiedzania:
             bezpieczny, powod_odmowy = sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa or stary_nazwa, okienko_zwiedzania)
             if not bezpieczny:
-                return powod_odmowy
+                return {"success": False, "action": "edytuj_krok_wycieczki", "error": powod_odmowy}
 
         pola = {
             "nazwa": nazwa, "wspolrzedne": wspolrzedne, "okienko_zwiedzania": okienko_zwiedzania,
@@ -928,18 +976,18 @@ def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa=None, wspolrzedne=
         conn.commit()
     
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
-    return f"Zaktualizowano krok i automatycznie przeliczono godziny całej wycieczki #{id_wycieczki}."
+    return {"success": True, "action": "edytuj_krok_wycieczki", "message": f"Zaktualizowano krok #{krok_id} w wycieczce #{id_wycieczki}."}
 
 def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
     with get_db() as conn:
         cursor = conn.cursor()
         res = znajdz_id_kroku_w_db(cursor, id_wycieczki, krok_wycieczki)
         if not res:
-            return f"Nie znaleziono kroku '{krok_wycieczki}' do usunięcia."
+            return {"success": False, "action": "usun_krok_wycieczki", "error": f"Nie znaleziono kroku '{krok_wycieczki}' do usunięcia."}
             
         krok_id, nazwa = res
         if "domek" in nazwa.lower() and ("start" in nazwa.lower() or "powrót" in nazwa.lower() or "baza" in nazwa.lower()):
-            return "BLOKADA: Baza wypadowa (Domek) jest nieusuwalna! Możesz usuwać wyłącznie atrakcje, sklepy i plaże na trasie."
+            return {"success": False, "action": "usun_krok_wycieczki", "error": "BLOKADA: Baza wypadowa (Domek) jest nieusuwalna!"}
         
         cursor.execute('DELETE FROM posilki_kroku WHERE id_kroku = ?', (krok_id,))
         cursor.execute('DELETE FROM zakupy WHERE id_kroku = ?', (krok_id,))
@@ -955,7 +1003,7 @@ def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
-    return f"Pomyślnie usunięto krok '{nazwa}' i automatycznie zsynchronizowano harmonogram wycieczki #{id_wycieczki}."
+    return {"success": True, "action": "usun_krok_wycieczki", "message": f"Usunięto krok '{nazwa}' z wycieczki #{id_wycieczki}."}
 
 def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=None, tytul=None):
     with get_db() as conn:
@@ -965,19 +1013,60 @@ def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=N
             VALUES (?, ?, ?, ?, ?)
         ''', (str(id_wycieczki) if id_wycieczki else None, str(id_miejsca) if id_miejsca else None, tytul, zawartosc, typ_notatki))
         conn.commit()
-    return "Dodano notatkę!"
+    return {"success": True, "action": "dodaj_notatke", "message": f"Dodano notatkę: '{tytul or zawartosc[:25]}...'"}
+
+def znajdz_domyslny_krok_sklepu(cursor, id_wycieczki):
+    cursor.execute("""
+        SELECT id FROM krok_wycieczki 
+        WHERE id_wycieczki = ? AND (nazwa LIKE '%sklep%' OR nazwa LIKE '%market%' OR nazwa LIKE '%rynek%' OR nazwa LIKE '%targ%')
+        ORDER BY id DESC LIMIT 1
+    """, (str(id_wycieczki),))
+    res = cursor.fetchone()
+    return res[0] if res else None
 
 def dodaj_produkt_zakupow(id_wycieczki, nazwa_produktu, id_kroku=None, ilosc="1"):
     with get_db() as conn:
         cursor = conn.cursor()
         krok_val = str(id_kroku) if id_kroku not in [None, "", "None", "null"] else None
+        
+        # Jeśli id_kroku nie podano, sprawdź czy na trasie jest krok sklepu i przypisz do niego
+        if krok_val is None:
+            krok_auto = znajdz_domyslny_krok_sklepu(cursor, id_wycieczki)
+            if krok_auto:
+                krok_val = str(krok_auto)
+                
         cursor.execute('''
             INSERT INTO zakupy (id_wycieczki, id_kroku, nazwa_produktu, ilosc, kupione) 
             VALUES (?, ?, ?, ?, 0)
         ''', (str(id_wycieczki), krok_val, nazwa_produktu, str(ilosc)))
         conn.commit()
     lokalizacja = f"kroku #{krok_val}" if krok_val else "całej wycieczki"
-    return f"Dodano produkt '{nazwa_produktu}' do listy zakupów ({lokalizacja})."
+    return {"success": True, "action": "dodaj_produkt_zakupow", "id_kroku": krok_val, "message": f"Dodano '{nazwa_produktu}' ({ilosc}) do zakupów ({lokalizacja})."}
+
+def dodaj_wiele_produktow_zakupow(id_wycieczki, produkty, id_kroku=None):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        krok_val = str(id_kroku) if id_kroku not in [None, "", "None", "null"] else None
+        
+        # Jeśli id_kroku nie podano, sprawdź czy na trasie jest krok sklepu i przypisz do niego
+        if krok_val is None:
+            krok_auto = znajdz_domyslny_krok_sklepu(cursor, id_wycieczki)
+            if krok_auto:
+                krok_val = str(krok_auto)
+                
+        dodane = []
+        for p in produkty:
+            p_nazwa = p.get('nazwa', '').strip() if isinstance(p, dict) else str(p).strip()
+            p_ilosc = p.get('ilosc', '1').strip() if isinstance(p, dict) else '1'
+            if p_nazwa:
+                cursor.execute('''
+                    INSERT INTO zakupy (id_wycieczki, id_kroku, nazwa_produktu, ilosc, kupione) 
+                    VALUES (?, ?, ?, ?, 0)
+                ''', (str(id_wycieczki), krok_val, p_nazwa, p_ilosc))
+                dodane.append(f"{p_nazwa} ({p_ilosc})")
+        conn.commit()
+    lokalizacja = f"kroku #{krok_val}" if krok_val else "całej wycieczki"
+    return {"success": True, "action": "dodaj_wiele_produktow_zakupow", "id_kroku": krok_val, "message": f"Dodano {len(dodane)} produktów do zakupów ({lokalizacja}): {', '.join(dodane)}."}
 
 def zarzadzaj_posilkiem_kroku(id_wycieczki, id_kroku, rodzaj_posilku, miejsce="w domku", sugerowana_godzina="13:30", opis="Safe food: drób/ryby/domowe"):
     with get_db() as conn:
@@ -987,14 +1076,14 @@ def zarzadzaj_posilkiem_kroku(id_wycieczki, id_kroku, rodzaj_posilku, miejsce="w
             VALUES (?, ?, ?, ?, ?)
         ''', (str(id_kroku), str(rodzaj_posilku), str(miejsce), str(sugerowana_godzina), str(opis)))
         conn.commit()
-    return f"Zapisano posiłek ({rodzaj_posilku}) w bazie dla kroku #{id_kroku}."
+    return {"success": True, "action": "zarzadzaj_posilkiem_kroku", "message": f"Zapisano posiłek ({rodzaj_posilku}) dla kroku #{id_kroku}."}
 
 def usun_posilek(id_posilku):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('DELETE FROM posilki_kroku WHERE id = ?', (str(id_posilku),))
         conn.commit()
-    return f"Pomyślnie usunięto posiłek o ID #{id_posilku}."
+    return {"success": True, "action": "usun_posilek", "message": f"Usunięto posiłek #{id_posilku}."}
 
 def zmien_status_zakupu(zakup_id, kupione):
     with get_db() as conn:
@@ -1086,8 +1175,32 @@ cretai_tools = [
                 ),
             ),
             types.FunctionDeclaration(
+                name="dodaj_sklep_przy_domku",
+                description="Dodaje lokalny sklep/market przy domku w Stavros jako krok wycieczki. Zwraca id_kroku nowo dodanego sklepu.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID aktywnej wycieczki"),
+                        "pozycja": types.Schema(type=types.Type.STRING, description="'start' (rano po wyjeździe) lub 'koniec' (po południu / w drodze powrotnej przed domkiem)"),
+                    },
+                    required=["id_wycieczki"]
+                ),
+            ),
+            types.FunctionDeclaration(
+                name="dodaj_rynek_w_chanii",
+                description="Dodaje targ miejski (Laiki) w Chanii jako krok wycieczki.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID aktywnej wycieczki"),
+                        "pozycja": types.Schema(type=types.Type.STRING, description="'start' lub 'koniec'"),
+                    },
+                    required=["id_wycieczki"]
+                ),
+            ),
+            types.FunctionDeclaration(
                 name="dodaj_notatke",
-                description="Dodaje notatkę do wycieczki lub miejsca (np. taktyka obiadu domowego w Stavros, przygotowanie domowych kanapek / prowiantu na wynos do torby termicznej).",
+                description="Dodaje notatkę do wycieczki lub miejsca.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1116,12 +1229,12 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="dodaj_krok_wycieczki",
-                description="Dodaje miejsce z lokalnej bazy miejsc do wycieczki po jego nazwie z bazy.",
+                description="Dodaje nowe miejsce z bazy jako krok wycieczki do harmonogramu.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
-                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                        "nazwa_z_bazy": types.Schema(type=types.Type.STRING, description="Dokładna nazwa miejsca z bazy miejsc (np. 'Spinalonga')"),
+                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID aktywnej wycieczki"),
+                        "nazwa_z_bazy": types.Schema(type=types.Type.STRING, description="Dokładna nazwa miejsca z bazy miejsc"),
                         "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Okienko czasu np. '13:00 - 14:30'"),
                         "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
                     },
@@ -1155,7 +1268,7 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="zarzadzaj_posilkiem_kroku",
-                description="Dodaje główny posiłek (śniadanie, obiad, kolacja). Domyślnie preferuj obiad w domku w Stavros lub prowiant domowy na wynos.",
+                description="Dodaje główny posiłek (śniadanie, obiad, kolacja).",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1164,7 +1277,7 @@ cretai_tools = [
                         "rodzaj_posilku": types.Schema(type=types.Type.STRING, description="'śniadanie', 'obiad' lub 'kolacja'"),
                         "miejsce": types.Schema(type=types.Type.STRING, description="'w domku', 'restauracja' lub 'po drodze'"),
                         "sugerowana_godzina": types.Schema(type=types.Type.STRING, description="Godzina np. '13:30'"),
-                        "opis": types.Schema(type=types.Type.STRING, description="Opis posiłku (safe foods, drób, domowe kanapki)")
+                        "opis": types.Schema(type=types.Type.STRING, description="Opis posiłku")
                     },
                     required=["id_wycieczki", "id_kroku", "rodzaj_posilku"]
                 ),
@@ -1182,16 +1295,40 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="dodaj_produkt_zakupow",
-                description="Dodaje produkt do listy zakupów.",
+                description="Dodaje pojedynczy produkt do listy zakupów.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
                         "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
                         "nazwa_produktu": types.Schema(type=types.Type.STRING, description="Nazwa produktu"),
-                        "id_kroku": types.Schema(type=types.Type.STRING, description="ID kroku lub None"),
+                        "id_kroku": types.Schema(type=types.Type.STRING, description="ID kroku sklepu (lub None dla całej wycieczki)"),
                         "ilosc": types.Schema(type=types.Type.STRING, description="Ilość"),
                     },
                     required=["id_wycieczki", "nazwa_produktu"]
+                ),
+            ),
+            types.FunctionDeclaration(
+                name="dodaj_wiele_produktow_zakupow",
+                description="Dodaje całą listę produktów/składników do listy zakupów. ZAWSZE podawaj id_kroku sklepu, jeśli zakupy są powiązane ze sklepem.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                        "produkty": types.Schema(
+                            type=types.Type.ARRAY,
+                            items=types.Schema(
+                                type=types.Type.OBJECT,
+                                properties={
+                                    "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa produktu, np. 'Bakłażany'"),
+                                    "ilosc": types.Schema(type=types.Type.STRING, description="Ilość np. '2 szt' lub '500g'")
+                                },
+                                required=["nazwa"]
+                            ),
+                            description="Lista składników do kupienia"
+                        ),
+                        "id_kroku": types.Schema(type=types.Type.STRING, description="ID kroku sklepu z dodaj_sklep_przy_domku (lub None)")
+                    },
+                    required=["id_wycieczki", "produkty"]
                 ),
             )
         ]
@@ -1199,8 +1336,10 @@ cretai_tools = [
 ]
 
 NARZEDZIA_DISPATCHER = {
-    "szukaj_miejsca_w_bazie": lambda args: str(szukaj_miejsca_w_bazie(**args)) if szukaj_miejsca_w_bazie(**args) else "Brak miejsca w bazie.",
-    "sprawdz_pogode": lambda args: str(pobierz_szczegoly_pogody_dla_godziny(**args)),
+    "szukaj_miejsca_w_bazie": lambda args: szukaj_miejsca_w_bazie(**args) or {"error": "Brak miejsca w bazie."},
+    "sprawdz_pogode": lambda args: pobierz_szczegoly_pogody_dla_godziny(**args) or {"error": "Brak danych pogodowych."},
+    "dodaj_sklep_przy_domku": lambda args: dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki=args.get("id_wycieczki"), pozycja=args.get("pozycja", "koniec")),
+    "dodaj_rynek_w_chanii": lambda args: dodaj_rynek_w_chanii_do_wycieczki(id_wycieczki=args.get("id_wycieczki"), pozycja=args.get("pozycja", "start")),
     "dodaj_notatke": lambda args: dodaj_notatke(**args),
     "edytuj_wycieczke": lambda args: edytuj_wycieczke(**args),
     "dodaj_krok_wycieczki": lambda args: dodaj_krok_wycieczki(**args),
@@ -1209,11 +1348,15 @@ NARZEDZIA_DISPATCHER = {
     "zarzadzaj_posilkiem_kroku": lambda args: zarzadzaj_posilkiem_kroku(**args),
     "usun_posilek": lambda args: usun_posilek(**args),
     "dodaj_produkt_zakupow": lambda args: dodaj_produkt_zakupow(**args),
+    "dodaj_wiele_produktow_zakupow": lambda args: dodaj_wiele_produktow_zakupow(**args),
 }
 
 def wykonaj_narzedzie_bazy(call_name, args):
     handler = NARZEDZIA_DISPATCHER.get(call_name)
-    return handler(args) if handler else "Wykonano."
+    if not handler:
+        return {"success": False, "error": f"Nierozpoznane narzędzie: {call_name}"}
+    res = handler(args)
+    return res if isinstance(res, dict) else {"success": True, "result": str(res)}
 
 def pobierz_status_zadania(klucz_zadania):
     with get_db() as conn:
@@ -1354,7 +1497,7 @@ def pobierz_historie_czatu_z_db(uzytkownik):
         cursor = conn.cursor()
         cursor.execute('SELECT rola, tresc FROM czat_historia WHERE uzytkownik = ? ORDER BY id ASC', (uzytkownik,))
         rows = cursor.fetchall()
-    return [{"role": rola, "content": tresc, "raw_content": types.Content(role=rola, parts=[types.Part.from_text(text=tresc)])} for rola, tresc in rows]
+    return [{"role": rola, "content": tresc} for rola, tresc in rows]
 
 def zapisz_wiadomosc_w_db(uzytkownik, rola, tresc):
     with get_db() as conn:
@@ -1452,7 +1595,7 @@ def dodaj_marker_domku(m):
 def sprobuj_wykonac_komende_lokalnie(prompt, id_wycieczki):
     p = prompt.strip().lower()
     m_zakup = re.search(r'^(?:kup|kupić|dodaj do zakup[oó]w|dopisz)\s+([^,]+)', p)
-    if m_zakup and not any(w in p for w in ["krok", "miejsce", "atrakcj", "godzin", "wyjazd", "start"]):
+    if m_zakup and not any(w in p for w in ["krok", "miejsce", "atrakcj", "godzin", "wyjazd", "start", "market", "sklep", "rynek", "targ", "musak", "składnik"]):
         prod = m_zakup.group(1).strip()
         dodaj_produkt_zakupow(id_wycieczki, prod)
         return f"⚡ Dodano **{prod}** do listy zakupów wycieczki."
@@ -1501,7 +1644,7 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"] if isinstance(message["content"], str) else "")
 
-        prompt = st.chat_input(f"Napisz np. 'wyjazd o 7:30', 'dodaj obiad'...", key=f"chat_input_{uzytkownik}_{'inline' if inline else 'float'}")
+        prompt = st.chat_input(f"Napisz np. 'wyjazd o 7:30', 'dodaj sklep i składniki na obiad'...", key=f"chat_input_{uzytkownik}_{'inline' if inline else 'float'}")
         if prompt:
             zapisz_wiadomosc_w_db(uzytkownik, "user", prompt)
             akt_wyc_id = pobierz_aktywna_wycieczke_id()
@@ -1530,7 +1673,17 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                     system_prompt = f"""Jesteś inteligentnym planerem i strażnikiem AuDHD/ADHD na Krecie (CretAi).
 Rozmawiasz z użytkownikiem, który ma na imię: {uzytkownik}.
 Dzisiejsza data: {dzisiaj_str}.
+ID aktywnej wycieczki: {akt_wyc_id}.
 {zewnetrzny_kontekst}
+
+ZASADY KRYTYCZNE DOTYCZĄCE BAZY DANYCH I NARZĘDZI (FUNCTION CALLING):
+1. ZAWSZE FIZYCZNIE WYWOŁUJ NARZĘDZIA:
+   - Gdy użytkownik mówi o sklepie/markecie przy domku rano lub wracając – wywołaj `dodaj_sklep_przy_domku(id_wycieczki, pozycja='start' lub 'koniec')`. Narzędzie to zwróci `id_kroku`.
+   - Gdy użytkownik wymienia chęć zakupu składników na danie (np. musaka, souvlaki, śniadanie) – rozbij to na konkretne produkty i wywołaj `dodaj_wiele_produktow_zakupow(id_wycieczki, produkty=[...], id_kroku=...)`.
+   - KRYTYCZNE: Jeśli użytkownik prosi o sklep ORAZ zakupy, wstaw produkty bezpośrednio do nowo utworzonego sklepu, przekazując otrzymany `id_kroku`! Nigdy nie wrzucaj ich na całą wycieczkę i nie zastępuj tego samą notatką!
+2. NIGDY nie twierdz w tekście, że coś dodałeś, zmieniłeś lub zapisałeś, dopóki narzędzie nie zwróci success=True.
+3. Jeśli narzędzie zwróci błąd lub odmowę (np. strażnik sjesty 11:30–15:30), poinformuj użytkownika wprost o odrzuceniu operacji i podaj powód.
+4. Zawsze przekazuj właściwe id_wycieczki (obecnie: "{akt_wyc_id}").
 
 ZASADA OSOBOWEGO I DIREKTYWNEGO TONU:
 Zwracaj się do użytkownika po imieniu w sposób bardzo personalny, dopasowany do jakości jego pomysłu:
@@ -1539,86 +1692,143 @@ Zwracaj się do użytkownika po imieniu w sposób bardzo personalny, dopasowany 
 - Gdy propozycja rodzica jest bardzo zła / katastrofalna dla dzieci z AuDHD (np. pełne słońce w upale 11:30-15:30, głód >4h, brak cienia): reaguj kategorycznie i ostrzegawczo (np. "To bardzo zły pomysł, {uzytkownik}").
 
 ZASADA NACZELNA (STRAŻNIK AuDHD & TAKTYKA POSIŁKÓW):
-Zanim wykonasz JAKIEKOLWIEK działania na bazie danych (narzędzia CRUD), ZAWSZE sprawdź:
 1. Upał i słońce w oknie 11:30–15:30 – zakaz planowania odsłoniętych ruin i miejsc bez cienia w tych godzinach!
 2. Luki żywieniowe (Zasada 4H) – maksymalny odstęp wyłącznie między posiłkami głównymi (śniadanie, obiad, kolacja) nie może przekraczać 4.0 godzin. Przekąski w tle nie resetują tego limitu.
 3. Taktyka obiadów domowych:
    - Domyślnie preferuj powrót na obiad do naszej bazy (domek w Stavros), by zapewnić wyciszenie sensoryczne i bezpieczne posiłki (safe foods).
-   - W przypadku dłuższego okna zwiedzania lub braku możliwości szybkiego powrotu – zaplanuj przygotowanie domowych kanapek / prowiantu na wynos w torbie termicznej.
-   - Gdy decydujesz się na taktykę kanapek na wynos lub obiad w trasie, AUTOMATYCZNIE wywołaj funkcję `dodaj_notatke`, zapisując taktykę prowiantu w notatkach bieżącej wycieczki.
-4. Bufor poranny – minimalny czas w domku rano.
-Jeśli którekolwiek z wymagań jest niespełnione, ODMÓW wykonania polecenia, wyjaśnij ryzyko fizjologiczne/sensoryczne dla dzieci i zaproponuj lepszą, bezpieczną alternatywę."""
+   - W przypadku dłuższego okna zwiedzania lub braku możliwości szybkiego powrotu – zaplanuj przygotowanie domowych kanapek / prowiantu na wynos w torbie termicznej."""
 
                     try:
                         with st.status("🧭 Analizuję bezpieczeństwo i trasę AuDHD...", expanded=False) as status:
                             if wybrany_dostawca == "Google Gemini":
                                 client = genai.Client(api_key=api_key_input)
-                                contents = [
-                                    types.Content(
-                                        role="model" if m["role"] in ["assistant", "model"] else "user",
-                                        parts=[types.Part.from_text(text=m["content"])]
-                                    )
-                                    for m in chat_historia_z_db[-4:]
-                                ]
+                                
+                                contents = []
+                                for m in chat_historia_z_db[-4:]:
+                                    role = "model" if m["role"] in ["assistant", "model"] else "user"
+                                    contents.append(types.Content(role=role, parts=[types.Part.from_text(text=m["content"])]))
+                                
                                 contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
-                                executed_actions = []
-
+                                
                                 config = types.GenerateContentConfig(
                                     tools=cretai_tools,
                                     system_instruction=system_prompt,
-                                    temperature=0.1,
+                                    temperature=0.0,
                                     max_output_tokens=1024
                                 )
 
-                                for loop_idx in range(3):
-                                    try:
-                                        response = client.models.generate_content(
-                                            model=wybrany_model,
-                                            contents=contents,
-                                            config=config
-                                        )
-                                    except Exception as api_err:
-                                        if "429" in str(api_err):
-                                            py_time.sleep(2.0)
+                                words_declaring_action = ["dodałem", "dodałam", "zapisałem", "zapisałam", "utworzyłem", "utworzono", "stworzyłem", "zaktualizowałem", "dodać krok", "dodano krok", "dodałem sklep", "dodałem market", "dodałam produkty"]
+                                MAX_RETRIES = 2
+
+                                stan_przed = pobierz_migawke_bazy(akt_wyc_id)
+
+                                for proba in range(MAX_RETRIES + 1):
+                                    executed_actions = []
+                                    assistant_reply = ""
+
+                                    for loop_idx in range(5):
+                                        try:
                                             response = client.models.generate_content(
                                                 model=wybrany_model,
                                                 contents=contents,
                                                 config=config
                                             )
+                                        except Exception as api_err:
+                                            if "429" in str(api_err):
+                                                py_time.sleep(2.0)
+                                                response = client.models.generate_content(
+                                                    model=wybrany_model,
+                                                    contents=contents,
+                                                    config=config
+                                                )
+                                            else:
+                                                raise api_err
+
+                                        candidate = response.candidates[0] if response and response.candidates else None
+                                        calls = []
+                                        if hasattr(response, 'function_calls') and response.function_calls:
+                                            calls = response.function_calls
+                                        elif candidate and candidate.content and candidate.content.parts:
+                                            for p_part in candidate.content.parts:
+                                                if hasattr(p_part, 'function_call') and p_part.function_call:
+                                                    calls.append(p_part.function_call)
+
+                                        if calls:
+                                            if candidate and candidate.content:
+                                                contents.append(candidate.content)
+                                            
+                                            function_responses_parts = []
+                                            for call in calls:
+                                                call_name, args = call.name, call.args or {}
+                                                wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
+                                                executed_actions.append(f"{call_name}: {wynik_bazy.get('message', wynik_bazy) if isinstance(wynik_bazy, dict) else str(wynik_bazy)}")
+                                                function_responses_parts.append(
+                                                    types.Part.from_function_response(
+                                                        name=call_name, 
+                                                        response={"result": json.dumps(wynik_bazy, ensure_ascii=False) if isinstance(wynik_bazy, dict) else str(wynik_bazy)}
+                                                    )
+                                                )
+                                            contents.append(types.Content(role="user", parts=function_responses_parts))
+                                            py_time.sleep(0.3)
                                         else:
-                                            raise api_err
+                                            if candidate and candidate.content and candidate.content.parts:
+                                                assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
+                                            elif hasattr(response, 'text') and response.text:
+                                                assistant_reply = response.text
+                                            break
 
-                                    candidate = response.candidates[0] if response and response.candidates else None
-                                    calls = []
-                                    if hasattr(response, 'function_calls') and response.function_calls:
-                                        calls = response.function_calls
-                                    elif candidate and candidate.content and candidate.content.parts:
-                                        for p_part in candidate.content.parts:
-                                            if hasattr(p_part, 'function_call') and p_part.function_call:
-                                                calls.append(p_part.function_call)
+                                    stan_po = pobierz_migawke_bazy(akt_wyc_id)
+                                    faktyczne_zmiany = weryfikuj_zmiany_w_bazie(stan_przed, stan_po)
+                                    model_twierdzi_ze_dodal = any(w in assistant_reply.lower() for w in words_declaring_action)
+                                    
+                                    # Sprawdzenie intencji
+                                    prompt_low = prompt.lower()
+                                    oczekiwal_sklepu = any(w in prompt_low for w in ["sklep", "market", "rynek", "targ"])
+                                    oczekiwal_zakupow = any(w in prompt_low for w in ["kup", "kupi", "składnik", "skladnik", "produkt", "musak"])
+                                    
+                                    nowe_kroki_ids = set(stan_po["kroki"].keys()) - set(stan_przed["kroki"].keys())
+                                    nowe_zakupy_ids = set(stan_po["zakupy"].keys()) - set(stan_przed["zakupy"].keys())
+                                    
+                                    przybyly_kroki = len(nowe_kroki_ids) > 0
+                                    przybyly_zakupy = len(nowe_zakupy_ids) > 0
 
-                                    if calls:
-                                        if candidate and candidate.content:
-                                            contents.append(candidate.content)
+                                    brak_wymaganych_akcji = (
+                                        (model_twierdzi_ze_dodal and not faktyczne_zmiany) or
+                                        (oczekiwal_sklepu and not przybyly_kroki) or
+                                        (oczekiwal_zakupow and not przybyly_zakupy)
+                                    )
+
+                                    if brak_wymaganych_akcji and proba < MAX_RETRIES:
+                                        status.update(label=f"🔄 Wykryto brak pełnego zapisu w bazie. Ponawiam próbę ({proba + 1}/{MAX_RETRIES})...", state="running")
+                                        contents.append(types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)]))
                                         
-                                        function_responses_parts = []
-                                        for call in calls:
-                                            call_name, args = call.name, call.args
-                                            wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
-                                            executed_actions.append(wynik_bazy)
-                                            function_responses_parts.append(
-                                                types.Part.from_function_response(name=call_name, response={"result": str(wynik_bazy)})
-                                            )
-                                        contents.append(types.Content(role="user", parts=function_responses_parts))
-                                        py_time.sleep(0.5)
-                                    else:
-                                        if candidate and candidate.content and candidate.content.parts:
-                                            assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
-                                        elif hasattr(response, 'text') and response.text:
-                                            assistant_reply = response.text
-                                        break
-                                
-                                if not assistant_reply.strip() and executed_actions:
+                                        braki_opis = []
+                                        if oczekiwal_sklepu and not przybyly_kroki:
+                                            braki_opis.append("Nie wywołałeś `dodaj_sklep_przy_domku(id_wycieczki, pozycja='koniec')`")
+                                        if oczekiwal_zakupow and not przybyly_zakupy:
+                                            braki_opis.append("Nie wywołałeś `dodaj_wiele_produktow_zakupow` dla składników")
+                                            
+                                        feedback_prompt = (
+                                            f"SYSTEM AUDIT ERROR: Operacja niekompletna! "
+                                            f"{'; '.join(braki_opis)}. "
+                                            f"Wywołaj teraz brakujące narzędzia. Jeśli dodałeś sklep, przypisz produkty do ID tego sklepu!"
+                                        )
+                                        contents.append(types.Content(role="user", parts=[types.Part.from_text(text=feedback_prompt)]))
+                                        continue
+                                    break
+
+                                # Podsumowanie audytu
+                                if faktyczne_zmiany:
+                                    if not assistant_reply.strip():
+                                        assistant_reply = f"✅ **Zrealizowano plan dla Ciebie, {uzytkownik}.**"
+                                    assistant_reply += "\n\n**🔍 Potwierdzono fizyczny zapis w bazie SQLite:**\n" + "\n".join([f"- {z}" for z in faktyczne_zmiany])
+                                elif model_twierdzi_ze_dodal and not faktyczne_zmiany:
+                                    assistant_reply = (
+                                        f"⚠️ **Uwaga ({uzytkownik}):** Model zadeklarował wykonanie akcji, "
+                                        f"ale **weryfikacja bazy SQLite wykazała brak nowych rekordów**. "
+                                        f"Upewnij się, że nazwa miejsca istnieje w bazie lub powtórz polecenie wprost."
+                                    )
+                                elif not assistant_reply.strip() and executed_actions:
                                     assistant_reply = f"✅ **Zaktualizowano plan w bazie dla Ciebie, {uzytkownik}:**\n* " + "\n* ".join(executed_actions)
 
                             else:
@@ -1891,15 +2101,26 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 dzien_nazwa = rynek_info_krok["dzien_pl"] if rynek_info_krok else dzien_tyg_val.capitalize()
                 opis_kroku_cust = f"<span style='color:#8C5338; font-weight:700;'>{dzien_nazwa} (max 14:00)</span>"
 
-            timeline_full_html.append(render_timeline_row_simple(
-                time_start=godzina_start,
-                badge_icon=badge_symbol,
-                badge_class="badge-pobudka",
-                title=tytul_kroku_display,
-                desc=opis_kroku_cust,
-                nav_btn_html=nav_btn_html,
-                time_end=f"do {godzina_koniec}" if (godzina_koniec and godzina_koniec != godzina_start) else ""
-            ))
+            details_inner_html = f'###SHOPPING_LIST_PLACEHOLDER_{krok_row_id}###'
+            expander_html = (
+                f'<div class="timeline-step-row-wrapper">'
+                f'<details class="timeline-step-expander">'
+                f'<summary>'
+                f'<div class="timeline-row-inner">'
+                f'<div class="timeline-time"><span class="timeline-time-start">{godzina_start}</span><span class="timeline-time-end">do {godzina_koniec}</span></div>'
+                f'<div class="timeline-center-col"><div class="timeline-icon-badge-static badge-pobudka">{badge_symbol}</div></div>'
+                f'<div class="timeline-content-col">'
+                f'<div class="timeline-item-title">{tytul_kroku_display}</div>'
+                f'<div class="timeline-item-desc">{opis_kroku_cust}</div>'
+                f'</div>'
+                f'{nav_btn_html}'
+                f'</div>'
+                f'</summary>'
+                f'<div class="timeline-expander-body">{details_inner_html}</div>'
+                f'</details>'
+                f'</div>'
+            )
+            timeline_full_html.append(expander_html)
 
         else:
             badge_class = "badge-obiad" if "🍴" in str(badge_symbol) else "badge-miejsce"
