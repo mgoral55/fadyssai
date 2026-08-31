@@ -373,34 +373,6 @@ div.st-key-btn_date_picker {
     color: #8C5338;
 }
 
-/* Zagnieżdżone podkarty w sekcji zadań */
-.nested-task-card {
-    background-color: #FAF8F2;
-    border: 1.2px solid #E2DEC8;
-    border-radius: 18px;
-    padding: 10px 14px;
-    margin-top: 8px;
-    margin-bottom: 8px;
-}
-.nested-task-card summary {
-    font-size: 9.5pt;
-    font-weight: 800;
-    color: #2B2118;
-    cursor: pointer;
-    list-style: none;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-.nested-task-card summary::-webkit-details-marker {
-    display: none;
-}
-.nested-task-card summary::after {
-    content: "▼";
-    font-size: 7.5pt;
-    color: #8C5338;
-}
-
 /* OŚ CZASU */
 .timeline-master-container {
     position: relative;
@@ -1618,7 +1590,9 @@ def sparsuj_liste_zadan(surowy_tekst):
     s = str(surowy_tekst).strip()
     if not s or s.lower() in ['nan', 'none', 'brak']:
         return []
-    linie = re.split(r'[\r\n;]+', s)
+    
+    # Rozdzielenie zarówno po znakach nowej linii, średnikach, jak i ponumerowanych punktach (np. "1. ", "2. ", "3. ")
+    linie = re.split(r'(?:[\r\n;]+|(?:\s*\d+[\.\)]\s+))', s)
     wynik = []
     for l in linie:
         czysta = l.strip()
@@ -2196,7 +2170,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
     else:
         powrot_val = w_gen.get('szacowana_godzina_powrotu', '17:33')
 
-    # Poprawka 1: zmiana nagłówka na samą "Logistykę"
     st.markdown('<div class="section-unified-header">🧭 Logistyka</div>', unsafe_allow_html=True)
     
     col_log1, col_log2, col_log3 = st.columns(3)
@@ -2488,7 +2461,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
             st_folium(m_trasa, width=None, height=260, returned_objects=[], key=f"map_route_{wycieczka_id}")
 
-    # Poprawka 1: Sekcja Zadań ostylowana spójnie z Taktyką, z zagnieżdżonymi pod-sekcjami wewnątrz
+    # Sekcja Zadań ostylowana spójnie z Taktyką, z zagnieżdżonymi pod-sekcjami wewnątrz
     st.markdown('<div class="section-unified-header">🎯 Zadania dla dzieci</div>', unsafe_allow_html=True)
     grupy_zadan = pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df)
     
@@ -2800,15 +2773,18 @@ elif st.session_state.active_tab == "zabytek":
 
             zadania_miejsca = sparsuj_liste_zadan(p.get('zadania_dla_dzieci', ''))
             if zadania_miejsca:
-                zadania_html_list = "".join([f"<div style='font-size: 9.5pt; color: #2B2118; margin-bottom: 6px;'>• {z}</div>" for z in zadania_miejsca])
-                st.markdown(f"""
-                <details class="overview-details-card">
-                    <summary><b>🎯 Zadania dla dzieci</b></summary>
-                    <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
-                        {zadania_html_list}
-                    </div>
-                </details>
-                """, unsafe_allow_html=True)
+                with st.expander("🎯 Zadania dla dzieci", expanded=False):
+                    for idx, zad in enumerate(zadania_miejsca):
+                        klucz = f"place_{docelowy_nr}_task_{idx}"
+                        stan = pobierz_status_zadania(klucz)
+                        nowy_stan = st.checkbox(
+                            zad,
+                            value=stan,
+                            key=f"cb_{klucz}"
+                        )
+                        if nowy_stan != stan:
+                            zapisz_status_zadania(klucz, nowy_stan)
+                            st.rerun()
 
             if coords_p and ',' in coords_p:
                 st.markdown(f"""
