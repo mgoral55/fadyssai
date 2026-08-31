@@ -951,7 +951,7 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
         nazwa_lower = str(k[4]).lower()
         
         if "sklep" in nazwa_lower or "market" in nazwa_lower or "zakup" in nazwa_lower or "apteka" in nazwa_lower:
-            domyslny_czas = 25
+            domyslny_czas = 20
         elif "plaż" in nazwa_lower or "beach" in nazwa_lower:
             domyslny_czas = 90
         elif is_f or is_l:
@@ -1322,7 +1322,7 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, c
 def dodaj_krok_wycieczki(id_wycieczki, krok_wycieczki=None, nazwa="", wspolrzedne=None, 
                          okienko_zwiedzania="10:00 - 10:30", godzina_ewakuacji="Brak", 
                          czerwona_strefa_ostrzezenie="Brak", strefa_luzu_i_regeneracji="Spokojna strefa", 
-                         podsumowanie_taktyki="Brak", opis="Brak"):
+                         podsumowanie_taktyki="Brak", opis=""):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
@@ -1348,6 +1348,39 @@ def dodaj_krok_wycieczki(id_wycieczki, krok_wycieczki=None, nazwa="", wspolrzedn
     
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
     return f"Dodano krok '{nazwa}' do wycieczki #{id_wycieczki} i automatycznie przeliczono cały łańcuch godzin."
+
+def dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki, pozycja="koniec"):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
+        istniejace = cursor.fetchall()
+        
+        if pozycja == "start":
+            nazwa = "Sklep przy domku (Rano)"
+            if len(istniejace) > 1:
+                for row in istniejace[1:]:
+                    stary_krok = int(row[1])
+                    cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(stary_krok + 1), row[0]))
+                target_krok_num = "1"
+            else:
+                target_krok_num = "1"
+        else:
+            nazwa = "Sklep przy domku (Powrót)"
+            if istniejace and ("domek" in istniejace[-1][2].lower() or "powrót" in istniejace[-1][2].lower()):
+                ostatni_id = istniejace[-1][0]
+                target_krok_num = str(len(istniejace) - 1)
+                cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(len(istniejace)), ostatni_id))
+            else:
+                target_krok_num = str(len(istniejace))
+
+        cursor.execute('''
+            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, opis)
+            VALUES (?, ?, ?, ?, '07:00 - 07:20', 'Brak', 'Brak', 'Klimatyzowany sklep, szybkie zakupy', 'Szybkie zakupy bez zwłoki', '')
+        ''', (str(id_wycieczki), target_krok_num, nazwa, f"{SKLEP_LAT}, {SKLEP_LON}"))
+        conn.commit()
+
+    przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
+    return f"Dodano '{nazwa}' i przeliczono harmonogram."
 
 def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa=None, wspolrzedne=None, okienko_zwiedzania=None, 
                           godzina_ewakuacji=None, czerwona_strefa_ostrzezenie=None, strefa_luzu_i_regeneracji=None, 
@@ -2639,12 +2672,48 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
     st.markdown(full_timeline_string, unsafe_allow_html=True)
 
-    # Centralna sekcja i rozwijana karta: Zakupy Dnia
-    st.markdown('<div class="section-unified-header">🛒 Zakupy Dnia</div>', unsafe_allow_html=True)
+    # Centralna sekcja i rozwijana karta: Zaopatrzenie
+    st.markdown('<div class="section-unified-header">🛒 Zaopatrzenie</div>', unsafe_allow_html=True)
     df_wszystkie_zakupy = pobierz_zakupy_dla_wycieczki(wycieczka_id)
 
-    with st.expander("🛒 Lista zakupów", expanded=False):
-        # 1. Formularz szybkiego dodawania pozycji (całkowity brak Domku w opcjach)
+    with st.expander("🛒 Zaopatrzenie", expanded=False):
+        # --- ZMODERNIZOWANY MODUŁ: SZYBKIE PRZYSTANKI NA TRASIE ---
+        st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 6px;'>⚡ Szybkie przystanki na trasie</div>", unsafe_allow_html=True)
+        
+        has_shop_start = any("sklep" in str(r['nazwa']).lower() and ("start" in str(r['nazwa']).lower() or "rano" in str(r['nazwa']).lower() or int(r['krok_wycieczki']) == 1) for _, r in kroki_df.iterrows())
+        has_shop_end = any("sklep" in str(r['nazwa']).lower() and ("powrót" in str(r['nazwa']).lower() or "koniec" in str(r['nazwa']).lower() or int(r['krok_wycieczki']) == max(len(kroki_df)-2, 1)) for _, r in kroki_df.iterrows())
+
+        col_qs_am, col_qs_pm = st.columns(2)
+        
+        with col_qs_am:
+            st.markdown("<div style='font-size: 8pt; font-weight: 800; color: #5D7A60; text-transform: uppercase; margin-bottom: 4px;'>🌅 Po wyjeździe</div>", unsafe_allow_html=True)
+            if not has_shop_start:
+                if st.button("🛒 Sklep rano", key=f"btn_add_shop_am_{wycieczka_id}", use_container_width=True):
+                    dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="start")
+                    st.session_state["flash_toast"] = "🌅 Dodano Sklep po wyjeździe!"
+                    st.rerun()
+            else:
+                st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #5D7A60; padding: 6px 0;'>✓ Sklep zaplanowany</div>", unsafe_allow_html=True)
+            
+            # Przycisk Rynku w Chanii (Placeholder UX na przyszłość)
+            st.button("🏛️ Rynek w Chanii", key=f"btn_add_market_am_{wycieczka_id}", use_container_width=True, disabled=True, help="Opcja pojawi się wkrótce!")
+
+        with col_qs_pm:
+            st.markdown("<div style='font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;'>🌇 Przed powrotem</div>", unsafe_allow_html=True)
+            if not has_shop_end:
+                if st.button("🛒 Sklep powrót", key=f"btn_add_shop_pm_{wycieczka_id}", use_container_width=True):
+                    dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="koniec")
+                    st.session_state["flash_toast"] = "🌇 Dodano Sklep przed powrotem!"
+                    st.rerun()
+            else:
+                st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #8C5338; padding: 6px 0;'>✓ Sklep zaplanowany</div>", unsafe_allow_html=True)
+            
+            # Przycisk Rynku w Chanii (Placeholder UX na przyszłość)
+            st.button("🏛️ Rynek w Chanii", key=f"btn_add_market_pm_{wycieczka_id}", use_container_width=True, disabled=True, help="Opcja pojawi się wkrótce!")
+
+        st.markdown("<div style='border-top: 1px solid #D6CEBC; margin: 12px 0 10px 0;'></div>", unsafe_allow_html=True)
+
+        # 1. Formularz szybkiego dodawania pozycji do checklisty zakupowej
         with st.form(key=f"form_add_shopping_item_{wycieczka_id}", clear_on_submit=True):
             st.markdown("<div style='font-size: 9.5pt; font-weight: 800; color: #8C5338; margin-bottom: 4px;'>➕ Dodaj nową pozycję do listy</div>", unsafe_allow_html=True)
             col_nazwa, col_ilosc = st.columns([2, 1])
@@ -2718,7 +2787,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                             zmien_status_zakupu(z_id, nowy_status)
                             st.rerun()
 
-    # --- SEKCJA NOTATKI (PRZENIESIONA NAD ZADANIA DLA DZIECI) ---
+    # --- SEKCJA NOTATKI ---
     renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
 
     # --- SEKCJA ZADANIA DLA DZIECI ---
