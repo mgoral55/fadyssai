@@ -66,10 +66,10 @@ h1, h2, h3, h4, h5 {
     font-weight: 800;
 }
 
-/* INPUTY I COMBOBOXY */
+/* INPUTY, COMBOBOXY I WIDGETY BASEWEB */
 input, textarea, .stChatInput textarea {
     background-color: #FAF8F2 !important;
-    color: #2F241D !important;
+    color: #2B2118 !important;
     border: 1.5px solid #D6D2C4 !important;
     border-radius: 16px !important;
 }
@@ -77,11 +77,36 @@ input, textarea, .stChatInput textarea {
     color: #8C827A !important;
 }
 
-div[data-baseweb="select"] > div {
+/* STYLIZACJA SELEKTORÓW, TIMEPICKERÓW I BASEWEB */
+div[data-baseweb="select"],
+div[data-baseweb="select"] > div,
+div[data-baseweb="select"] * {
     background-color: #FAF8F2 !important;
-    border-color: #D6D2C4 !important;
+    color: #2B2118 !important;
+    fill: #2B2118 !important;
+}
+div[data-baseweb="select"] > div {
+    border: 1.5px solid #D6D2C4 !important;
     border-radius: 16px !important;
-    color: #2F241D !important;
+}
+div[data-baseweb="popover"],
+div[data-baseweb="popover"] > div,
+ul[role="listbox"],
+li[role="option"] {
+    background-color: #FAF8F2 !important;
+    color: #2B2118 !important;
+}
+li[role="option"]:hover,
+li[aria-selected="true"] {
+    background-color: #EFE8D1 !important;
+    color: #8C5338 !important;
+}
+div[data-baseweb="input"],
+div[data-baseweb="input"] > div,
+div[data-baseweb="input"] input {
+    background-color: #FAF8F2 !important;
+    color: #2B2118 !important;
+    border-color: #D6D2C4 !important;
 }
 
 /* WYMUSZENIE POZIOMEGO UKŁADU KOLUMN STREAMLITA DLA LOGISTYKI */
@@ -96,7 +121,7 @@ div[data-testid="stHorizontalBlock"] > div {
     min-width: 0 !important;
 }
 
-/* JEDNOLITE TŁO #F6F0DD DRAŻNIĄCYCH BIAŁYCH ELEMENTÓW */
+/* PRZYCISK DATY */
 div.st-key-btn_date_picker button {
     background-color: #F6F0DD !important;
     color: #2B2118 !important;
@@ -114,10 +139,15 @@ div.st-key-btn_date_picker button:hover {
     background-color: #EFE8D1 !important;
 }
 
+/* PRZYCISKI POPOVER LOGISTYKI (POBUDKA, OGARNIANIE, POWRÓT) */
 div[data-testid="stPopover"] {
     width: 100% !important;
 }
-div[data-testid="stPopover"] > button {
+div[data-testid="stPopover"] > button,
+div[data-testid="stPopover"] > button:disabled,
+div[data-testid="stPopover"] > button[aria-expanded],
+div[data-testid="stPopover"] > button:focus,
+div[data-testid="stPopover"] > button:active {
     background-color: #F6F0DD !important;
     color: #2B2118 !important;
     border: 1.5px solid #E2DEC8 !important;
@@ -129,6 +159,11 @@ div[data-testid="stPopover"] > button {
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
+}
+div[data-testid="stPopover"] > button * {
+    color: #2B2118 !important;
+    font-weight: 900 !important;
+    font-size: 1.15rem !important;
 }
 div[data-testid="stPopover"] > button:hover {
     border-color: #8C5338 !important;
@@ -338,9 +373,35 @@ div.st-key-btn_date_picker {
     color: #8C5338;
 }
 
-/* =========================================================
-   PANCERNA, W 100% CIĄGŁA I PROSTA OŚ CZASU (SZARA LINIA)
-   ========================================================= */
+/* Zagnieżdżone podkarty w sekcji zadań */
+.nested-task-card {
+    background-color: #FAF8F2;
+    border: 1.2px solid #E2DEC8;
+    border-radius: 18px;
+    padding: 10px 14px;
+    margin-top: 8px;
+    margin-bottom: 8px;
+}
+.nested-task-card summary {
+    font-size: 9.5pt;
+    font-weight: 800;
+    color: #2B2118;
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.nested-task-card summary::-webkit-details-marker {
+    display: none;
+}
+.nested-task-card summary::after {
+    content: "▼";
+    font-size: 7.5pt;
+    color: #8C5338;
+}
+
+/* OŚ CZASU */
 .timeline-master-container {
     position: relative;
     display: flex;
@@ -2135,7 +2196,8 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
     else:
         powrot_val = w_gen.get('szacowana_godzina_powrotu', '17:33')
 
-    st.markdown('<div class="section-unified-header">🧭 Logistyka i taktyka</div>', unsafe_allow_html=True)
+    # Poprawka 1: zmiana nagłówka na samą "Logistykę"
+    st.markdown('<div class="section-unified-header">🧭 Logistyka</div>', unsafe_allow_html=True)
     
     col_log1, col_log2, col_log3 = st.columns(3)
     
@@ -2167,16 +2229,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 przelicz_i_zsynchronizuj_wycieczke(str(wycieczka_id), force_powrot_str=t_pow.strftime("%H:%M"))
                 st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę powrotu!"
                 st.rerun()
-
-    if pd.notna(w_gen.get('calosciowa_taktyka_dnia')) and str(w_gen['calosciowa_taktyka_dnia']).strip():
-        st.markdown(f"""
-        <details class="overview-details-card" style="margin-top: 6px;">
-            <summary>🧠 Taktyka dnia</summary>
-            <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
-                <div class="section-body-text" style="margin-bottom: 0;">{w_gen['calosciowa_taktyka_dnia']}</div>
-            </div>
-        </details>
-        """, unsafe_allow_html=True)
 
     st.markdown('<div class="section-unified-header">🗺️ Plan na dzień</div>', unsafe_allow_html=True)
 
@@ -2374,6 +2426,17 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
     
     st.markdown("".join(timeline_full_html), unsafe_allow_html=True)
 
+    if pd.notna(w_gen.get('calosciowa_taktyka_dnia')) and str(w_gen['calosciowa_taktyka_dnia']).strip():
+        st.markdown('<div class="section-unified-header">🧠 Taktyka</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <details class="overview-details-card" style="margin-top: 6px;">
+            <summary>🧠 Taktyka dnia</summary>
+            <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
+                <div class="section-body-text" style="margin-bottom: 0;">{w_gen['calosciowa_taktyka_dnia']}</div>
+            </div>
+        </details>
+        """, unsafe_allow_html=True)
+
     for idx, (_, k) in enumerate(kroki_df.iterrows()):
         krok_row_id = int(k['id'])
         nazwa = str(k['nazwa'])
@@ -2425,10 +2488,11 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
             st_folium(m_trasa, width=None, height=260, returned_objects=[], key=f"map_route_{wycieczka_id}")
 
+    # Poprawka 1: Sekcja Zadań ostylowana spójnie z Taktyką, z zagnieżdżonymi pod-sekcjami wewnątrz
     st.markdown('<div class="section-unified-header">🎯 Zadania dla dzieci</div>', unsafe_allow_html=True)
     grupy_zadan = pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df)
     
-    with st.expander("Rozwiń listę zadań dla dzieci", expanded=False):
+    with st.expander("🎯 Zadania", expanded=False):
         if grupy_zadan:
             for tytul_grupy, lista_zadan, prefix in grupy_zadan:
                 if not lista_zadan:
