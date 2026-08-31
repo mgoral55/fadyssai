@@ -414,6 +414,13 @@ def pobierz_wszystkie_miejsca():
     with get_db() as conn:
         return pd.read_sql('SELECT * FROM miejsca', conn)
 
+def pobierz_aktywna_wycieczke_id():
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT aktualne_id_wycieczki FROM aktywna_wycieczka WHERE id = 1')
+        res = cursor.fetchone()
+    return str(res[0]) if res else "1"
+
 def szukaj_miejsca_w_bazie(nazwa_zapytania):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -558,7 +565,7 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
         for i in range(len(kroki)):
             s_str, e_str = start_times[i].strftime("%H:%M"), end_times[i].strftime("%H:%M")
             cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (f"{s_str} - {e_str}", kroki[i][0]))
-            cursor.execute('UPDATE posilki_kroku SET sugerowana_godzina = ? WHERE id = ?', (s_str, kroki[i][0]))
+            cursor.execute('UPDATE posilki_kroku SET sugerowana_godzina = ? WHERE id_kroku = ?', (s_str, kroki[i][0]))
             if i < len(kroki) - 1:
                 cursor.execute('''
                     INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
@@ -1220,8 +1227,23 @@ def zapisz_ustawienia_w_db(uzytkownik, api_key, dostawca_ai, model_ai):
 
 with st.sidebar:
     st.markdown("### 👤 Profil Użytkownika")
-    dostepni_uzytkownicy = ["Rodzic 1", "Rodzic 2", "Rodzic 3", "Rodzic 4"]
-    aktualny_uzytkownik = st.selectbox("Wybierz swój profil", options=dostepni_uzytkownicy, index=0)
+    dostepni_uzytkownicy = ["Magda", "Michał", "Jurek", "Julia"]
+    
+    # Zapamiętywanie profilu w adresie URL telefonu
+    domyslny_user = "Magda"
+    if "user" in st.query_params and st.query_params["user"] in dostepni_uzytkownicy:
+        domyslny_user = st.query_params["user"]
+    elif "last_selected_user" in st.session_state and st.session_state["last_selected_user"] in dostepni_uzytkownicy:
+        domyslny_user = st.session_state["last_selected_user"]
+
+    index_profilu = dostepni_uzytkownicy.index(domyslny_user)
+    
+    aktualny_uzytkownik = st.selectbox("Wybierz swój profil", options=dostepni_uzytkownicy, index=index_profilu, key="sb_user_profile")
+    
+    if st.query_params.get("user") != aktualny_uzytkownik:
+        st.query_params["user"] = aktualny_uzytkownik
+        st.session_state["last_selected_user"] = aktualny_uzytkownik
+
     st.markdown("---")
     
     st.header("⚙️ Ustawienia Asystenta")
@@ -1319,13 +1341,6 @@ def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
                 st.session_state["flash_toast"] = "💾 Dodano notatkę!"
                 st.rerun()
 
-def pobierz_aktywna_wycieczke_id():
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT aktualne_id_wycieczki FROM aktywna_wycieczka WHERE id = 1')
-        res = cursor.fetchone()
-    return str(res[0]) if res else "1"
-
 def pobierz_skrocone_opcje_wycieczek(pokaz_ukonczone=False):
     with get_db() as conn:
         query = 'SELECT id, tytul_wycieczki, odbyta FROM wycieczka'
@@ -1382,7 +1397,7 @@ def dodaj_marker_domku(m):
     domek_icon_html = '<div style="background-color:#2E251E;color:#FFFFFF;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.2);">🏠</div>'
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=folium.DivIcon(html=domek_icon_html, icon_size=(28, 28), icon_anchor=(14, 14)), tooltip="Nasz Domek").add_to(m)
 
-# --- BEZPIECZNY LOKALNY PARSER INTENTÓW (Tylko zakupy, reszta przez LLM ze strażnikiem) ---
+# --- BEZPIECZNY LOKALNY PARSER INTENTÓW ---
 def sprobuj_wykonac_komende_lokalnie(prompt, id_wycieczki):
     p = prompt.strip().lower()
     m_zakup = re.search(r'^(?:kup|kupić|dodaj do zakup[oó]w|dopisz)\s+([^,]+)', p)
@@ -1412,12 +1427,11 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"] if isinstance(message["content"], str) else "")
 
-        prompt = st.chat_input("Napisz np. 'wyjazd o 7:30', 'kup woda'...", key=f"chat_input_{uzytkownik}_{'inline' if inline else 'float'}")
+        prompt = st.chat_input(f"Napisz np. 'wyjazd o 7:30', 'kup woda'...", key=f"chat_input_{uzytkownik}_{'inline' if inline else 'float'}")
         if prompt:
             zapisz_wiadomosc_w_db(uzytkownik, "user", prompt)
             akt_wyc_id = pobierz_aktywna_wycieczke_id()
 
-            # FAST-PATH: Bezpieczne zakupy
             odpowiedz_lokalna = sprobuj_wykonac_komende_lokalnie(prompt, akt_wyc_id)
 
             if odpowiedz_lokalna:
@@ -1425,7 +1439,6 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                 st.session_state["flash_toast"] = "⚡ Zaktualizowano listę zakupów!"
                 st.rerun()
 
-            # FALLBACK: Uruchomienie LLM
             if not api_key_input:
                 st.warning("⚠️ Wprowadź klucz API w menu bocznym, aby korzystać z zaawansowanego doradcy AI.")
                 if not inline:
@@ -1441,8 +1454,15 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                     zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny(akt_wyc_id)
                     
                     system_prompt = f"""Jesteś inteligentnym planerem i strażnikiem AuDHD/ADHD na Krecie (CretAi).
+Rozmawiasz z użytkownikiem, który ma na imię: {uzytkownik}.
 Dzisiejsza data: {dzisiaj_str}.
 {zewnetrzny_kontekst}
+
+ZASADA OSOBOWEGO I DIREKTYWNEGO TONU:
+Zwracaj się do użytkownika po imieniu w sposób bardzo personalny, dopasowany do jakości jego pomysłu:
+- Na powitanie lub w normalnych wiadomościach używaj jego imienia (np. "Witaj {uzytkownik}", "Cześć {uzytkownik}").
+- Gdy propozycja rodzica jest zła (narusza lekko zasady, np. zła pora, małe ryzyko): zwracaj się bezpośrednio (np. "To zły pomysł, {uzytkownik}").
+- Gdy propozycja rodzica jest bardzo zła / katastrofalna dla dzieci z AuDHD (np. pełne słońce w upale 11:30-15:30, głód >4h, brak cienia): reaguj kategorycznie i ostrzegawczo (np. "To bardzo zły pomysł, {uzytkownik}").
 
 ZASADA NACZELNA (STRAŻNIK AuDHD):
 Zanim wykonasz JAKIEKOLWIEK działania na bazie danych (narzędzia CRUD), ZAWSZE sprawdź:
@@ -1521,7 +1541,7 @@ Jeśli którekolwiek z wymagań jest niespełnione, ODMÓW wykonania polecenia, 
                                         break
                                 
                                 if not assistant_reply.strip() and executed_actions:
-                                    assistant_reply = "✅ **Zaktualizowano plan w bazie danych:**\n* " + "\n* ".join(executed_actions)
+                                    assistant_reply = f"✅ **Zaktualizowano plan w bazie dla Ciebie, {uzytkownik}:**\n* " + "\n* ".join(executed_actions)
 
                             else:
                                 client_c = anthropic.Anthropic(api_key=api_key_input)
@@ -1536,7 +1556,7 @@ Jeśli którekolwiek z wymagań jest niespełnione, ODMÓW wykonania polecenia, 
                             status.update(label="✅ Gotowe!", state="complete")
 
                         if not assistant_reply:
-                            assistant_reply = "✅ Zrealizowano."
+                            assistant_reply = f"✅ Zrealizowano, {uzytkownik}."
 
                         zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
                         st.markdown(assistant_reply)
