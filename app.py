@@ -271,7 +271,15 @@ def sformatuj_date_pl(data_str):
         dt = date.today()
     return dt, dt.day, MIESIACE_PL[dt.month - 1], DNI_TYGODNIA_PL[dt.weekday()]
 
-def wczytaj_pliki_regul(katalog="rule", max_chars_per_file=300):
+def wczytaj_pliki_regul(katalog="rule", plik_glowny="SYSTEM_RULES_KRETA_ADHD.md"):
+    """Wczytuje ujednolicony plik reguł lub zawartość folderu rule/."""
+    if os.path.exists(plik_glowny):
+        try:
+            with open(plik_glowny, 'r', encoding='utf-8') as f:
+                return f"\n--- SYSTEM RULES (GŁÓWNY PLIK REGUŁ) ---\n{f.read().strip()}\n"
+        except:
+            pass
+
     if not os.path.exists(katalog):
         return ""
     tresc, znaleziono = "\n--- REGUŁY ---\n", False
@@ -280,10 +288,7 @@ def wczytaj_pliki_regul(katalog="rule", max_chars_per_file=300):
         if os.path.isfile(sciezka) and plik.lower().endswith(('.txt', '.md', '.json', '.rule', '.csv')):
             try:
                 with open(sciezka, 'r', encoding='utf-8') as f:
-                    content = f.read().strip()
-                    if len(content) > max_chars_per_file:
-                        content = content[:max_chars_per_file] + "..."
-                    tresc += f"[{plik}]: {content}\n"
+                    tresc += f"[{plik}]:\n{f.read().strip()}\n\n"
                     znaleziono = True
             except:
                 pass
@@ -394,10 +399,7 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
             end_times[i] = start_times[i + 1] - timedelta(minutes=dojazdy_minuty[i])
             start_times[i] = end_times[i] - timedelta(minutes=czasy_pobytu[i])
 
-        # Wyznaczenie nowego czasu wyjazdu z domku (end_times[0]) na podstawie powrotu i pracy wstecz
         end_times[0] = start_times[1] - timedelta(minutes=dojazdy_minuty[0])
-        
-        # Przeliczenie czasu pobudki zachowując nienaruszony czas ogarniania rano (minuty_ogarniania)
         dt_pob = end_times[0] - timedelta(minutes=minuty_ogarniania)
         pobudka_z_bazy = dt_pob.strftime("%H:%M")
         start_times[0] = dt_pob
@@ -1225,7 +1227,7 @@ def pobierz_wycieczki_dla_miejsca(numer_miejsca, nazwa_miejsca):
 
 def wczytaj_kontekst_zewnetrzny(aktywne_id_wycieczki="1"):
     tekst = f"CretAi Assistant • Kreta\nBaza/Domek: {DOMEK_LAT}, {DOMEK_LON} | Sklep: {SKLEP_LAT}, {SKLEP_LON}\n"
-    tekst += wczytaj_pliki_regul("rule", max_chars_per_file=300)
+    tekst += wczytaj_pliki_regul()
     
     with get_db() as conn:
         try:
@@ -1343,9 +1345,11 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                     dzisiaj_str = date.today().strftime("%Y-%m-%d")
                     zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny(akt_wyc_id)
                     
-                    system_prompt = f"""Jesteś strażnikiem AuDHD na Kretę. Dziś: {dzisiaj_str}.
+                    system_prompt = f"""Jesteś inteligentnym planerem i strażnikiem AuDHD/ADHD na Krecie (CretAi).
+Dzisiejsza data: {dzisiaj_str}.
 {zewnetrzny_kontekst}
-ZASADY: Posiłki co max 3,5h, sjesta 11:30–15:30. Jeśli modyfikujesz bazę, użyj funkcji narzędzia."""
+
+ZASADA NACZELNA: Zawsze przestrzegaj powyższych reguł systemowych (CZĘŚĆ 1 i CZĘŚĆ 2). Jeśli modyfikujesz plan lub dane, użyj odpowiednich funkcji narzędziowych."""
 
                     try:
                         with st.status("🧭 Analizuję trasę...", expanded=False) as status:
@@ -1366,7 +1370,7 @@ ZASADY: Posiłki co max 3,5h, sjesta 11:30–15:30. Jeśli modyfikujesz bazę, u
                                             tools=cretai_tools,
                                             system_instruction=system_prompt,
                                             temperature=0.0,
-                                            max_output_tokens=220
+                                            max_output_tokens=350
                                         )
                                     )
                                     candidate = response.candidates[0] if response and response.candidates else None
@@ -1405,7 +1409,7 @@ ZASADY: Posiłki co max 3,5h, sjesta 11:30–15:30. Jeśli modyfikujesz bazę, u
                                 client_c = anthropic.Anthropic(api_key=api_key_input)
                                 resp = client_c.messages.create(
                                     model=wybrany_model,
-                                    max_tokens=220,
+                                    max_tokens=350,
                                     system=system_prompt,
                                     messages=[{"role": "user", "content": prompt}]
                                 )
