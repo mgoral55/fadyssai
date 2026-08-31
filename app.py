@@ -1591,7 +1591,6 @@ def sparsuj_liste_zadan(surowy_tekst):
     if not s or s.lower() in ['nan', 'none', 'brak']:
         return []
     
-    # Rozdzielenie zarówno po znakach nowej linii, średnikach, jak i ponumerowanych punktach (np. "1. ", "2. ", "3. ")
     linie = re.split(r'(?:[\r\n;]+|(?:\s*\d+[\.\)]\s+))', s)
     wynik = []
     for l in linie:
@@ -1847,11 +1846,6 @@ def pob_posilki_dla_kroku(id_kroku):
         df = pd.read_sql('SELECT * FROM posilki_kroku WHERE id_kroku = ?', conn, params=(str(id_kroku),))
     return df
 
-def pobierz_zakupy_dla_kroku(id_kroku):
-    with get_db() as conn:
-        df = pd.read_sql('SELECT * FROM zakupy WHERE id_kroku = ?', conn, params=(str(id_kroku),))
-    return df
-
 def pobierz_wszystkie_miejsca():
     with get_db() as conn:
         df = pd.read_sql('SELECT * FROM miejsca', conn)
@@ -1967,12 +1961,7 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
      - Plaże / Wypoczynek: 90-150 min.
      - Punkty widokowe / Zdjęcia: 20-30 min.
      - Sklepy / Markety: 20-25 min.
-  6. POJĘCIE 'godzina_ewakuacji': To wyłącznie krytyczna granica termiczna/sensoryczna (np. '11:30' przed upałem w ruinach). Dla sklepów, plaż czy punktów bez zagrożenia ZAWSZE podawaj 'Brak'.
-- ZASADA DOTYCZĄCA ZAKUPÓW I JEDZENIA:
-  1. Gdy użytkownik pisze 'dodaj zakupy w drodze powrotnej' lub prosi o zakupy przed powrotem do bazy, ZAWSZE dodaj nasz 'Sklep przy domku' (współrzędne: {SKLEP_LAT}, {SKLEP_LON}) jako krok trasy za pomocą `dodaj_krok_wycieczki(id_wycieczki='1', krok_wycieczki='sklep', nazwa='Sklep przy domku', wspolrzedne='{SKLEP_LAT}, {SKLEP_LON}')`, o ile takiego kroku jeszcze nie ma. NIGDY nie dodawaj kolejnego Domku jako krok sklepu!
-  2. Gdy użytkownik pisze np. 'dodaj zakupy na spaghetti carbonara' (lub jakiekolwiek inne danie/posiłek), o ile nie zaznaczy inaczej, ZAWSZE przeliczaj proporcje składników DOKŁADNIE NA 8 OSÓB (np. dla carbonary na 8 osób: makaron spaghetti 800g-1kg, guanciale/boczek 400g, jajka 10-12 sztuk, ser pecorino/parmezan 200g, pieprz czarny).
-  3. Dodaj poszczególne składniki BEZPOŚREDNIO do checklisty zakupowej tego kroku sklepu za pomocą wielokrotnego wywołania `dodaj_produkt_zakupow(id_kroku, nazwa_produktu, ilosc)`, podając ID z bazy tego kroku.
-  4. BEZWZGLĘDNY ZAKAZ dodawania produktów spożywczych/zakupów do ogólnych notatek lub do zadań dla dzieci! Mają trafić wyłącznie do tabeli zakupów w danym kroku sklepu."""
+  6. POJĘCIE 'godzina_ewakuacji': To wyłącznie krytyczna granica termiczna/sensoryczna (np. '11:30' przed upałem w ruinach). Dla sklepów, plaż czy punktów bez zagrożenia ZAWSZE podawaj 'Brak'."""
         
         chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
         chat_container = st.container(height=200)
@@ -2410,37 +2399,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         </details>
         """, unsafe_allow_html=True)
 
-    for idx, (_, k) in enumerate(kroki_df.iterrows()):
-        krok_row_id = int(k['id'])
-        nazwa = str(k['nazwa'])
-        if idx != 0 and idx != total_steps - 1:
-            df_zakupy = pobierz_zakupy_dla_kroku(krok_row_id)
-            if not df_zakupy.empty or "sklep" in nazwa.lower() or "zakup" in nazwa.lower():
-                with st.expander(f"🛒 Checklista zakupów: {nazwa}", expanded=not df_zakupy.empty):
-                    if df_zakupy.empty:
-                        st.markdown("<div style='font-size: 8.5pt; color: #8C827A; font-style: italic; margin-bottom: 8px;'>Brak zaplanowanych zakupów w tym punkcie.</div>", unsafe_allow_html=True)
-                    else:
-                        for _, z in df_zakupy.iterrows():
-                            z_id = z['id']
-                            z_nazwa = z['nazwa_produktu']
-                            z_ilosc = z['ilosc']
-                            z_kupione = bool(z['kupione'])
-                            ilosc_txt = f" ({z_ilosc})" if z_ilosc and str(z_ilosc) != "1" else ""
-                            
-                            chk_val = st.checkbox(f"{z_nazwa}{ilosc_txt}", value=z_kupione, key=f"chk_zakup_{z_id}")
-                            if chk_val != z_kupione:
-                                zmien_status_zakupu(z_id, chk_val)
-                                st.rerun()
-
-                    with st.form(key=f"form_inline_zakup_{krok_row_id}", clear_on_submit=True):
-                        p_nazwa = st.text_input("Nowy produkt", placeholder="np. Makaron, pomidory")
-                        p_ilosc = st.text_input("Ilość", value="1")
-                        if st.form_submit_button("➕ Dodaj do listy", use_container_width=True):
-                            if p_nazwa.strip():
-                                dodaj_produkt_zakupow(int(krok_row_id), p_nazwa.strip(), p_ilosc.strip())
-                                st.session_state["flash_toast"] = "🛒 Dodano produkt!"
-                                st.rerun()
-
     if pokaz_mape:
         punkty_trasy, surowe_wspolrzedne = [], []
         for _, k in kroki_df.iterrows():
@@ -2461,7 +2419,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
             st_folium(m_trasa, width=None, height=260, returned_objects=[], key=f"map_route_{wycieczka_id}")
 
-    # Sekcja Zadań ostylowana spójnie z Taktyką, z zagnieżdżonymi pod-sekcjami wewnątrz
     st.markdown('<div class="section-unified-header">🎯 Zadania dla dzieci</div>', unsafe_allow_html=True)
     grupy_zadan = pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df)
     
