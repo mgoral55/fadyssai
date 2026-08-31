@@ -458,7 +458,7 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
                     f"💡 PROPOZYCJA: Zaplanuj tę atrakcję z samego rana (np. 08:00–10:00) lub w tych godzinach wybierz klimatyzowane Cretaquarium, jaskinię lub obiad w tawernie w cieniu."
                 )
 
-    # 2. Walidacja luki żywieniowej (Zasada 3.5h)
+    # 2. Walidacja luki żywieniowej (Maksymalnie 4h między posiłkami głównymi)
     with get_db() as conn:
         kroki = conn.cursor().execute(
             'SELECT okienko_zwiedzania, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC',
@@ -470,11 +470,11 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
         g_prev = sparsuj_godzine_minuty(ostatni_krok[0].split("-")[-1].strip())
         if g_prev:
             prev_dec = g_prev[0] + g_prev[1] / 60.0
-            if (godz_dec - prev_dec) > 3.5:
+            if (godz_dec - prev_dec) > 4.0:
                 return False, (
-                    f"⛔ ODMOWA: Czas od poprzedniego punktu przekracza 3.5 godziny bez zaplanowanego posiłku. "
+                    f"⛔ ODMOWA: Czas od poprzedniego punktu przekracza 4.0 godziny bez posiłku głównego. "
                     f"Dzieci z AuDHD wejdą w stan silnego przebodźcowania i głodu (Hangry). "
-                    f"💡 PROPOZYCJA: Zaplanuj przerwę na obiad / Safe Snack lub postój w tawernie przed wejściem do '{nazwa_nowego_miejsca}'."
+                    f"💡 PROPOZYCJA: Zaplanuj przerwę na obiad lub powrót do domku/tawernę przed wejściem do '{nazwa_nowego_miejsca}'."
                 )
 
     return True, ""
@@ -973,6 +973,23 @@ def dodaj_produkt_zakupow(id_wycieczki, nazwa_produktu, id_kroku=None, ilosc="1"
     lokalizacja = f"kroku #{krok_val}" if krok_val else "całej wycieczki"
     return f"Dodano produkt '{nazwa_produktu}' do listy zakupów ({lokalizacja})."
 
+def zarzadzaj_posilkiem_kroku(id_wycieczki, id_kroku, rodzaj_posilku, miejsce="restauracja", sugerowana_godzina="13:30", opis="Safe food: drób/ryby/domowe"):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (str(id_kroku), str(rodzaj_posilku), str(miejsce), str(sugerowana_godzina), str(opis)))
+        conn.commit()
+    return f"Zapisano posiłek ({rodzaj_posilku}) w bazie dla kroku #{id_kroku}."
+
+def usun_posilek(id_posilku):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM posilki_kroku WHERE id = ?', (str(id_posilku),))
+        conn.commit()
+    return f"Pomyślnie usunięto posiłek o ID #{id_posilku}."
+
 def zmien_status_zakupu(zakup_id, kupione):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -1064,7 +1081,7 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="dodaj_notatke",
-                description="Dodaje notatkę do wycieczki lub miejsca.",
+                description="Dodaje notatkę do wycieczki lub miejsca (np. taktyka obiadowa, zapasy na wynos).",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1131,6 +1148,33 @@ cretai_tools = [
                 ),
             ),
             types.FunctionDeclaration(
+                name="zarzadzaj_posilkiem_kroku",
+                description="Dodaje główny posiłek (śniadanie, obiad, kolacja) powiązany z krokiem wycieczki, uwzględniając restrykcje (bez wieprzowiny, safe foods).",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                        "id_kroku": types.Schema(type=types.Type.STRING, description="ID kroku wycieczki"),
+                        "rodzaj_posilku": types.Schema(type=types.Type.STRING, description="'śniadanie', 'obiad' lub 'kolacja'"),
+                        "miejsce": types.Schema(type=types.Type.STRING, description="'w domku', 'restauracja' lub 'po drodze'"),
+                        "sugerowana_godzina": types.Schema(type=types.Type.STRING, description="Godzina np. '13:30'"),
+                        "opis": types.Schema(type=types.Type.STRING, description="Opis uwzględniający restrykcje żywieniowe")
+                    },
+                    required=["id_wycieczki", "id_kroku", "rodzaj_posilku"]
+                ),
+            ),
+            types.FunctionDeclaration(
+                name="usun_posilek",
+                description="Usuwa wskazany posiłek z bazy po jego ID.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "id_posilku": types.Schema(type=types.Type.STRING, description="ID posiłku do usunięcia"),
+                    },
+                    required=["id_posilku"]
+                ),
+            ),
+            types.FunctionDeclaration(
                 name="dodaj_produkt_zakupow",
                 description="Dodaje produkt do listy zakupów.",
                 parameters=types.Schema(
@@ -1156,6 +1200,8 @@ NARZEDZIA_DISPATCHER = {
     "dodaj_krok_wycieczki": lambda args: dodaj_krok_wycieczki(**args),
     "edytuj_krok_wycieczki": lambda args: edytuj_krok_wycieczki(**args),
     "usun_krok_wycieczki": lambda args: usun_krok_wycieczki(**args),
+    "zarzadzaj_posilkiem_kroku": lambda args: zarzadzaj_posilkiem_kroku(**args),
+    "usun_posilek": lambda args: usun_posilek(**args),
     "dodaj_produkt_zakupow": lambda args: dodaj_produkt_zakupow(**args),
 }
 
@@ -1229,7 +1275,6 @@ with st.sidebar:
     st.markdown("### 👤 Profil Użytkownika")
     dostepni_uzytkownicy = ["Magda", "Michał", "Jurek", "Julia"]
     
-    # Zapamiętywanie profilu w adresie URL telefonu
     domyslny_user = "Magda"
     if "user" in st.query_params and st.query_params["user"] in dostepni_uzytkownicy:
         domyslny_user = st.query_params["user"]
@@ -1412,7 +1457,6 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
         st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
     with st.expander(f"💬 Asystent AI ({uzytkownik})", expanded=False):
         
-        # Pasek górny z przyciskami w jednej linii (Czyść, Kopiuj ostatnią, Ponów ostatnią)
         chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
         
         col_h1, col_h2, col_h3, col_h4 = st.columns([2, 1, 1, 1])
@@ -1451,7 +1495,7 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"] if isinstance(message["content"], str) else "")
 
-        prompt = st.chat_input(f"Napisz np. 'wyjazd o 7:30', 'kup woda'...", key=f"chat_input_{uzytkownik}_{'inline' if inline else 'float'}")
+        prompt = st.chat_input(f"Napisz np. 'wyjazd o 7:30', 'dodaj obiad'...", key=f"chat_input_{uzytkownik}_{'inline' if inline else 'float'}")
         if prompt:
             zapisz_wiadomosc_w_db(uzytkownik, "user", prompt)
             akt_wyc_id = pobierz_aktywna_wycieczke_id()
@@ -1488,11 +1532,12 @@ Zwracaj się do użytkownika po imieniu w sposób bardzo personalny, dopasowany 
 - Gdy propozycja rodzica jest zła (narusza lekko zasady, np. zła pora, małe ryzyko): zwracaj się bezpośrednio (np. "To zły pomysł, {uzytkownik}").
 - Gdy propozycja rodzica jest bardzo zła / katastrofalna dla dzieci z AuDHD (np. pełne słońce w upale 11:30-15:30, głód >4h, brak cienia): reaguj kategorycznie i ostrzegawczo (np. "To bardzo zły pomysł, {uzytkownik}").
 
-ZASADA NACZELNA (STRAŻNIK AuDHD):
+ZASADA NACZELNA (STRAŻNIK AuDHD & POSIŁKI):
 Zanim wykonasz JAKIEKOLWIEK działania na bazie danych (narzędzia CRUD), ZAWSZE sprawdź:
 1. Upał i słońce w oknie 11:30–15:30 – zakaz planowania odsłoniętych ruin i miejsc bez cienia w tych godzinach!
-2. Luki żywieniowe – zakaz przerw dłuższych niż 3.5h bez posiłku/przekąski.
-3. Bufor poranny – minimalny czas w domku rano.
+2. Luki żywieniowe – maksymalny odstęp między posiłkami głównymi (śniadanie, obiad, kolacja) nie może przekraczać 4 godzin. Aplikacja nie obsługuje przekąsek w tle.
+3. Preferencja obiadowa – priorytetem finansowym i sensorycznym jest obiad gotowany w domku w Stavros (zabezpieczany lunchem na wynos / kanapkami w torbie termicznej na drogę powrotną, zapisując taktykę w notatkach wycieczki).
+4. Bufor poranny – minimalny czas w domku rano.
 Jeśli którekolwiek z wymagań jest niespełnione, ODMÓW wykonania polecenia, wyjaśnij ryzyko fizjologiczne/sensoryczne dla dzieci i zaproponuj lepszą, bezpieczną alternatywę."""
 
                     try:
