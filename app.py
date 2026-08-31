@@ -386,7 +386,7 @@ def formatuj_komunikat_bledu_ai(e):
         return "⏳ Przekroczono limit zapytań (429 Rate Limit)", "Wyczerpano limit zapytań na minutę (RPM/TPM). Odczekaj chwilę."
     if "401" in msg or "403" in msg or kod in [401, 403]:
         return "🔑 Błąd uwierzytelnienia klucza API", "Wprowadzony klucz API jest nieprawidłowy lub wygasł."
-    return f"⚠️ Błąd połączenia z API ({type(e).__name__})", "Nie udało się zrealizować zapytania przez AI."
+    return f"⚠️ Błąd połączenia z API ({type(e).__name__})", f"Szczegóły: {msg}"
 
 def znajdz_id_kroku_w_db(cursor, id_wycieczki, identyfikator):
     query = '''
@@ -413,6 +413,64 @@ def render_shopping_checkbox_list(df_items, key_prefix):
 def pobierz_wszystkie_miejsca():
     with get_db() as conn:
         return pd.read_sql('SELECT * FROM miejsca', conn)
+
+def szukaj_miejsca_w_bazie(nazwa_zapytania):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT numer_miejsca, nazwa, wspolrzedne, orientacyjny_czas, godziny_otwarcia, 
+                   konieczna_akcja, ochrona_slonce, potencjal_meltdownu, strategie_meltdown, opis
+            FROM miejsca 
+            WHERE nazwa LIKE ? OR numer_miejsca = ?
+        ''', (f"%{nazwa_zapytania}%", str(nazwa_zapytania)))
+        row = cursor.fetchone()
+        if row:
+            return {
+                "numer_miejsca": row[0], "nazwa": row[1], "wspolrzedne": row[2], "orientacyjny_czas": row[3],
+                "godziny_otwarcia": row[4], "konieczna_akcja": row[5], "ochrona_slonce": row[6],
+                "potencjal_meltdownu": row[7], "strategie_meltdown": row[8], "opis": row[9]
+            }
+    return None
+
+# --- STRAŻNIK AuDHD: WALIDATOR PRZED MUTACJĄ W BAZIE ---
+def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane_okienko):
+    miejsce_info = szukaj_miejsca_w_bazie(nazwa_nowego_miejsca)
+    nazwa_l = str(nazwa_nowego_miejsca).lower()
+    
+    # 1. Walidacja okna upału (11:30 - 15:30)
+    g_start = sparsuj_godzine_minuty(planowane_okienko.split("-")[0].strip()) if "-" in str(planowane_okienko) else sparsuj_godzine_minuty(str(planowane_okienko))
+    if g_start:
+        godz_dec = g_start[0] + g_start[1] / 60.0
+        if 11.5 <= godz_dec <= 15.5:
+            ochrona = str(miejsce_info.get('ochrona_slonce', '')).lower() if miejsce_info else ""
+            if any(w in ochrona for w in ['brak', 'niska', 'odkryte', 'pełne słońce', 'patelnia']) or \
+               any(w in nazwa_l for w in ['knossos', 'phaistos', 'ruiny', 'gortyna', 'falasarna', 'elafonisi']):
+                return False, (
+                    f"⛔ ODMOWA: Planowanie '{nazwa_nowego_miejsca}' w oknie {planowane_okienko} narusza regułę sjesty i ochrony przed słońcem (11:30–15:30). "
+                    f"Jest to otwarty teren w pełnym słońcu – gwarantowane przebodźcowanie sensoryczne i ryzyko udaru termicznego. "
+                    f"💡 PROPOZYCJA: Zaplanuj tę atrakcję z samego rana (np. 08:00–10:00) lub w tych godzinach wybierz klimatyzowane Cretaquarium, jaskinię lub obiad w tawernie w cieniu."
+                )
+
+    # 2. Walidacja luki żywieniowej (Zasada 3.5h)
+    with get_db() as conn:
+        kroki = conn.cursor().execute(
+            'SELECT okienko_zwiedzania, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC',
+            (str(id_wycieczki),)
+        ).fetchall()
+    
+    if kroki and g_start:
+        ostatni_krok = kroki[-1]
+        g_prev = sparsuj_godzine_minuty(ostatni_krok[0].split("-")[-1].strip())
+        if g_prev:
+            prev_dec = g_prev[0] + g_prev[1] / 60.0
+            if (godz_dec - prev_dec) > 3.5:
+                return False, (
+                    f"⛔ ODMOWA: Czas od poprzedniego punktu przekracza 3.5 godziny bez zaplanowanego posiłku. "
+                    f"Dzieci z AuDHD wejdą w stan silnego przebodźcowania i głodu (Hangry). "
+                    f"💡 PROPOZYCJA: Zaplanuj przerwę na obiad / Safe Snack lub postój w tawernie przed wejściem do '{nazwa_nowego_miejsca}'."
+                )
+
+    return True, ""
 
 def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, force_wyjazd_str=None, force_powrot_str=None):
     with get_db() as conn:
@@ -500,7 +558,7 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
         for i in range(len(kroki)):
             s_str, e_str = start_times[i].strftime("%H:%M"), end_times[i].strftime("%H:%M")
             cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (f"{s_str} - {e_str}", kroki[i][0]))
-            cursor.execute('UPDATE posilki_kroku SET sugerowana_godzina = ? WHERE id_kroku = ?', (s_str, kroki[i][0]))
+            cursor.execute('UPDATE posilki_kroku SET sugerowana_godzina = ? WHERE id = ?', (s_str, kroki[i][0]))
             if i < len(kroki) - 1:
                 cursor.execute('''
                     INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
@@ -709,24 +767,6 @@ def potwierdz_odwiedzenie_dialog(num_m, nazwa_m, stan_akt):
         if st.button("Anuluj", use_container_width=True):
             st.rerun()
 
-def szukaj_miejsca_w_bazie(nazwa_zapytania):
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            SELECT numer_miejsca, nazwa, wspolrzedne, orientacyjny_czas, godziny_otwarcia, 
-                   konieczna_akcja, ochrona_slonce, potencjal_meltdownu, strategie_meltdown, opis
-            FROM miejsca 
-            WHERE nazwa LIKE ? OR numer_miejsca = ?
-        ''', (f"%{nazwa_zapytania}%", str(nazwa_zapytania)))
-        row = cursor.fetchone()
-        if row:
-            return {
-                "numer_miejsca": row[0], "nazwa": row[1], "wspolrzedne": row[2], "orientacyjny_czas": row[3],
-                "godziny_otwarcia": row[4], "konieczna_akcja": row[5], "ochrona_slonce": row[6],
-                "potencjal_meltdownu": row[7], "strategie_meltdown": row[8], "opis": row[9]
-            }
-    return None
-
 def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, 
                      planowana_data=None, szacowany_czas_ogarniania_rano=None, czas_wyjazdu=None):
     with get_db() as conn:
@@ -756,7 +796,12 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, c
 def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy="", okienko_zwiedzania="12:00 - 13:00", podsumowanie_taktyki="Brak"):
     miejsce_info = szukaj_miejsca_w_bazie(nazwa_z_bazy)
     if not miejsce_info:
-        return f"BŁĄD: Nie znaleziono miejsca '{nazwa_z_bazy}' w lokalnej bazie miejsc!"
+        return f"⛔ BŁĄD: Nie znaleziono miejsca '{nazwa_z_bazy}' w lokalnej bazie miejsc!"
+
+    # STRAŻNIK AuDHD
+    bezpieczny, powod_odmowy = sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, miejsce_info['nazwa'], okienko_zwiedzania)
+    if not bezpieczny:
+        return powod_odmowy
 
     nazwa, wspolrzedne = miejsce_info['nazwa'], miejsce_info['wspolrzedne']
     godzina_ewakuacji = miejsce_info['konieczna_akcja'] or "Brak"
@@ -851,8 +896,14 @@ def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa=None, wspolrzedne=
         res = znajdz_id_kroku_w_db(cursor, id_wycieczki, krok_wycieczki)
         if not res:
             return f"Nie znaleziono kroku '{krok_wycieczki}' w wycieczce #{id_wycieczki}."
-        krok_id = res[0]
+        krok_id, stary_nazwa = res[0], res[1]
         
+        # STRAŻNIK AuDHD przy edycji godzin
+        if okienko_zwiedzania:
+            bezpieczny, powod_odmowy = sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa or stary_nazwa, okienko_zwiedzania)
+            if not bezpieczny:
+                return powod_odmowy
+
         pola = {
             "nazwa": nazwa, "wspolrzedne": wspolrzedne, "okienko_zwiedzania": okienko_zwiedzania,
             "godzina_ewakuacji": godzina_ewakuacji, "czerwona_strefa_ostrzezenie": czerwona_strefa_ostrzezenie,
@@ -921,6 +972,62 @@ def zmien_status_zakupu(zakup_id, kupione):
         cursor.execute('UPDATE zakupy SET kupione = ? WHERE id = ?', (1 if kupione else 0, int(zakup_id)))
         conn.commit()
 
+@st.cache_data(ttl=28800)
+def pobierz_prognoze_pogody(lat, lon, data_docelowa):
+    try:
+        url = f"https://wttr.in/{lat},{lon}?format=j1"
+        req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
+        with urllib.request.urlopen(req, timeout=0.5) as response:
+            data = json.loads(response.read().decode())
+            weather_list = data.get('weather', [])
+            for day in weather_list:
+                if day.get('date') == data_docelowa:
+                    return day
+            if weather_list:
+                return weather_list[0]
+    except:
+        pass
+    return None
+
+def pobierz_szczegoly_pogody_dla_godziny(wspolrzedne, planowana_data, okienko_czasowe="12:00 - 14:00"):
+    if not planowana_data or not str(planowana_data).strip():
+        return None
+    lat, lon = sparsuj_wspolrzedne(wspolrzedne)
+    if lat is None or lon is None:
+        return None
+
+    prognoza_dnia = pobierz_prognoze_pogody(lat, lon, str(planowana_data))
+    if not prognoza_dnia:
+        return None
+
+    hourly_list = prognoza_dnia.get('hourly', [])
+    target_hour = 12
+    if okienko_czasowe and "-" in okienko_czasowe:
+        try:
+            target_hour = int(okienko_czasowe.split("-")[0].strip().split(":")[0])
+        except:
+            pass
+
+    dopasowana_godzina, min_diff = None, 999
+    for h in hourly_list:
+        try:
+            diff = abs(int(h.get('time', '0')) // 100 - target_hour)
+            if diff < min_diff:
+                min_diff, dopasowana_godzina = diff, h
+        except:
+            pass
+
+    if dopasowana_godzina:
+        return {
+            "temp": dopasowana_godzina.get('tempC', '—'),
+            "feel": dopasowana_godzina.get('FeelsLikeC', '—'),
+            "desc": dopasowana_godzina.get('weatherDesc', [{}])[0].get('value', 'Sunny'),
+            "wind": dopasowana_godzina.get('windspeedKmph', '—'),
+            "uv": dopasowana_godzina.get('uvIndex', '—'),
+            "data": planowana_data
+        }
+    return None
+
 cretai_tools = [
     types.Tool(
         function_declarations=[
@@ -933,6 +1040,19 @@ cretai_tools = [
                         "nazwa_zapytania": types.Schema(type=types.Type.STRING, description="Nazwa miejsca, np. 'Spinalonga', 'Knossos'"),
                     },
                     required=["nazwa_zapytania"]
+                ),
+            ),
+            types.FunctionDeclaration(
+                name="sprawdz_pogode",
+                description="Pobiera prognozę pogody (temperaturę, odczuwalną, wiatr, indeks UV) dla podanych współrzędnych i daty.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "wspolrzedne": types.Schema(type=types.Type.STRING, description="Koordynaty np. '35.2980, 25.1631'"),
+                        "planowana_data": types.Schema(type=types.Type.STRING, description="Data w formacie RRRR-MM-DD"),
+                        "okienko_czasowe": types.Schema(type=types.Type.STRING, description="Okienko np. '12:00 - 14:00'"),
+                    },
+                    required=["wspolrzedne", "planowana_data"]
                 ),
             ),
             types.FunctionDeclaration(
@@ -1023,6 +1143,7 @@ cretai_tools = [
 
 NARZEDZIA_DISPATCHER = {
     "szukaj_miejsca_w_bazie": lambda args: str(szukaj_miejsca_w_bazie(**args)) if szukaj_miejsca_w_bazie(**args) else "Brak miejsca w bazie.",
+    "sprawdz_pogode": lambda args: str(pobierz_szczegoly_pogody_dla_godziny(**args)),
     "dodaj_notatke": lambda args: dodaj_notatke(**args),
     "edytuj_wycieczke": lambda args: edytuj_wycieczke(**args),
     "dodaj_krok_wycieczki": lambda args: dodaj_krok_wycieczki(**args),
@@ -1125,62 +1246,6 @@ with st.sidebar:
 <a href="https://www.google.com/maps/search/?api=1&query={DOMEK_LAT},{DOMEK_LON}" target="_blank" class="custom-nav-btn"><span>🏠</span><span>Domek</span></a>
 </div>
 """, unsafe_allow_html=True)
-
-@st.cache_data(ttl=28800)
-def pobierz_prognoze_pogody(lat, lon, data_docelowa):
-    try:
-        url = f"https://wttr.in/{lat},{lon}?format=j1"
-        req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
-        with urllib.request.urlopen(req, timeout=0.5) as response:
-            data = json.loads(response.read().decode())
-            weather_list = data.get('weather', [])
-            for day in weather_list:
-                if day.get('date') == data_docelowa:
-                    return day
-            if weather_list:
-                return weather_list[0]
-    except:
-        pass
-    return None
-
-def pobierz_szczegoly_pogody_dla_godziny(wspolrzedne, planowana_data, okienko_czasowe):
-    if not planowana_data or not str(planowana_data).strip():
-        return None
-    lat, lon = sparsuj_wspolrzedne(wspolrzedne)
-    if lat is None or lon is None:
-        return None
-
-    prognoza_dnia = pobierz_prognoze_pogody(lat, lon, str(planowana_data))
-    if not prognoza_dnia:
-        return None
-
-    hourly_list = prognoza_dnia.get('hourly', [])
-    target_hour = 12
-    if okienko_czasowe and "-" in okienko_czasowe:
-        try:
-            target_hour = int(okienko_czasowe.split("-")[0].strip().split(":")[0])
-        except:
-            pass
-
-    dopasowana_godzina, min_diff = None, 999
-    for h in hourly_list:
-        try:
-            diff = abs(int(h.get('time', '0')) // 100 - target_hour)
-            if diff < min_diff:
-                min_diff, dopasowana_godzina = diff, h
-        except:
-            pass
-
-    if dopasowana_godzina:
-        return {
-            "temp": dopasowana_godzina.get('tempC', '—'),
-            "feel": dopasowana_godzina.get('FeelsLikeC', '—'),
-            "desc": dopasowana_godzina.get('weatherDesc', [{}])[0].get('value', 'Sunny'),
-            "wind": dopasowana_godzina.get('windspeedKmph', '—'),
-            "uv": dopasowana_godzina.get('uvIndex', '—'),
-            "data": planowana_data
-        }
-    return None
 
 def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
     if not planowana_data or not str(planowana_data).strip() or kroki_df.empty:
@@ -1317,47 +1382,14 @@ def dodaj_marker_domku(m):
     domek_icon_html = '<div style="background-color:#2E251E;color:#FFFFFF;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.2);">🏠</div>'
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=folium.DivIcon(html=domek_icon_html, icon_size=(28, 28), icon_anchor=(14, 14)), tooltip="Nasz Domek").add_to(m)
 
-# --- BŁYSKAWICZNY LOKALNY PARSER INTENTÓW CZATU (0 ms API LATENCY) ---
+# --- BEZPIECZNY LOKALNY PARSER INTENTÓW (Tylko zakupy, reszta przez LLM ze strażnikiem) ---
 def sprobuj_wykonac_komende_lokalnie(prompt, id_wycieczki):
     p = prompt.strip().lower()
-    
-    # 1. Zmiana godziny wyjazdu
-    m_wyj = re.search(r'(?:wyjazd|wyjed[zź]my|start)\s*(?:o|na)?\s*(\d{1,2}[:\.]\d{2})', p)
-    if m_wyj:
-        godz = m_wyj.group(1).replace('.', ':')
-        edytuj_wycieczke(id_wycieczki, czas_wyjazdu=godz)
-        return f"⚡ Zmieniono godzinę wyjazdu na **{godz}** i automatycznie przeliczono trasę."
-
-    # 2. Zmiana godziny pobudki
-    m_pob = re.search(r'(?:pobudka|wsta[wn]ie|wsta[cć])\s*(?:o|na)?\s*(\d{1,2}[:\.]\d{2})', p)
-    if m_pob:
-        godz = m_pob.group(1).replace('.', ':')
-        przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=godz)
-        return f"⚡ Zmieniono pobudkę na **{godz}** i przeliczono harmonogram."
-
-    # 3. Dodanie do listy zakupów
-    m_zakup = re.search(r'(?:kup|kupić|dodaj do zakup[oó]w|dopisz)\s+([^,]+)', p)
-    if m_zakup and not any(w in p for w in ["krok", "miejsce", "atrakcj"]):
+    m_zakup = re.search(r'^(?:kup|kupić|dodaj do zakup[oó]w|dopisz)\s+([^,]+)', p)
+    if m_zakup and not any(w in p for w in ["krok", "miejsce", "atrakcj", "godzin", "wyjazd", "start"]):
         prod = m_zakup.group(1).strip()
         dodaj_produkt_zakupow(id_wycieczki, prod)
         return f"⚡ Dodano **{prod}** do listy zakupów wycieczki."
-
-    # 4. Usunięcie kroku
-    m_del = re.search(r'(?:usuń|usun|skasuj|wyrzuć)\s+([^,]+)', p)
-    if m_del:
-        target = m_del.group(1).strip()
-        res = usun_krok_wycieczki(id_wycieczki, target)
-        return f"⚡ {res}"
-
-    # 5. Bezpośrednie dodanie znanego miejsca z bazy
-    m_add = re.search(r'(?:dodaj|wrzuć|zaplanuj|wstaw)\s+([^,]+)', p)
-    if m_add:
-        target_name = m_add.group(1).strip()
-        miejsce_info = szukaj_miejsca_w_bazie(target_name)
-        if miejsce_info:
-            res = dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy=miejsce_info['nazwa'])
-            return f"⚡ {res}"
-
     return None
 
 def renderuj_globalny_czat_ai(uzytkownik, inline=False):
@@ -1385,15 +1417,15 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
             zapisz_wiadomosc_w_db(uzytkownik, "user", prompt)
             akt_wyc_id = pobierz_aktywna_wycieczke_id()
 
-            # FAST-PATH: Natychmiastowe wykonanie lokalne
+            # FAST-PATH: Bezpieczne zakupy
             odpowiedz_lokalna = sprobuj_wykonac_komende_lokalnie(prompt, akt_wyc_id)
 
             if odpowiedz_lokalna:
                 zapisz_wiadomosc_w_db(uzytkownik, "model", odpowiedz_lokalna)
-                st.session_state["flash_toast"] = "⚡ Zaktualizowano natychmiast!"
+                st.session_state["flash_toast"] = "⚡ Zaktualizowano listę zakupów!"
                 st.rerun()
 
-            # FALLBACK: Uruchomienie LLM wyłącznie dla skomplikowanych zapytań
+            # FALLBACK: Uruchomienie LLM
             if not api_key_input:
                 st.warning("⚠️ Wprowadź klucz API w menu bocznym, aby korzystać z zaawansowanego doradcy AI.")
                 if not inline:
@@ -1412,15 +1444,23 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
 Dzisiejsza data: {dzisiaj_str}.
 {zewnetrzny_kontekst}
 
-ZASADA NACZELNA: Zawsze przestrzegaj powyższych reguł systemowych (CZĘŚĆ 1 i CZĘŚĆ 2). Jeśli modyfikujesz plan lub dane, użyj odpowiednich funkcji narzędziowych."""
+ZASADA NACZELNA (STRAŻNIK AuDHD):
+Zanim wykonasz JAKIEKOLWIEK działania na bazie danych (narzędzia CRUD), ZAWSZE sprawdź:
+1. Upał i słońce w oknie 11:30–15:30 – zakaz planowania odsłoniętych ruin i miejsc bez cienia w tych godzinach!
+2. Luki żywieniowe – zakaz przerw dłuższych niż 3.5h bez posiłku/przekąski.
+3. Bufor poranny – minimalny czas w domku rano.
+Jeśli którekolwiek z wymagań jest niespełnione, ODMÓW wykonania polecenia, wyjaśnij ryzyko fizjologiczne/sensoryczne dla dzieci i zaproponuj lepszą, bezpieczną alternatywę."""
 
                     try:
-                        with st.status("🧭 Analizuję trasę...", expanded=False) as status:
+                        with st.status("🧭 Analizuję bezpieczeństwo i trasę AuDHD...", expanded=False) as status:
                             if wybrany_dostawca == "Google Gemini":
                                 client = genai.Client(api_key=api_key_input)
                                 contents = [
-                                    types.Content(role=m["role"], parts=[types.Part.from_text(text=m["content"])])
-                                    for m in chat_historia_z_db[-2:]
+                                    types.Content(
+                                        role="model" if m["role"] in ["assistant", "model"] else "user",
+                                        parts=[types.Part.from_text(text=m["content"])]
+                                    )
+                                    for m in chat_historia_z_db[-4:]
                                 ]
                                 contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
                                 executed_actions = []
