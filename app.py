@@ -139,7 +139,7 @@ div.st-key-btn_date_picker button:hover {
     background-color: #EFE8D1 !important;
 }
 
-/* PRZYCISKI POPOVER LOGISTYKI (POBUDKA, OGARNIANIE, POWRÓT) */
+/* PRZYCISKI POPOVER LOGISTYKI */
 div[data-testid="stPopover"] {
     width: 100% !important;
 }
@@ -495,9 +495,10 @@ div.st-key-btn_date_picker {
 }
 
 .badge-pobudka { background-color: #94A77E !important; }
+.badge-wyjazd  { background-color: #94A77E !important; }
 .badge-miejsce { background-color: #C06C4E !important; }
 .badge-obiad { background-color: #B56749 !important; }
-.badge-powrot { background-color: #DDAE92 !important; }
+.badge-powrot { background-color: #94A77E !important; }
 
 .timeline-content-col {
     position: relative;
@@ -905,7 +906,7 @@ def wczytaj_pliki_regul(katalog="rule"):
 def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor_koniec_str=None, anchor_start_str=None, force_pobudka_str=None, force_wyjazd_str=None, force_powrot_str=None):
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT szacowany_czas_ogarniania_rano, pobudka FROM wycieczka WHERE id = ?', (str(id_wycieczki),))
+        cursor.execute('SELECT szacowany_czas_ogarniania_rano, pobudka, czas_wyjazdu FROM wycieczka WHERE id = ?', (str(id_wycieczki),))
         row_ogarnianie = cursor.fetchone()
         surowy_ogarniania = row_ogarnianie[0] if row_ogarnianie else '0.5h'
         pobudka_z_bazy = row_ogarnianie[1] if row_ogarnianie and row_ogarnianie[1] else '06:00'
@@ -988,6 +989,10 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
     elif force_wyjazd_str:
         g_wyj = sparsuj_godzine_minuty(force_wyjazd_str) or (6, 30)
         dt_wyj = datetime(2026, 1, 1, g_wyj[0], g_wyj[1])
+        
+        dt_pob = dt_wyj - timedelta(minutes=minuty_ogarniania)
+        pobudka_z_bazy = dt_pob.strftime("%H:%M")
+        
         start_times[0] = dt_pob
         end_times[0] = dt_wyj
         
@@ -1279,7 +1284,7 @@ def init_db():
 init_db()
 
 def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, calosciowa_taktyka_dnia=None, 
-                     planowana_data=None, szacowany_czas_ogarniania_rano=None):
+                     planowana_data=None, szacowany_czas_ogarniania_rano=None, czas_wyjazdu=None):
     with get_db() as conn:
         cursor = conn.cursor()
         if tytul_wycieczki is not None:
@@ -1292,9 +1297,11 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, c
             cursor.execute('UPDATE wycieczka SET planowana_data = ? WHERE id = ?', (planowana_data, str(id)))
         if szacowany_czas_ogarniania_rano is not None:
             cursor.execute('UPDATE wycieczka SET szacowany_czas_ogarniania_rano = ? WHERE id = ?', (szacowany_czas_ogarniania_rano, str(id)))
+        if czas_wyjazdu is not None:
+            cursor.execute('UPDATE wycieczka SET czas_wyjazdu = ? WHERE id = ?', (czas_wyjazdu, str(id)))
         conn.commit()
     
-    przelicz_i_zsynchronizuj_wycieczke(str(id))
+    przelicz_i_zsynchronizuj_wycieczke(str(id), force_wyjazd_str=czas_wyjazdu if czas_wyjazdu else None)
     return f"Wycieczka #{id} została zaktualizowana i przeliczona."
 
 def dodaj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne="35.3,24.5", 
@@ -1465,7 +1472,7 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="edytuj_wycieczke",
-                description="Aktualizuje parametry wycieczki, w tym szacowany czas ogarniania się rano (np. '0.5h', '45m'). Zmiana czasu ogarniania automatycznie zmienia czas wyjazdu i przelicza cały harmonogram.",
+                description="Aktualizuje parametry wycieczki, w tym szacowany czas do wyjazdu (np. '0.5h', '45m') oraz godzinę wyjazdu (np. '06:30'). Zmiana czasu do wyjazdu automatycznie przelicza cały harmonogram.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1474,7 +1481,8 @@ cretai_tools = [
                         "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Opis"),
                         "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Taktyka"),
                         "planowana_data": types.Schema(type=types.Type.STRING, description="RRRR-MM-DD"),
-                        "szacowany_czas_ogarniania_rano": types.Schema(type=types.Type.STRING, description="Szacowany czas ogarniania się rano, np. '0.5h', '1h', '45m'"),
+                        "szacowany_czas_ogarniania_rano": types.Schema(type=types.Type.STRING, description="Szacowany czas do wyjazdu, np. '0.5h', '1h', '45m'"),
+                        "czas_wyjazdu": types.Schema(type=types.Type.STRING, description="Godzina wyjazdu z domku, np. '06:30'"),
                     },
                     required=["id"]
                 ),
@@ -1907,7 +1915,7 @@ def wczytaj_kontekst_zewnetrzny():
 
     if not wycieczki_df.empty:
         for _, w in wycieczki_df.iterrows():
-            tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Data: {w.get('planowana_data', '')} | Czas ogarniania rano: {w.get('szacowany_czas_ogarniania_rano', '0.5h')}\n"
+            tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Data: {w.get('planowana_data', '')} | Czas do wyjazdu: {w.get('szacowany_czas_ogarniania_rano', '0.5h')} | Wyjazd: {w.get('czas_wyjazdu', '')}\n"
     if not kroki_df.empty:
         for _, k in kroki_df.iterrows():
             tekst += f"- Krok (W#{k['id_wycieczki']}): ID DB: {k['id']} | #{k['krok_wycieczki']}. {k['nazwa']} | Czas: {k['okienko_zwiedzania']}\n"
@@ -1957,7 +1965,7 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
         zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
         system_prompt = f"""Jesteś asystentem podróży CretAi na Kretę, pomagającym zarządzać wycieczką objazdową z dziećmi i rodzicami z ADHD. Dziś: {dzisiaj_str}.
 {zewnetrzny_kontekst}
-- ZASADA CZASU OGARNIANIA RANO: Wycieczka posiada parametr `szacowany_czas_ogarniania_rano` (domyślnie '0.5h'). Pobudka i czas wyjazdu są ściśle powiązane tym czasem. Gdy czas ogarniania się zmienia (np. przez `edytuj_wycieczke`), godzina wyjazdu w planie automatycznie przesuwa się względem pobudki o dokładnie tę wartość. Zawsze uwzględniaj ten parametr przy wszelkich przeliczeniach czasów rannych.
+- ZASADA CZASU DO WYJAZDU: Wycieczka posiada parametr `szacowany_czas_ogarniania_rano` (domyślnie '0.5h', wyświetlany jako Czas do wyjazdu) oraz `czas_wyjazdu`. Pobudka i wyjazd są ściśle powiązane tym czasem. Gdy użytkownik mówi 'wyjeżdżamy o 07:00' lub zmienia czas do wyjazdu, backend automatycznie przelicza wyjazd i cały harmonogram wycieczki.
 - ZASADA USUWANIA KROKÓW: Gdy użytkownik prosi o usunięcie, wykasowanie, pominięcie lub rezygnację z atrakcji/sklepu (np. 'usuń Cretaquarium', 'nie jedziemy do akwarium', 'skasuj krok 2'), ZAWSZE natychmiast wywołaj `usun_krok_wycieczki(id_wycieczki='1', krok_wycieczki='nazwa lub numer')`.
 - ZASADA CZASU I HARMONOGRAMU (KASKADOWE PRZELICZANIE):
   1. Gdy użytkownik mówi: 'chcę być w X do godziny HH:MM' (np. 'chcę być w Knossos do 12:00'), oznacza to GODZINĘ WYJAZDU z tego punktu. Wywołaj `edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, godzina_wyjazdu_do='12:00')`.
@@ -2030,7 +2038,6 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                                     text_parts = [p.text for p in candidate.content.parts if hasattr(p, "text") and p.text] if candidate and candidate.content and candidate.content.parts else []
                                     assistant_reply = "".join(text_parts) if text_parts else (response.text if hasattr(response, "text") else "Zaktualizowano bazę danych.")
                                     
-                                    # Pobranie ewentualnych źródeł z Google Search
                                     if candidate and hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
                                         gm = candidate.grounding_metadata
                                         if hasattr(gm, 'grounding_chunks') and gm.grounding_chunks:
@@ -2113,24 +2120,6 @@ def edit_date_dialog(wycieczka_id, aktualna_data):
         if st.button("Anuluj", use_container_width=True):
             st.rerun()
 
-@st.dialog("Edytuj godzinę pobudki")
-def edit_pobudka_dialog(wycieczka_id, pobudka_val):
-    g_pob = sparsuj_godzine_minuty(pobudka_val) or (6, 0)
-    t_pob = st.time_input("⏰ Godzina pobudki", value=time(g_pob[0], g_pob[1]), step=300)
-    if st.button("💾 Zapisz", use_container_width=True):
-        przelicz_i_zsynchronizuj_wycieczke(str(wycieczka_id), force_pobudka_str=t_pob.strftime("%H:%M"))
-        st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę pobudki!"
-        st.rerun()
-
-@st.dialog("Edytuj godzinę powrotu")
-def edit_powrot_dialog(wycieczka_id, powrot_val):
-    g_pow = sparsuj_godzine_minuty(powrot_val) or (17, 33)
-    t_pow = st.time_input("🏠 Godzina powrotu do domku", value=time(g_pow[0], g_pow[1]), step=300)
-    if st.button("💾 Zapisz", use_container_width=True):
-        przelicz_i_zsynchronizuj_wycieczke(str(wycieczka_id), force_powrot_str=t_pow.strftime("%H:%M"))
-        st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę powrotu!"
-        st.rerun()
-
 def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False):
     with get_db() as conn:
         wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
@@ -2174,9 +2163,11 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
     pobudka_val = w_gen.get('pobudka', '06:00') if pd.notna(w_gen.get('pobudka')) else '06:00'
     ogarnianie_val = w_gen.get('szacowany_czas_ogarniania_rano', '0.5h') if pd.notna(w_gen.get('szacowany_czas_ogarniania_rano')) else '0.5h'
+    wyjazd_val = w_gen.get('czas_wyjazdu', '06:30') if pd.notna(w_gen.get('czas_wyjazdu')) else '06:30'
     
     if not kroki_df.empty:
         pobudka_val = kroki_df.iloc[0]['okienko_zwiedzania'].split("-")[0].strip() if "-" in str(kroki_df.iloc[0]['okienko_zwiedzania']) else pobudka_val
+        wyjazd_val = kroki_df.iloc[0]['okienko_zwiedzania'].split("-")[1].strip() if "-" in str(kroki_df.iloc[0]['okienko_zwiedzania']) else wyjazd_val
         powrot_val = kroki_df.iloc[-1]['okienko_zwiedzania'].split("-")[0].strip() if "-" in str(kroki_df.iloc[-1]['okienko_zwiedzania']) else w_gen.get('szacowana_godzina_powrotu', '17:33')
     else:
         powrot_val = w_gen.get('szacowana_godzina_powrotu', '17:33')
@@ -2196,12 +2187,12 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 st.rerun()
 
     with col_log2:
-        st.markdown('<div style="text-align: center; font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;">🎒 Czas ogarniania</div>', unsafe_allow_html=True)
+        st.markdown('<div style="text-align: center; font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;">🎒 Czas do wyjazdu</div>', unsafe_allow_html=True)
         with st.popover(ogarnianie_val, use_container_width=True):
             nowy_czas_ogarniania = st.text_input("Szacowany czas rano", value=ogarnianie_val, key=f"ti_ogarnianie_{wycieczka_id}")
             if st.button("💾 Zapisz", key=f"btn_save_ogarnianie_{wycieczka_id}", use_container_width=True):
                 edytuj_wycieczke(wycieczka_id, szacowany_czas_ogarniania_rano=nowy_czas_ogarniania)
-                st.session_state["flash_toast"] = "⏱️ Zaktualizowano czas ogarniania rano i przeliczono wyjazd!"
+                st.session_state["flash_toast"] = "⏱️ Zaktualizowano czas do wyjazdu!"
                 st.rerun()
 
     with col_log3:
@@ -2237,72 +2228,134 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         is_last = (idx == total_steps - 1)
         
         if is_first:
-            badge_symbol = "🛏️"
-            tytul_wyswietlany = "Pobudka"
-            badge_class = "badge-pobudka"
-            has_nav = False
-        elif is_last:
-            badge_symbol = "🚩"
-            tytul_wyswietlany = "Powrót / Zakończenie"
-            badge_class = "badge-powrot"
-            has_nav = True
-            coords_clean = f"{DOMEK_LAT}, {DOMEK_LON}"
-        elif "obiad" in nazwa.lower() or "lunch" in nazwa.lower() or "jedzenie" in nazwa.lower() or "przerwa" in nazwa.lower() or "sklep" in nazwa.lower() or "zakupy" in nazwa.lower():
-            badge_symbol = "🛒" if "sklep" in nazwa.lower() or "zakupy" in nazwa.lower() else "🍴"
-            tytul_wyswietlany = nazwa
-            badge_class = "badge-obiad"
-            has_nav = bool(coords_clean and ',' in coords_clean)
-        else:
-            badge_symbol = krok_num if (krok_num and krok_num != "0") else str(idx)
-            tytul_wyswietlany = nazwa
-            badge_class = "badge-miejsce"
-            has_nav = bool(coords_clean and ',' in coords_clean)
+            # 1. KROK: POBUDKA
+            df_pos = pob_posilki_dla_kroku(k['id'])
+            opis_tekst_pob = ""
+            if not df_pos.empty:
+                posiłki_str = []
+                for _, prow in df_pos.iterrows():
+                    p_rodzaj = str(prow.get('rodzaj_posilku', '')).strip().lower()
+                    p_godz = str(prow.get('sugerowana_godzina', '')).strip()
+                    p_miejsce = str(prow.get('miejsce', '')).strip().lower()
+                    if p_rodzaj in ['śniadanie', 'obiad', 'kolacja']:
+                        nazwa_p = p_rodzaj.capitalize()
+                        if p_miejsce != 'w domku' and p_godz and p_godz != 'None' and p_godz != 'Brak':
+                            posiłki_str.append(f"{nazwa_p} ok {p_godz}")
+                        else:
+                            posiłki_str.append(nazwa_p)
+                if posiłki_str:
+                    opis_tekst_pob = f"<span style='color:#8C5338; font-weight:700;'>🍲 {' / '.join(posiłki_str)}</span>"
 
-        df_pos = pob_posilki_dla_kroku(k['id'])
-        opis_tekst = ""
-        if not df_pos.empty:
-            posiłki_str = []
-            for _, prow in df_pos.iterrows():
-                p_rodzaj = str(prow.get('rodzaj_posilku', '')).strip().lower()
-                if p_rodzaj in ['śniadanie', 'obiad', 'kolacja']:
-                    posiłki_str.append(p_rodzaj.capitalize())
-            if posiłki_str:
-                opis_tekst = f"<span style='color:#8C5338; font-weight:700;'>🍲 {' / '.join(posiłki_str)}</span>"
-
-        center_col_html = (
-            f'<div class="timeline-center-col">'
-            f'<div class="timeline-icon-badge-static {badge_class}">{badge_symbol}</div>'
-            f'</div>'
-        )
-
-        nav_btn_html = ""
-        if has_nav:
-            gps_url = f"https://www.google.com/maps/search/?api=1&query={coords_clean}"
-            nav_btn_html = f'<a href="{gps_url}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>'
-
-        time_end_html = f'<span class="timeline-time-end">do {godzina_koniec}</span>' if (not is_last and godzina_koniec and godzina_koniec != godzina_start) else ''
-
-        timeline_full_html.append('<div class="timeline-step-row-wrapper">')
-
-        if is_first or is_last:
-            row_html = (
+            row_pobudka = (
+                f'<div class="timeline-step-row-wrapper">'
                 f'<div class="timeline-row-frameless">'
                 f'<div class="timeline-row-inner">'
-                f'<div class="timeline-time">'
-                f'<span class="timeline-time-start">{godzina_start}</span>'
-                f'{time_end_html}'
-                f'</div>'
-                f'{center_col_html}'
+                f'<div class="timeline-time"><span class="timeline-time-start">{godzina_start}</span></div>'
+                f'<div class="timeline-center-col"><div class="timeline-icon-badge-static badge-pobudka">⏰</div></div>'
                 f'<div class="timeline-content-col">'
-                f'<div class="timeline-item-title">{tytul_wyswietlany}</div>'
-                f'<div class="timeline-item-desc">{opis_tekst}</div>'
+                f'<div class="timeline-item-title">Pobudka</div>'
+                f'<div class="timeline-item-desc">{opis_tekst_pob if opis_tekst_pob else f"Czas do wyjazdu: {ogarnianie_val}"}</div>'
+                f'</div>'
+                f'</div>'
+                f'</div>'
+                f'</div>'
+            )
+            timeline_full_html.append(row_pobudka)
+
+            # 2. KROK: WYJAZD (NA STAŁE, ZIELONE TŁO)
+            godzina_wyjazdu_wyswietl = godzina_koniec if godzina_koniec else wyjazd_val
+            row_wyjazd = (
+                f'<div class="timeline-step-row-wrapper">'
+                f'<div class="timeline-row-frameless">'
+                f'<div class="timeline-row-inner">'
+                f'<div class="timeline-time"><span class="timeline-time-start">{godzina_wyjazdu_wyswietl}</span></div>'
+                f'<div class="timeline-center-col"><div class="timeline-icon-badge-static badge-wyjazd">🚗</div></div>'
+                f'<div class="timeline-content-col">'
+                f'<div class="timeline-item-title">Wyjazd</div>'
+                f'<div class="timeline-item-desc"></div>'
+                f'</div>'
+                f'</div>'
+                f'</div>'
+                f'</div>'
+            )
+            timeline_full_html.append(row_wyjazd)
+
+        elif is_last:
+            df_pos = pob_posilki_dla_kroku(k['id'])
+            opis_tekst = ""
+            if not df_pos.empty:
+                posiłki_str = []
+                for _, prow in df_pos.iterrows():
+                    p_rodzaj = str(prow.get('rodzaj_posilku', '')).strip().lower()
+                    p_godz = str(prow.get('sugerowana_godzina', '')).strip()
+                    p_miejsce = str(prow.get('miejsce', '')).strip().lower()
+                    if p_rodzaj in ['śniadanie', 'obiad', 'kolacja']:
+                        nazwa_p = p_rodzaj.capitalize()
+                        if p_miejsce != 'w domku' and p_godz and p_godz != 'None' and p_godz != 'Brak':
+                            posiłki_str.append(f"{nazwa_p} ok {p_godz}")
+                        else:
+                            posiłki_str.append(nazwa_p)
+                if posiłki_str:
+                    opis_tekst = f"<span style='color:#8C5338; font-weight:700;'>🍲 {' / '.join(posiłki_str)}</span>"
+
+            gps_url = f"https://www.google.com/maps/search/?api=1&query={DOMEK_LAT},{DOMEK_LON}"
+            nav_btn_html = f'<a href="{gps_url}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>'
+
+            row_html = (
+                f'<div class="timeline-step-row-wrapper">'
+                f'<div class="timeline-row-frameless">'
+                f'<div class="timeline-row-inner">'
+                f'<div class="timeline-time"><span class="timeline-time-start">{godzina_start}</span></div>'
+                f'<div class="timeline-center-col"><div class="timeline-icon-badge-static badge-powrot">🏠</div></div>'
+                f'<div class="timeline-content-col">'
+                f'<div class="timeline-item-title">Powrót do domku</div>'
+                f'<div class="timeline-item-desc">{opis_tekst if opis_tekst else "Wypoczynek i relaks"}</div>'
                 f'</div>'
                 f'{nav_btn_html}'
+                f'</div>'
                 f'</div>'
                 f'</div>'
             )
             timeline_full_html.append(row_html)
         else:
+            if "obiad" in nazwa.lower() or "lunch" in nazwa.lower() or "jedzenie" in nazwa.lower() or "przerwa" in nazwa.lower() or "sklep" in nazwa.lower() or "zakupy" in nazwa.lower():
+                badge_symbol = "🛒" if "sklep" in nazwa.lower() or "zakupy" in nazwa.lower() else "🍴"
+                badge_class = "badge-obiad"
+            else:
+                badge_symbol = krok_num if (krok_num and krok_num != "0") else str(idx)
+                badge_class = "badge-miejsce"
+
+            has_nav = bool(coords_clean and ',' in coords_clean)
+            nav_btn_html = ""
+            if has_nav:
+                gps_url = f"https://www.google.com/maps/search/?api=1&query={coords_clean}"
+                nav_btn_html = f'<a href="{gps_url}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>'
+
+            df_pos = pob_posilki_dla_kroku(k['id'])
+            opis_tekst = ""
+            if not df_pos.empty:
+                posiłki_str = []
+                for _, prow in df_pos.iterrows():
+                    p_rodzaj = str(prow.get('rodzaj_posilku', '')).strip().lower()
+                    p_godz = str(prow.get('sugerowana_godzina', '')).strip()
+                    p_miejsce = str(prow.get('miejsce', '')).strip().lower()
+                    if p_rodzaj in ['śniadanie', 'obiad', 'kolacja']:
+                        nazwa_p = p_rodzaj.capitalize()
+                        if p_miejsce != 'w domku' and p_godz and p_godz != 'None' and p_godz != 'Brak':
+                            posiłki_str.append(f"{nazwa_p} ok {p_godz}")
+                        else:
+                            posiłki_str.append(nazwa_p)
+                if posiłki_str:
+                    opis_tekst = f"<span style='color:#8C5338; font-weight:700;'>🍲 {' / '.join(posiłki_str)}</span>"
+
+            center_col_html = (
+                f'<div class="timeline-center-col">'
+                f'<div class="timeline-icon-badge-static {badge_class}">{badge_symbol}</div>'
+                f'</div>'
+            )
+
+            time_end_html = f'<span class="timeline-time-end">do {godzina_koniec}</span>' if (godzina_koniec and godzina_koniec != godzina_start) else ''
+
             sklep_maps_url = f"https://www.google.com/maps/search/supermarket/@{coords_clean},15z" if coords_clean else "#"
             resto_maps_url = f"https://www.google.com/maps/search/restaurant/@{coords_clean},15z" if coords_clean else "#"
 
@@ -2365,6 +2418,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             )
 
             expander_html = (
+                f'<div class="timeline-step-row-wrapper">'
                 f'<details class="timeline-step-expander">'
                 f'<summary>'
                 f'<div class="timeline-row-inner">'
@@ -2374,7 +2428,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 f'</div>'
                 f'{center_col_html}'
                 f'<div class="timeline-content-col">'
-                f'<div class="timeline-item-title">{tytul_wyswietlany}</div>'
+                f'<div class="timeline-item-title">{nazwa}</div>'
                 f'<div class="timeline-item-desc">{opis_tekst}</div>'
                 f'</div>'
                 f'{nav_btn_html}'
@@ -2384,10 +2438,9 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 f'{details_inner_html}'
                 f'</div>'
                 f'</details>'
+                f'</div>'
             )
             timeline_full_html.append(expander_html)
-
-        timeline_full_html.append('</div>')
 
         if idx < total_steps - 1:
             k2_row_id = int(kroki_df.iloc[idx + 1]['id'])
