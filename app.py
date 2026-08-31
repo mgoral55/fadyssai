@@ -9,6 +9,8 @@ import os
 import urllib.request
 import json
 import re
+import math
+import time as py_time
 from datetime import datetime, date, time, timedelta
 
 # Próba zaimportowania Anthropic SDK dla Claude'a
@@ -747,7 +749,7 @@ div[data-testid="stCheckbox"] label {
     box-shadow: 0 3px 8px rgba(0,0,0,0.08) !important;
 }
 
-/* JEDNOLITY STYL DLA PRZYCISKÓW SZYBKICH PRZYSTANKÓW (AKTYWNYCH I ZABLOKOWANYCH) */
+/* JEDNOLITY STYL DLA PRZYCISKÓW SZYBKICH PRZYSTANKÓW */
 div.st-key-btn_add_shop_am_1 button,
 div.st-key-btn_add_shop_pm_1 button,
 div.st-key-btn_add_market_am_1 button,
@@ -767,7 +769,6 @@ div[class*="st-key-btn_add_market_"] button {
     text-align: center !important;
 }
 
-/* STAN WYGASZONY / ZABLOKOWANY PRZYCISKÓW */
 div[class*="st-key-btn_add_shop_"] button:disabled,
 div[class*="st-key-btn_add_market_"] button:disabled {
     background-color: #D6CEBA !important;
@@ -851,12 +852,13 @@ def pobierz_ikonke_kategorii(kategoria):
 def zaokraglij_do_5_minut(minuty):
     return int(round(minuty / 5.0) * 5)
 
+# --- BŁYSKAWICZNY ROUTING OSRM Z MATEMATYCZNYM FALLBACKIEM ---
 @st.cache_data(ttl=86400)
 def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
     url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
-        with urllib.request.urlopen(req, timeout=3) as response:
+        with urllib.request.urlopen(req, timeout=0.4) as response:
             data = json.loads(response.read().decode())
             if 'routes' in data and len(data['routes']) > 0:
                 duration_sec = data['routes'][0]['duration']
@@ -871,7 +873,19 @@ def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
                 return f"~{godziny}h {reszta}m", minuty
     except:
         pass
-    return "~25 min", 25
+    
+    # Matematyczny fallback: szacowanie z odległości euklidesowej (średnia prędkość 45 km/h na Krecie)
+    try:
+        dlat = (lat2 - lat1) * 111.0
+        dlon = (lon2 - lon1) * 85.0
+        dist_km = math.sqrt(dlat*dlat + dlon*dlon) * 1.3  # współczynnik krętości dróg
+        est_min = max(int(round((dist_km / 45.0) * 60)), 10)
+        est_min = zaokraglij_do_5_minut(est_min)
+        if est_min < 60:
+            return f"~{est_min} min", est_min
+        return f"~{est_min // 60}h {est_min % 60}m", est_min
+    except:
+        return "~25 min", 25
 
 def sparsuj_wspolrzedne(wsp_str):
     if not wsp_str or pd.isna(wsp_str):
@@ -936,25 +950,23 @@ def sparsuj_czas_ogarniania_na_minuty(czas_str):
 DNI_TYGODNIA_PL = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"]
 MIESIACE_PL = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia"]
 
-def wczytaj_pliki_regul(katalog="rule"):
+def wczytaj_pliki_regul(katalog="rule", max_chars_per_file=400):
     if not os.path.exists(katalog):
         return ""
-    tresc_regul = "\n--- REGUŁY Z FOLDERU RULE ---\n"
+    tresc_regul = "\n--- REGUŁY ---\n"
     znaleziono = False
     for plik in sorted(os.listdir(katalog)):
         sciezka = os.path.join(katalog, plik)
         if os.path.isfile(sciezka) and plik.lower().endswith(('.txt', '.md', '.json', '.rule', '.csv')):
             try:
                 with open(sciezka, 'r', encoding='utf-8') as f:
-                    tresc_regul += f"\n[Plik: {plik}]\n{f.read()}\n"
+                    content = f.read().strip()
+                    if len(content) > max_chars_per_file:
+                        content = content[:max_chars_per_file] + "..."
+                    tresc_regul += f"[{plik}]: {content}\n"
                     znaleziono = True
             except:
-                try:
-                    with open(sciezka, 'r', encoding='cp1250') as f:
-                        tresc_regul += f"\n[Plik: {plik}]\n{f.read()}\n"
-                        znaleziono = True
-                except:
-                    pass
+                pass
     return tresc_regul if znaleziono else ""
 
 def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor_koniec_str=None, anchor_start_str=None, force_pobudka_str=None, force_wyjazd_str=None, force_powrot_str=None):
@@ -1179,7 +1191,7 @@ def init_db():
             uzytkownik TEXT PRIMARY KEY,
             api_key TEXT,
             dostawca_ai TEXT DEFAULT 'Google Gemini',
-            model_ai TEXT DEFAULT 'gemini-3.1-flash-lite'
+            model_ai TEXT DEFAULT 'gemini-3.5-flash-lite'
         )
     ''')
 
@@ -1363,7 +1375,6 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, c
         if planowana_data is not None:
             cursor.execute('UPDATE wycieczka SET planowana_data = ? WHERE id = ?', (planowana_data, str(id)))
             
-            # Synchronizacja lokalizacji Rynku w Chanii przy zmianie daty (czysta nazwa i aktualne współrzędne)
             rynek_info, _ = pobierz_dane_rynku_dla_daty(planowana_data)
             if rynek_info:
                 cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? AND (nazwa LIKE "%Rynek w Chanii%" OR nazwa LIKE "%Targ w Chanii%")', (str(id),))
@@ -1418,14 +1429,12 @@ def dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki, pozycja="koniec"):
         
         nazwa = "Sklep przy domku"
         if pozycja == "start":
-            # Sklep rano jest ZAWSZE pierwszym punktem po domku (krok 1)
             target_krok_num = 1
             for row in istniejace:
                 k_num = int(row[1])
                 if k_num >= 1:
                     cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(k_num + 1), row[0]))
         else:
-            # Sklep wieczorem jest ZAWSZE ostatnim punktem przed powrotem do domku
             if istniejace and ("domek" in istniejace[-1][2].lower() or "powrót" in istniejace[-1][2].lower()):
                 ostatni_id = istniejace[-1][0]
                 target_krok_num = len(istniejace) - 1
@@ -1461,12 +1470,10 @@ def dodaj_rynek_w_chanii_do_wycieczki(id_wycieczki, pozycja="start"):
         cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
         istniejace = cursor.fetchall()
         
-        # Sprawdzamy czy Sklep rano lub wieczorem już istnieje na trasie
         has_sklep_rano = any("sklep" in str(r[2]).lower() and int(r[1]) == 1 for r in istniejace)
         has_sklep_wieczor = any("sklep" in str(r[2]).lower() and int(r[1]) == max(len(istniejace)-2, 1) for r in istniejace)
 
         if pozycja == "start":
-            # Rano kolejność: Domek (0) -> Sklep (1 jeśli jest) -> Rynek (1 lub 2)
             target_idx = 2 if has_sklep_rano else 1
             for row in istniejace:
                 k_num = int(row[1])
@@ -1474,7 +1481,6 @@ def dodaj_rynek_w_chanii_do_wycieczki(id_wycieczki, pozycja="start"):
                     cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(k_num + 1), row[0]))
             target_krok_num = target_idx
         else:
-            # Wieczorem kolejność: Rynek -> Sklep (jeśli jest) -> Domek Powrót
             if istniejace and ("domek" in istniejace[-1][2].lower() or "powrót" in istniejace[-1][2].lower()):
                 offset = 2 if has_sklep_wieczor else 1
                 target_idx = len(istniejace) - offset
@@ -1629,7 +1635,6 @@ def pobierz_zakupy_dla_wycieczki(id_wycieczki):
         df = pd.read_sql('SELECT * FROM zakupy WHERE id_wycieczki = ? ORDER BY id ASC', conn, params=(str(id_wycieczki),))
     return df
 
-# Deklaracja narzędzi bazy danych CRUD oraz natywnego Google Search
 cretai_tools = [
     types.Tool(
         function_declarations=[
@@ -1650,7 +1655,7 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="edytuj_wycieczke",
-                description="Aktualizuje parametry wycieczki, w tym szacowany czas do wyjazdu (np. '0.5h', '45m') oraz godzinę wyjazdu (np. '06:30'). Zmiana czasu do wyjazdu lub daty automatycznie przelicza cały harmonogram.",
+                description="Aktualizuje parametry wycieczki (czas ogarniania rano, wyjazd, data itp.).",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1659,26 +1664,26 @@ cretai_tools = [
                         "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Opis"),
                         "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Taktyka"),
                         "planowana_data": types.Schema(type=types.Type.STRING, description="RRRR-MM-DD"),
-                        "szacowany_czas_ogarniania_rano": types.Schema(type=types.Type.STRING, description="Szacowany czas do wyjazdu, np. '0.5h', '1h', '45m'"),
-                        "czas_wyjazdu": types.Schema(type=types.Type.STRING, description="Godzina wyjazdu z domku, np. '06:30'"),
+                        "szacowany_czas_ogarniania_rano": types.Schema(type=types.Type.STRING, description="Czas do wyjazdu, np. '0.5h', '45m'"),
+                        "czas_wyjazdu": types.Schema(type=types.Type.STRING, description="Godzina wyjazdu, np. '06:30'"),
                     },
                     required=["id"]
                 ),
             ),
             types.FunctionDeclaration(
                 name="dodaj_krok_wycieczki",
-                description="Dodaje krok do wycieczki (np. sklep przy trasie, rynek w Chanii, aptekę, punkt widokowy, kawiarnię). Jeśli brak współrzędnych, parametr 'wspolrzedne' pozostaw pusty lub None. Backend automatycznie wstawia punkt i przelicza godziny!",
+                description="Dodaje krok do wycieczki (sklep, rynek, atrakcja, plaża).",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
                         "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                        "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer kroku (opcjonalny, backend ustala go sam)"),
-                        "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca / 'Rynek w Chanii' / 'Sklep przy domku' itp."),
-                        "wspolrzedne": types.Schema(type=types.Type.STRING, description="GPS jako 'lat, lon' (np. '35.5166, 24.0237') lub None/pusty string, gdy brak koordynatów"),
-                        "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Orientacyjny czas pobytu, np. '17:00 - 17:25'"),
-                        "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="KRYTYCZNA godzina graniczna przed upałem/tłumem lub 'Brak'"),
-                        "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Ostrzeżenie o upale/tłumie lub 'Brak'"),
-                        "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING, description="Strefa wyciszenia"),
+                        "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer kroku (opcjonalny)"),
+                        "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca"),
+                        "wspolrzedne": types.Schema(type=types.Type.STRING, description="GPS 'lat, lon' lub None"),
+                        "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Czas pobytu np. '10:00 - 10:30'"),
+                        "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="Godzina ewakuacji lub 'Brak'"),
+                        "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Ostrzeżenie lub 'Brak'"),
+                        "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING, description="Strefa regeneracji"),
                         "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
                         "opis": types.Schema(type=types.Type.STRING, description="Opis"),
                     },
@@ -1687,15 +1692,15 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="edytuj_krok_wycieczki",
-                description="Edytuje parametry kroku wycieczki. Obsługuje precyzyjnie godziny wyjazdu 'do...' oraz godziny dotarcia 'na...'. Backend kaskadowo przeliczy godziny wszystkich punktów!",
+                description="Edytuje parametry kroku wycieczki i przelicza godziny trasy.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
                         "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                        "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID z bazy (DB_ID), numer kroku lub nazwa atrakcji"),
-                        "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Nowe okienko pobytu, np. '10:00 - 13:00'"),
-                        "godzina_wyjazdu_do": types.Schema(type=types.Type.STRING, description="Sztywna godzina WYJAZDU/ZAKOŃCZENIA pobytu w tym miejscu, gdy użytkownik mówi 'chcę być w X do godziny HH:MM'"),
-                        "godzina_dotarcia_na": types.Schema(type=types.Type.STRING, description="Sztywna godzina PRZYJAZDU/STARTU pobytu w tym miejscu, gdy użytkownik mówi 'chcę dojechać/dotrzeć do X na/do godziny HH:MM'"),
+                        "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID kroku, numer lub nazwa"),
+                        "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Okienko, np. '10:00 - 13:00'"),
+                        "godzina_wyjazdu_do": types.Schema(type=types.Type.STRING, description="Godzina wyjazdu z punktu"),
+                        "godzina_dotarcia_na": types.Schema(type=types.Type.STRING, description="Godzina dotarcia do punktu"),
                         "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
                         "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="Godzina krytyczna lub 'Brak'"),
                     },
@@ -1704,48 +1709,45 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="usun_krok_wycieczki",
-                description="Usuwa wskazany krok / atrakcję / sklep / rynek z wycieczki i natychmiast przelicza cały harmonogram. Używaj ZAWSZE, gdy użytkownik prosi o usunięcie, pominięcie lub wykasowanie punktu.",
+                description="Usuwa wskazany krok / atrakcję / sklep / rynek z wycieczki.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
-                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki (np. '1')"),
-                        "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID z bazy (DB_ID), numer kroku lub nazwa usuwanego punktu (np. 'Cretaquarium', 'Sklep', 'Rynek w Chanii', '2')"),
+                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                        "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID z bazy, numer lub nazwa"),
                     },
                     required=["id_wycieczki", "krok_wycieczki"]
                 ),
             ),
             types.FunctionDeclaration(
                 name="zmien_czas_postoju_na_trasie",
-                description="Zmienia bufor postoju na trasie między dwoma punktami (np. dodatkowy postój na kawę/toaletę) i przelicza godziny trasy.",
+                description="Zmienia bufor postoju na trasie między dwoma punktami.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
                         "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                        "krok_z": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku startowego odcinka"),
-                        "krok_do": types.Schema(type=types.Type.STRING, description="Numer lub nazwa kroku docelowego odcinka"),
-                        "minuty_postoju": types.Schema(type=types.Type.INTEGER, description="Liczba minut postoju na trasie (np. 20, 30)"),
+                        "krok_z": types.Schema(type=types.Type.STRING, description="Krok startowy odcinka"),
+                        "krok_do": types.Schema(type=types.Type.STRING, description="Krok docelowy odcinka"),
+                        "minuty_postoju": types.Schema(type=types.Type.INTEGER, description="Liczba minut postoju"),
                     },
                     required=["id_wycieczki", "krok_z", "krok_do", "minuty_postoju"]
                 ),
             ),
             types.FunctionDeclaration(
                 name="dodaj_produkt_zakupow",
-                description="Dodaje produkt do listy zakupów wycieczki. Może być przypisany do całej wycieczki (id_kroku=None) lub do konkretnego kroku na trasie (np. Sklepu lub Rynku). PAMIĘTAJ: Nigdy nie przypisuj zakupów do Domku/Bazy.",
+                description="Dodaje produkt do listy zakupów wycieczki.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
-                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki (np. '1')"),
-                        "nazwa_produktu": types.Schema(type=types.Type.STRING, description="Nazwa produktu zakupowego"),
-                        "id_kroku": types.Schema(type=types.Type.STRING, description="Opcjonalne DB_ID kroku wycieczki. Jeśli zakup ogólny dla wycieczki, pozostaw None."),
-                        "ilosc": types.Schema(type=types.Type.STRING, description="Ilość/opakowanie, np. '1 kg', '12 sztuk', '400g'"),
+                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                        "nazwa_produktu": types.Schema(type=types.Type.STRING, description="Nazwa produktu"),
+                        "id_kroku": types.Schema(type=types.Type.STRING, description="ID kroku lub None"),
+                        "ilosc": types.Schema(type=types.Type.STRING, description="Ilość"),
                     },
                     required=["id_wycieczki", "nazwa_produktu"]
                 ),
             )
         ]
-    ),
-    types.Tool(
-        google_search=types.GoogleSearch()
     )
 ]
 
@@ -1799,7 +1801,6 @@ def sparsuj_liste_zadan(surowy_tekst):
 
 def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df):
     grupy = []
-    
     zadania_w_drodze = [
         "Wypatruj przez okno kóz i policz, ile ich zobaczysz na zboczach gór.",
         "Znajdź najciekawszy kształt chmury podczas jazdy samochodem.",
@@ -1838,8 +1839,8 @@ def pobierz_ustawienia_z_db(uzytkownik):
         cursor.execute('SELECT api_key, dostawca_ai, model_ai FROM uzytkownik_ustawienia WHERE uzytkownik = ?', (uzytkownik,))
         res = cursor.fetchone()
     if res:
-        return res[0] or "", res[1] or "Google Gemini", res[2] or "gemini-3.1-flash-lite"
-    return "", "Google Gemini", "gemini-3.1-flash-lite"
+        return res[0] or "", res[1] or "Google Gemini", res[2] or "gemini-3.5-flash-lite"
+    return "", "Google Gemini", "gemini-3.5-flash-lite"
 
 def zapisz_ustawienia_w_db(uzytkownik, api_key, dostawca_ai, model_ai):
     with get_db() as conn:
@@ -1864,7 +1865,7 @@ with st.sidebar:
     wybrany_dostawca = st.selectbox("Dostawca AI", options=dostawcy_ai, index=dostawca_index)
     
     if wybrany_dostawca == "Google Gemini":
-        dostepne_modele = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-3.6-flash"]
+        dostepne_modele = ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.6-pro"]
     else:
         dostepne_modele = ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"]
     
@@ -1884,11 +1885,13 @@ with st.sidebar:
 </div>
 """, unsafe_allow_html=True)
 
+# --- ZCACHE'OWANA POGODA (1 ZAPYTANIE / H) ---
+@st.cache_data(ttl=3600)
 def pobierz_prognoze_pogody(lat, lon, data_docelowa):
     try:
         url = f"https://wttr.in/{lat},{lon}?format=j1"
         req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
-        with urllib.request.urlopen(req, timeout=3) as response:
+        with urllib.request.urlopen(req, timeout=0.8) as response:
             data = json.loads(response.read().decode())
             weather_list = data.get('weather', [])
             for day in weather_list:
@@ -2079,25 +2082,24 @@ def pobierz_wycieczki_dla_miejsca(numer_miejsca, nazwa_miejsca):
         df = pd.read_sql(query, conn, params=(str(numer_miejsca), f"%{nazwa_miejsca}%", str(nazwa_miejsca)))
     return df
 
-def wczytaj_kontekst_zewnetrzny():
-    tekst = f"Jesteś asystentem podróży CretAi na Kretę.\n"
-    tekst += f"- Lokalizacja naszego DOMEK: {DOMEK_LAT}, {DOMEK_LON}\n"
-    tekst += f"- Lokalizacja SKLEP (Sklep przy domku): {SKLEP_LAT}, {SKLEP_LON}\n"
-    tekst += wczytaj_pliki_regul("rule")
+def wczytaj_kontekst_zewnetrzny(aktywne_id_wycieczki="1"):
+    tekst = "CretAi Assistant • Kreta\n"
+    tekst += f"Baza/Domek: {DOMEK_LAT}, {DOMEK_LON} | Sklep: {SKLEP_LAT}, {SKLEP_LON}\n"
+    tekst += wczytaj_pliki_regul("rule", max_chars_per_file=400)
     
     with get_db() as conn:
         try:
-            wycieczki_df = pd.read_sql('SELECT id, tytul_wycieczki, calosciowy_opis_wycieczki, pobudka, czas_wyjazdu, szacowana_godzina_powrotu, planowana_data, szacowany_czas_ogarniania_rano FROM wycieczka', conn)
-            kroki_df = pd.read_sql('SELECT id, id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji FROM krok_wycieczki ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn)
+            wycieczka_df = pd.read_sql('SELECT id, tytul_wycieczki, planowana_data, szacowany_czas_ogarniania_rano, czas_wyjazdu FROM wycieczka WHERE id = ?', conn, params=(str(aktywne_id_wycieczki),))
+            kroki_df = pd.read_sql('SELECT id, krok_wycieczki, nazwa, okienko_zwiedzania FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn, params=(str(aktywne_id_wycieczki),))
         except:
-            wycieczki_df, kroki_df = pd.DataFrame(), pd.DataFrame()
+            wycieczka_df, kroki_df = pd.DataFrame(), pd.DataFrame()
 
-    if not wycieczki_df.empty:
-        for _, w in wycieczki_df.iterrows():
-            tekst += f"- Wycieczka #{w['id']}: {w['tytul_wycieczki']} | Data: {w.get('planowana_data', '')} | Czas do wyjazdu: {w.get('szacowany_czas_ogarniania_rano', '0.5h')} | Wyjazd: {w.get('czas_wyjazdu', '')}\n"
+    if not wycieczka_df.empty:
+        w = wycieczka_df.iloc[0]
+        tekst += f"\nAktualna Wycieczka #{w['id']}: {w['tytul_wycieczki']} (Data: {w.get('planowana_data', '')}, Wyjazd: {w.get('czas_wyjazdu', '')})\nKroki:\n"
     if not kroki_df.empty:
         for _, k in kroki_df.iterrows():
-            tekst += f"- Krok (W#{k['id_wycieczki']}): ID DB: {k['id']} | #{k['krok_wycieczki']}. {k['nazwa']} | Czas: {k['okienko_zwiedzania']}\n"
+            tekst += f"- ID DB:{k['id']} | #{k['krok_wycieczki']} {k['nazwa']} ({k['okienko_zwiedzania']})\n"
     return tekst
 
 def pobierz_trase_osrm(punkty):
@@ -2107,7 +2109,7 @@ def pobierz_trase_osrm(punkty):
     url = f"http://router.project-osrm.org/route/v1/driving/{wsp_str}?overview=full&geometries=geojson"
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
-        with urllib.request.urlopen(req, timeout=2) as response:
+        with urllib.request.urlopen(req, timeout=0.8) as response:
             data = json.loads(response.read().decode())
             if 'routes' in data and len(data['routes']) > 0:
                 geojson_coords = data['routes'][0]['geometry']['coordinates']
@@ -2121,6 +2123,7 @@ def dodaj_marker_domku(m):
     domek_icon = folium.DivIcon(html=domek_icon_html, icon_size=(28, 28), icon_anchor=(14, 14))
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=domek_icon, tooltip="Nasz Domek").add_to(m)
 
+# --- ULEPSZONA FUNKCJA CZATU AI ---
 def renderuj_globalny_czat_ai(uzytkownik, inline=False):
     if not inline:
         st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
@@ -2135,48 +2138,19 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                 st.rerun()
 
         if not api_key_input:
-            st.warning(f"Wprowadź klucz API w menu bocznym.")
+            st.warning("⚠️ Wprowadź klucz API w menu bocznym, aby uruchomić asystenta.")
             if not inline:
                 st.markdown('</div>', unsafe_allow_html=True)
             return
 
-        dzisiaj_str = date.today().strftime("%Y-%m-%d")
-        zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
-        system_prompt = f"""Jesteś asystentem podróży CretAi na Kretę, pomagającym zarządzać wycieczką objazdową z dziećmi i rodzicami z ADHD. Dziś: {dzisiaj_str}.
-{zewnetrzny_kontekst}
-- ZASADA DODAWANIA MIEJSC SPOZA LISTY (SKLEPY, RYNKI, APTEKI, PUNKTY WIDOKOWE, POSTOJE ITD.):
-  1. Gdy użytkownik prosi o dodanie nowego miejsca, sklepu lub postoju spoza głównej bazy miejsc, a NIE PODAŁ współrzędnych GPS:
-     - Zapytaj go krótko: "Czy masz współrzędne GPS lub pinezkę dla [Nazwa punktu]? Jeśli nie, mogę dodać ten punkt jako postój orientacyjny bez przycisku nawigacji."
-     - Jeśli użytkownik wprost odpowie podając współrzędne -> dodaj krok z parametrem `wspolrzedne='lat, lon'`.
-     - Jeśli użytkownik odpowie "nie mam", "dodaj bez", "jedziemy na oko" lub w pierwszym poleceniu wyraźnie zażąda dodania bez współrzędnych -> natychmiast wywołaj `dodaj_krok_wycieczki(..., wspolrzedne=None)` (wtedy aplikacja nie wyświetli przycisku nawigacji i ustawi zielone tło).
-  2. Jeśli użytkownik od razu w pierwszym pytaniu podał współrzędne (lub chodzi o znany Sklep przy domku: {SKLEP_LAT}, {SKLEP_LON}) -> dodaj od razu bez dopytywania.
-  3. Domyślny czas postoju dla sklepów, marketów, rynków, aptek, szybkich postojów: 15-25 min.
-  4. Dla punktów spoza listy parametr `godzina_ewakuacji` i `czerwona_strefa_ostrzezenie` ZAWSZE ustawiaj na 'Brak'.
-- ZASADA CZASU DO WYJAZDU: Wycieczka posiada parametr `szacowany_czas_ogarniania_rano` (domyślnie '0.5h', wyświetlany jako Czas do wyjazdu) oraz `czas_wyjazdu`. Pobudka i wyjazd są ściśle powiązane tym czasem. Gdy użytkownik mówi 'wyjeżdżamy o 07:00' lub zmienia czas do wyjazdu, backend automatycznie przelicza wyjazd i cały harmonogram wycieczki.
-- ZASADA USUWANIA KROKÓW: Gdy użytkownik prosi o usunięcie, wykasowanie, pominięcie lub rezygnację z atrakcji/sklepu/rynku (np. 'usuń Cretaquarium', 'nie jedziemy na rynek', 'skasuj krok 2'), ZAWSZE natychmiast wywołaj `usun_krok_wycieczki(id_wycieczki='1', krok_wycieczki='nazwa lub numer')`.
-- ZASADA LISTY ZAKUPÓW:
-  1. Możesz dodawać zakupy ogólne dla całej wycieczki za pomocą funkcji `dodaj_produkt_zakupow(id_wycieczki, nazwa_produktu, ilosc)` bez podawania `id_kroku` lub podając `id_kroku=None`.
-  2. Jeśli zakupy dotyczą konkretnego punktu trasy (np. Sklepu, Rynku lub atrakcji), podaj właściwe `id_kroku`. PAMIĘTAJ: Nigdy nie przypisuj zakupów do Domku (bazy startowej/końcowej).
-- ZASADA CZASU I HARMONOGRAMU (KASKADOWE PRZELICZANIE):
-  1. Gdy użytkownik mówi: 'chcę być w X do godziny HH:MM' (np. 'chcę być w Knossos do 12:00'), oznacza to GODZINĘ WYJAZDU z tego punktu. Wywołaj `edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, godzina_wyjazdu_do='12:00')`.
-  2. Gdy użytkownik mówi: 'chcę dotrzeć/dojechać do X na/do godziny HH:MM' (np. 'chcę dotrzeć do Knossos na 10:00'), oznacza to GODZINĘ PRZYJAZDU. Wywołaj `edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, godzina_dotarcia_na='10:00')`.
-  3. Gdy użytkownik prosi o zmianę postoju w trasie (np. 'dodaj 30 min na kawę w drodze'), wywołaj `zmien_czas_postoju_na_trasie(id_wycieczki, krok_z, krok_do, minuty_postoju)`.
-  4. Backend automatycznie przelicza cały łańcuch godzin, synchronizuje dojazdy OSRM oraz czyta z bazy czasy postojów w trasie.
-  5. REGUŁA NA CZAS POBYTU W PUNKTACH:
-     - Duże atrakcje / Pałace / Parki: 90-120 min.
-     - Plaże / Wypoczynek: 90-150 min.
-     - Punkty widokowe / Zdjęcia: 20-30 min.
-     - Sklepy / Markety / Rynki: 20-30 min.
-  6. POJĘCIE 'godzina_ewakuacji': To wyłącznie krytyczna granica termiczna/sensoryczna (np. '11:30' przed upałem w ruinach). Dla sklepów, plaż czy punktów bez zagrożenia ZAWSZE podawaj 'Brak'."""
-        
         chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
-        chat_container = st.container(height=200)
+        chat_container = st.container(height=260)
         with chat_container:
             for message in chat_historia_z_db:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"] if isinstance(message["content"], str) else "")
 
-        prompt = st.chat_input(f"Pytanie do AI...", key=f"chat_input_{uzytkownik}_{'inline' if inline else 'float'}")
+        prompt = st.chat_input("Napisz np. 'dodaj sklep rano', 'wyjazd o 7:30'...", key=f"chat_input_{uzytkownik}_{'inline' if inline else 'float'}")
         if prompt:
             zapisz_wiadomosc_w_db(uzytkownik, "user", prompt)
             with chat_container:
@@ -2184,78 +2158,147 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                     st.markdown(prompt)
                 with st.chat_message("assistant"):
                     assistant_reply = ""
+                    dzisiaj_str = date.today().strftime("%Y-%m-%d")
+                    akt_wyc_id = pobierz_aktywna_wycieczke_id()
+                    zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny(akt_wyc_id)
+                    
+                    system_prompt = f"""Jesteś asystentem podróży CretAi na Kretę dla rodziców dzieci z ADHD. Dziś: {dzisiaj_str}.
+{zewnetrzny_kontekst}
+- ZASADA SŁOŃCA I ADHD: Odpowiadaj maksymalnie krótko i w punktach.
+- ZASADA ZAPISU: Zawsze wywołuj odpowiednie narzędzie CRUD do bazy danych, a następnie krótko potwierdź zmiany.
+- ZASADA MIEJSC: Brak GPS -> zapytaj w 1 zdaniu o współrzędne lub dodaj ze wspolrzedne=None.
+- ZASADA CZASU: 'wyjeżdżamy o HH:MM' -> edytuj_wycieczke. 'być w X do HH:MM' -> edytuj_krok_wycieczki(godzina_wyjazdu_do)."""
+
                     try:
-                        if wybrany_dostawca == "Google Gemini":
-                            client = genai.Client(api_key=api_key_input)
-                            aktualna_historia_db = pobierz_historie_czatu_z_db(uzytkownik)
-                            contents = [item["raw_content"] for item in aktualna_historia_db if "raw_content" in item]
-                            if not contents:
-                                contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt)])]
+                        with st.status("🧭 Dopasowuję plan dnia...", expanded=False) as status:
+                            if wybrany_dostawca == "Google Gemini":
+                                client = genai.Client(api_key=api_key_input)
+                                
+                                contents = [
+                                    types.Content(role=m["role"], parts=[types.Part.from_text(text=m["content"])])
+                                    for m in chat_historia_z_db[-2:]
+                                ]
+                                contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
 
-                            for _ in range(5):
-                                response = client.models.generate_content(
-                                    model=wybrany_model,
-                                    contents=contents,
-                                    config=types.GenerateContentConfig(
-                                        tools=cretai_tools,
-                                        system_instruction=system_prompt
-                                    )
-                                )
+                                executed_actions = []
 
-                                candidate = response.candidates[0] if response.candidates else None
-                                has_fc = False
-                                if candidate and candidate.content and candidate.content.parts:
-                                    for p in candidate.content.parts:
-                                        if p.function_call:
-                                            has_fc = True
+                                for loop_idx in range(2):
+                                    status.update(label=f"🧭 Przeliczam trasę i bazę... (krok {loop_idx+1})")
+                                    
+                                    response = None
+                                    for attempt in range(2):
+                                        try:
+                                            response = client.models.generate_content(
+                                                model=wybrany_model,
+                                                contents=contents,
+                                                config=types.GenerateContentConfig(
+                                                    tools=cretai_tools,
+                                                    system_instruction=system_prompt,
+                                                    temperature=0.1,
+                                                    max_output_tokens=300
+                                                )
+                                            )
                                             break
+                                        except Exception as api_err:
+                                            if "429" in str(api_err) and attempt == 0:
+                                                status.write("⏳ Chwilowy limit RPM, ponawiam za 3s...")
+                                                py_time.sleep(3)
+                                                continue
+                                            raise api_err
 
-                                if has_fc or response.function_calls:
-                                    model_content = candidate.content
-                                    contents.append(model_content)
-                                    calls = response.function_calls if response.function_calls else [p.function_call for p in model_content.parts if p.function_call]
+                                    candidate = response.candidates[0] if response and response.candidates else None
+                                    calls = response.function_calls if hasattr(response, 'function_calls') and response.function_calls else []
                                     
-                                    function_responses_parts = []
-                                    for call in calls:
-                                        args = call.args
-                                        call_name = call.name
-                                        wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
-                                        function_responses_parts.append(
-                                            types.Part.from_function_response(name=call_name, response={"result": wynik_bazy})
-                                        )
-                                    contents.append(types.Content(role="user", parts=function_responses_parts))
-                                else:
-                                    text_parts = [p.text for p in candidate.content.parts if hasattr(p, "text") and p.text] if candidate and candidate.content and candidate.content.parts else []
-                                    assistant_reply = "".join(text_parts) if text_parts else (response.text if hasattr(response, "text") else "Zaktualizowano bazę danych.")
-                                    
-                                    if candidate and hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
-                                        gm = candidate.grounding_metadata
-                                        if hasattr(gm, 'grounding_chunks') and gm.grounding_chunks:
-                                            links = []
-                                            for chunk in gm.grounding_chunks:
-                                                if hasattr(chunk, 'web') and chunk.web:
-                                                    links.append(f"[{chunk.web.title}]({chunk.web.uri})")
-                                            if links:
-                                                assistant_reply += "\n\n🌐 **Źródła:** " + ", ".join(links[:3])
-                                    break
-                        else:
-                            client_c = anthropic.Anthropic(api_key=api_key_input)
-                            resp = client_c.messages.create(
-                                model=wybrany_model,
-                                max_tokens=1024,
-                                system=system_prompt,
-                                messages=[{"role": "user", "content": prompt}]
-                            )
-                            assistant_reply = "".join([b.text for b in resp.content if hasattr(b, "text")])
+                                    if not calls and candidate and candidate.content and candidate.content.parts:
+                                        calls = [p.function_call for p in candidate.content.parts if p.function_call]
+
+                                    if calls:
+                                        model_content = candidate.content
+                                        contents.append(model_content)
+                                        
+                                        function_responses_parts = []
+                                        for call in calls:
+                                            call_name = call.name
+                                            args = call.args
+                                            status.write(f"⚡ Wykonuję: **{call_name}**")
+                                            wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
+                                            executed_actions.append(wynik_bazy)
+                                            
+                                            function_responses_parts.append(
+                                                types.Part.from_function_response(
+                                                    name=call_name,
+                                                    response={"result": str(wynik_bazy)}
+                                                )
+                                            )
+                                        
+                                        contents.append(types.Content(role="user", parts=function_responses_parts))
+                                    else:
+                                        if candidate and candidate.content and candidate.content.parts:
+                                            text_parts = [p.text for p in candidate.content.parts if hasattr(p, "text") and p.text]
+                                            assistant_reply = "".join(text_parts)
+                                        elif hasattr(response, 'text') and response.text:
+                                            assistant_reply = response.text
+                                        break
+                                
+                                if not assistant_reply.strip() and executed_actions:
+                                    assistant_reply = "✅ **Zaktualizowano plan wycieczki:**\n* " + "\n* ".join(executed_actions)
+
+                            else:
+                                client_c = anthropic.Anthropic(api_key=api_key_input)
+                                resp = client_c.messages.create(
+                                    model=wybrany_model,
+                                    max_tokens=300,
+                                    system=system_prompt,
+                                    messages=[{"role": "user", "content": prompt}]
+                                )
+                                assistant_reply = "".join([b.text for b in resp.content if hasattr(b, "text")])
+
+                            status.update(label="✅ Gotowe!", state="complete")
 
                         if not assistant_reply:
-                            assistant_reply = "Operacja wykonana i zsynchronizowana w harmonogramie."
+                            assistant_reply = "✅ Operacja została wykonana, a harmonogram w bazie przeliczony."
 
                         zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
                         st.markdown(assistant_reply)
+                        st.session_state["flash_toast"] = "🧭 Harmonogram zaktualizowany!"
+                        st.rerun()
+
                     except Exception as e:
-                        st.error(f"Błąd: {e}")
-            st.rerun()
+                        kod_bledu = getattr(e, 'code', None) or getattr(e, 'status_code', None)
+                        nazwa_wyjatku = type(e).__name__
+                        surowy_komunikat = str(e)
+
+                        if "429" in surowy_komunikat or kod_bledu == 429 or "RESOURCE_EXHAUSTED" in surowy_komunikat:
+                            naglowek_bledu = "⏳ Przekroczono limit zapytań (429 Rate Limit)"
+                            komunikat_dla_rodzica = "Wyczerpano limit zapytań (RPM/RPD) dla darmowego klucza API. Odczekaj chwilę lub wygeneruj nowy klucz w Google AI Studio."
+                        elif "401" in surowy_komunikat or "403" in surowy_komunikat or kod_bledu in [401, 403] or "API_KEY_INVALID" in surowy_komunikat:
+                            naglowek_bledu = "🔑 Błąd uwierzytelnienia klucza API"
+                            komunikat_dla_rodzica = "Wprowadzony klucz API jest nieprawidłowy lub wygasł. Sprawdź ustawienia w menu bocznym."
+                        elif "503" in surowy_komunikat or kod_bledu == 503 or "UNAVAILABLE" in surowy_komunikat:
+                            naglowek_bledu = "☁️ Serwery AI są przeciążone (503)"
+                            komunikat_dla_rodzica = "Serwery dostawcy AI są chwilowo niedostępne. Spróbuj wysłać wiadomość ponownie za moment."
+                        else:
+                            naglowek_bledu = f"⚠️ Błąd połączenia z API ({nazwa_wyjatku})"
+                            komunikat_dla_rodzica = "Nie udało się zrealizować zapytania przez AI. Sprawdź połączenie z internetem."
+
+                        szczegoly_serwera = surowy_komunikat
+                        try:
+                            if hasattr(e, 'response') and hasattr(e.response, 'text'):
+                                szczegoly_serwera = e.response.text
+                            elif hasattr(e, 'message') and e.message:
+                                szczegoly_serwera = e.message
+                        except:
+                            pass
+
+                        st.markdown(f"""
+                        <div style="background-color: rgba(220, 80, 80, 0.15); border: 2px solid #DC5050; border-radius: 16px; padding: 12px; margin: 8px 0;">
+                            <div style="font-weight: 900; color: #DC5050; font-size: 10pt;">{naglowek_bledu}</div>
+                            <div style="font-size: 9pt; color: #2B2118; margin-top: 4px;">{komunikat_dla_rodzica}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        with st.expander("🛠️ Szczegóły odpowiedzi serwera API", expanded=False):
+                            st.code(szczegoly_serwera, language="json" if "{" in szczegoly_serwera else "text")
 
     if not inline:
         st.markdown('</div>', unsafe_allow_html=True)
@@ -2444,7 +2487,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             gps_url = f"https://www.google.com/maps/search/?api=1&query={coords_clean}"
             nav_btn_html = f'<a href="{gps_url}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>'
 
-        # Wykrycie typu miejsca i dopasowanie ikony (Zarówno Sklep jak i Rynek = 🛒)
         if "sklep" in nazwa_lower or "market" in nazwa_lower or "zakup" in nazwa_lower or "rynek" in nazwa_lower or "targ" in nazwa_lower or "laiki" in nazwa_lower:
             detected_icon = "🛒"
         elif "apteka" in nazwa_lower:
@@ -2480,7 +2522,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         )
 
         if is_first:
-            # 1. KROK: POBUDKA
             df_pos = pob_posilki_dla_kroku(k['id'])
             opis_tekst_pob = ""
             if not df_pos.empty:
@@ -2514,7 +2555,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             )
             timeline_full_html.append(row_pobudka)
 
-            # 2. KROK: WYJAZD
             godzina_wyjazdu_wyswietl = godzina_koniec if godzina_koniec else wyjazd_val
             row_wyjazd = (
                 f'<div class="timeline-step-row-wrapper">'
@@ -2571,12 +2611,10 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             timeline_full_html.append(row_html)
         
         elif is_custom_flat:
-            # PŁASKI, ZIELONY, NIEROZWIJALNY KROK SPOZA LISTY
             opis_kroku_cust = str(k.get('opis', '')).strip()
             if opis_kroku_cust in ["Brak", "None", ""]:
                 opis_kroku_cust = ""
 
-            # Czysty tytuł w UI bez dopisków
             tytul_kroku_display = nazwa
             if "rynek" in nazwa_lower or "targ" in nazwa_lower:
                 tytul_kroku_display = "Rynek w Chanii"
@@ -2740,10 +2778,8 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             timeline_full_html.append(spacer_html)
 
     timeline_full_html.append('</div>')
-    
     full_timeline_string = "".join(timeline_full_html)
 
-    # Wstrzyknięcie kart zakupów dla poszczególnych kroków (z pominięciem domku)
     for _, k in kroki_df.iterrows():
         nazwa_kroku = str(k['nazwa']).lower()
         if "domek" in nazwa_kroku:
@@ -2787,12 +2823,10 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
     st.markdown(full_timeline_string, unsafe_allow_html=True)
 
-    # Centralna sekcja i rozwijana karta: Zaopatrzenie
     st.markdown('<div class="section-unified-header">🛒 Zaopatrzenie</div>', unsafe_allow_html=True)
     df_wszystkie_zakupy = pobierz_zakupy_dla_wycieczki(wycieczka_id)
 
     with st.expander("🛒 Zaopatrzenie", expanded=False):
-        # --- ZMODERNIZOWANY MODUŁ: SZYBKIE PRZYSTANKI NA TRASIE ---
         st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 8px;'>⚡ Szybkie przystanki na trasie</div>", unsafe_allow_html=True)
         
         has_shop_start = any("sklep" in str(r['nazwa']).lower() and int(r['krok_wycieczki']) == 1 for _, r in kroki_df.iterrows())
@@ -2809,14 +2843,12 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         with col_qs_am:
             st.markdown("<div style='font-size: 8pt; font-weight: 800; color: #5D7A60; text-transform: uppercase; margin-bottom: 6px;'>🌅 Po wyjeździe</div>", unsafe_allow_html=True)
             
-            # Przycisk Sklepu Rano
             btn_shop_am_label = "✓ Sklep rano dodany" if has_shop_start else "🛒 Sklep rano"
             if st.button(btn_shop_am_label, key=f"btn_add_shop_am_{wycieczka_id}", use_container_width=True, disabled=has_shop_start):
                 dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="start")
                 st.session_state["flash_toast"] = "🌅 Dodano Sklep po wyjeździe!"
                 st.rerun()
             
-            # Przycisk Rynku Rano
             btn_market_am_label = "✓ Rynek rano dodany" if has_market_start else ("🛒 Rynek rano" if rynek_czynny else "🛒 Rynek (nieczynny)")
             if st.button(btn_market_am_label, key=f"btn_add_market_am_{wycieczka_id}", use_container_width=True, disabled=(has_market_start or not rynek_czynny), help=f"Lokalizacja: {rynek_dla_daty['opis_miejsca']}" if rynek_czynny else "Dziś brak targu w Chanii"):
                 dodaj_rynek_w_chanii_do_wycieczki(wycieczka_id, pozycja="start")
@@ -2826,14 +2858,12 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         with col_qs_pm:
             st.markdown("<div style='font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 6px;'>🌇 Przed powrotem</div>", unsafe_allow_html=True)
             
-            # Przycisk Sklepu Powrót
             btn_shop_pm_label = "✓ Sklep powrót dodany" if has_shop_end else "🛒 Sklep powrót"
             if st.button(btn_shop_pm_label, key=f"btn_add_shop_pm_{wycieczka_id}", use_container_width=True, disabled=has_shop_end):
                 dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="koniec")
                 st.session_state["flash_toast"] = "🌇 Dodano Sklep przed powrotem!"
                 st.rerun()
             
-            # Przycisk Rynku Powrót
             btn_market_pm_label = "✓ Rynek powrót dodany" if has_market_end else ("🛒 Rynek powrót" if rynek_czynny else "🛒 Rynek (nieczynny)")
             if st.button(btn_market_pm_label, key=f"btn_add_market_pm_{wycieczka_id}", use_container_width=True, disabled=(has_market_end or not rynek_czynny), help=f"Lokalizacja: {rynek_dla_daty['opis_miejsca']}" if rynek_czynny else "Dziś brak targu w Chanii"):
                 dodaj_rynek_w_chanii_do_wycieczki(wycieczka_id, pozycja="koniec")
@@ -2842,7 +2872,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
         st.markdown("<div style='border-top: 1px solid #D6CEBC; margin: 12px 0 10px 0;'></div>", unsafe_allow_html=True)
 
-        # 1. Formularz szybkiego dodawania pozycji do checklisty zakupowej
         with st.form(key=f"form_add_shopping_item_{wycieczka_id}", clear_on_submit=True):
             st.markdown("<div style='font-size: 9.5pt; font-weight: 800; color: #8C5338; margin-bottom: 4px;'>➕ Dodaj nową pozycję do listy</div>", unsafe_allow_html=True)
             col_nazwa, col_ilosc = st.columns([2, 1])
@@ -2851,7 +2880,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             with col_ilosc:
                 nowa_ilosc = st.text_input("Ilość", placeholder="Ilość (np. 6 szt)", label_visibility="collapsed")
 
-            # Przygotowanie opcji przypisania: Cała wycieczka (ogólne) lub konkretny krok poza Domkiem
             opcje_przypisania = [("📦 Cała wycieczka (ogólne)", None)]
             for _, k_row in kroki_df.iterrows():
                 nazwa_k = str(k_row['nazwa'])
@@ -2877,11 +2905,9 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
         st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
 
-        # 2. Wyświetlanie elementów checklisty
         if df_wszystkie_zakupy.empty:
             st.markdown("<div style='font-size: 9pt; color: #8C827A; font-style: italic; margin-top: 6px;'>Lista zakupów jest pusta. Dodaj produkty powyżej!</div>", unsafe_allow_html=True)
         else:
-            # A) Zakupy ogólne na całą wycieczkę
             ogolne_zakupy = df_wszystkie_zakupy[df_wszystkie_zakupy['id_kroku'].isna() | (df_wszystkie_zakupy['id_kroku'] == '')]
             if not ogolne_zakupy.empty:
                 st.markdown("<div style='font-size: 9.5pt; font-weight: 800; color: #8C5338; margin: 8px 0 4px 0;'>📦 Na całą wycieczkę:</div>", unsafe_allow_html=True)
@@ -2896,7 +2922,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                         zmien_status_zakupu(z_id, nowy_status)
                         st.rerun()
 
-            # B) Zakupy przypisane do konkretnych kroków (z pominięciem domku)
             for _, k in kroki_df.iterrows():
                 if "domek" in str(k['nazwa']).lower():
                     continue
