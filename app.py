@@ -765,12 +765,12 @@ SKLEP_LAT = 35.586222
 SKLEP_LON = 24.091861
 
 CATEGORIES_CONFIG = {
-    "Must have": {"color": "#B35446", "slug": "must_have"},
-    "Nice to have": {"color": "#C47C48", "slug": "nice_to_have"},
-    "Plaża": {"color": "#4A7C8F", "slug": "plaza"},
-    "Activity": {"color": "#C6934B", "slug": "activity"},
-    "Shop": {"color": "#7D5871", "slug": "shop"},
-    "Other": {"color": "#5D7A60", "slug": "other"}
+    "Must have": {"color": "#B35446", "slug": "must_have", "icon": "🏛️"},
+    "Nice to have": {"color": "#C47C48", "slug": "nice_to_have", "icon": "✨"},
+    "Plaża": {"color": "#4A7C8F", "slug": "plaza", "icon": "🏖️"},
+    "Activity": {"color": "#C6934B", "slug": "activity", "icon": "🧗"},
+    "Shop": {"color": "#7D5871", "slug": "shop", "icon": "🛒"},
+    "Other": {"color": "#5D7A60", "slug": "other", "icon": None}
 }
 
 def kategoryzuj_typ(typ_str):
@@ -792,6 +792,9 @@ def kategoryzuj_typ(typ_str):
 
 def pobierz_kolor_kategorii(kategoria):
     return CATEGORIES_CONFIG.get(kategoria, CATEGORIES_CONFIG["Other"])["color"]
+
+def pobierz_ikonke_kategorii(kategoria):
+    return CATEGORIES_CONFIG.get(kategoria, CATEGORIES_CONFIG["Other"]).get("icon")
 
 def zaokraglij_do_5_minut(minuty):
     return int(round(minuty / 5.0) * 5)
@@ -936,7 +939,7 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
         if lat1 is not None and lon1 is not None and lat2 is not None and lon2 is not None:
             tekst_dojazdu, minuty_przejazdu = oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2)
         
-        bufor_postoju = istniejace_postoje.get((k1_id, k2_id), 15)
+        bufor_postoju = istniejace_postoje.get((k1_id, k2_id), 0)
         dojazdy_minuty.append(minuty_przejazdu)
         dojazdy_tekst.append(tekst_dojazdu)
         postoje_na_trasie_minuty.append(bufor_postoju)
@@ -947,7 +950,7 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
         is_l = (idx == len(kroki) - 1)
         nazwa_lower = str(k[4]).lower()
         
-        if "sklep" in nazwa_lower or "market" in nazwa_lower or "zakup" in nazwa_lower:
+        if "sklep" in nazwa_lower or "market" in nazwa_lower or "zakup" in nazwa_lower or "apteka" in nazwa_lower:
             domyslny_czas = 25
         elif "plaż" in nazwa_lower or "beach" in nazwa_lower:
             domyslny_czas = 90
@@ -1152,7 +1155,7 @@ def init_db():
             id_kroku_z INTEGER,
             id_kroku_do INTEGER,
             czas_przejazdu TEXT,
-            szacowany_czas_postoju INTEGER,
+            szacowany_czas_postoju INTEGER DEFAULT 0,
             FOREIGN KEY (id_kroku_z) REFERENCES krok_wycieczki(id) ON DELETE CASCADE,
             FOREIGN KEY (id_kroku_do) REFERENCES krok_wycieczki(id) ON DELETE CASCADE
         )
@@ -1303,8 +1306,8 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, c
     przelicz_i_zsynchronizuj_wycieczke(str(id), force_wyjazd_str=czas_wyjazdu if czas_wyjazdu else None)
     return f"Wycieczka #{id} została zaktualizowana i przeliczona."
 
-def dodaj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne="35.3,24.5", 
-                         okienko_zwiedzania="10:00 - 12:00", godzina_ewakuacji="Brak", 
+def dodaj_krok_wycieczki(id_wycieczki, krok_wycieczki=None, nazwa="", wspolrzedne=None, 
+                         okienko_zwiedzania="10:00 - 10:30", godzina_ewakuacji="Brak", 
                          czerwona_strefa_ostrzezenie="Brak", strefa_luzu_i_regeneracji="Spokojna strefa", 
                          podsumowanie_taktyki="Brak", opis="Brak"):
     with get_db() as conn:
@@ -1312,20 +1315,22 @@ def dodaj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa, wspolrzedne="35.3,
         cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
         istniejace = cursor.fetchall()
 
+        wsp_val = str(wspolrzedne).strip() if wspolrzedne is not None and str(wspolrzedne).strip() and str(wspolrzedne).lower() != 'none' else ""
+
         if istniejace and ("domek" in istniejace[-1][2].lower() or "powrót" in istniejace[-1][2].lower()):
             ostatni_id = istniejace[-1][0]
-            nowy_numer_sklepu = len(istniejace) - 1
+            nowy_numer_kroku = len(istniejace) - 1
             nowy_numer_domku = len(istniejace)
             
             cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(nowy_numer_domku), ostatni_id))
-            target_krok_num = str(nowy_numer_sklepu)
+            target_krok_num = str(nowy_numer_kroku)
         else:
             target_krok_num = str(len(istniejace))
 
         cursor.execute('''
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, opis)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (str(id_wycieczki), target_krok_num, str(nazwa), str(wspolrzedne), str(okienko_zwiedzania), str(godzina_ewakuacji), str(czerwona_strefa_ostrzezenie), str(strefa_luzu_i_regeneracji), str(podsumowanie_taktyki), str(opis)))
+        ''', (str(id_wycieczki), target_krok_num, str(nazwa), wsp_val, str(okienko_zwiedzania), str(godzina_ewakuacji), str(czerwona_strefa_ostrzezenie), str(strefa_luzu_i_regeneracji), str(podsumowanie_taktyki), str(opis)))
         conn.commit()
     
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
@@ -1493,22 +1498,22 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="dodaj_krok_wycieczki",
-                description="Dodaje krok do wycieczki (np. sklep przed powrotem do bazy). Backend automatycznie wstawia go we właściwym miejscu i przelicza godziny!",
+                description="Dodaje krok do wycieczki (np. sklep przy trasie, aptekę, punkt widokowy, kawiarnię lub dowolne inne miejsce spoza listy). Jeśli brak współrzędnych, parametr 'wspolrzedne' pozostaw pusty lub None. Backend automatycznie wstawia punkt przed powrotem do bazy i przelicza godziny!",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
                         "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
                         "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer kroku (opcjonalny, backend ustala go sam)"),
-                        "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca / atrakcji / 'Sklep przy domku'"),
-                        "wspolrzedne": types.Schema(type=types.Type.STRING, description="GPS (np. dla sklepu: '35.586222, 24.091861')"),
+                        "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca / 'Sklep przy trasie' / 'Apteka' itp."),
+                        "wspolrzedne": types.Schema(type=types.Type.STRING, description="GPS jako 'lat, lon' (np. '35.586222, 24.091861') lub None/pusty string, gdy brak koordynatów"),
                         "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Orientacyjny czas pobytu, np. '17:00 - 17:25'"),
-                        "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="KRYTYCZNA godzina graniczna przed upałem/tłumem (np. '11:30') lub 'Brak' jeśli nie dotyczy"),
+                        "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="KRYTYCZNA godzina graniczna przed upałem/tłumem lub 'Brak'"),
                         "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Ostrzeżenie o upale/tłumie lub 'Brak'"),
                         "strefa_luzu_i_regeneracji": types.Schema(type=types.Type.STRING, description="Strefa wyciszenia"),
                         "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
                         "opis": types.Schema(type=types.Type.STRING, description="Opis"),
                     },
-                    required=["id_wycieczki", "krok_wycieczki", "nazwa"]
+                    required=["id_wycieczki", "nazwa"]
                 ),
             ),
             types.FunctionDeclaration(
@@ -1969,6 +1974,14 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
         zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
         system_prompt = f"""Jesteś asystentem podróży CretAi na Kretę, pomagającym zarządzać wycieczką objazdową z dziećmi i rodzicami z ADHD. Dziś: {dzisiaj_str}.
 {zewnetrzny_kontekst}
+- ZASADA DODAWANIA MIEJSC SPOZA LISTY (SKLEPY, APTEKI, PUNKTY WIDOKOWE, POSTOJE ITD.):
+  1. Gdy użytkownik prosi o dodanie nowego miejsca, sklepu lub postoju spoza głównej bazy miejsc, a NIE PODAŁ współrzędnych GPS:
+     - Zapytaj go krótko: "Czy masz współrzędne GPS lub pinezkę dla [Nazwa punktu]? Jeśli nie, mogę dodać ten punkt jako postój orientacyjny bez przycisku nawigacji."
+     - Jeśli użytkownik wprost odpowie podając współrzędne -> dodaj krok z parametrem `wspolrzedne='lat, lon'`.
+     - Jeśli użytkownik odpowie "nie mam", "dodaj bez", "jedziemy na oko" lub w pierwszym poleceniu wyraźnie zażąda dodania bez współrzędnych -> natychmiast wywołaj `dodaj_krok_wycieczki(..., wspolrzedne=None)` (wtedy aplikacja nie wyświetli przycisku nawigacji i ustawi zielone tło).
+  2. Jeśli użytkownik od razu w pierwszym pytaniu podał współrzędne (lub chodzi o znany Sklep przy domku: {SKLEP_LAT}, {SKLEP_LON}) -> dodaj od razu bez dopytywania.
+  3. Domyślny czas postoju dla sklepów, marketów, aptek, szybkich postojów: 15-25 min.
+  4. Dla punktów spoza listy parametr `godzina_ewakuacji` i `czerwona_strefa_ostrzezenie` ZAWSZE ustawiaj na 'Brak'.
 - ZASADA CZASU DO WYJAZDU: Wycieczka posiada parametr `szacowany_czas_ogarniania_rano` (domyślnie '0.5h', wyświetlany jako Czas do wyjazdu) oraz `czas_wyjazdu`. Pobudka i wyjazd są ściśle powiązane tym czasem. Gdy użytkownik mówi 'wyjeżdżamy o 07:00' lub zmienia czas do wyjazdu, backend automatycznie przelicza wyjazd i cały harmonogram wycieczki.
 - ZASADA USUWANIA KROKÓW: Gdy użytkownik prosi o usunięcie, wykasowanie, pominięcie lub rezygnację z atrakcji/sklepu (np. 'usuń Cretaquarium', 'nie jedziemy do akwarium', 'skasuj krok 2'), ZAWSZE natychmiast wywołaj `usun_krok_wycieczki(id_wycieczki='1', krok_wycieczki='nazwa lub numer')`.
 - ZASADA CZASU I HARMONOGRAMU (KASKADOWE PRZELICZANIE):
@@ -2129,6 +2142,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
         kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn, params=(str(wycieczka_id),))
         czasy_dojazdu_df = pd.read_sql('SELECT * FROM czasy_dojazdu', conn)
+        df_wszystkie_miejsca = pd.read_sql('SELECT numer_miejsca, nazwa, typ FROM miejsca', conn)
     
     if wycieczka_row.empty:
         st.info("Brak danych wycieczki.")
@@ -2209,7 +2223,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę powrotu!"
                 st.rerun()
 
-    # --- SEKCJA TAKTYKA (PRZENIESIONA NAD PLAN) ---
+    # --- SEKCJA TAKTYKA ---
     if pd.notna(w_gen.get('calosciowa_taktyka_dnia')) and str(w_gen['calosciowa_taktyka_dnia']).strip():
         st.markdown('<div class="section-unified-header">🧠 Taktyka</div>', unsafe_allow_html=True)
         st.markdown(f"""
@@ -2229,9 +2243,16 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         '<div class="timeline-master-continuous-line"></div>'
     ]
     
+    baza_miejsc_dict = {}
+    if not df_wszystkie_miejsca.empty:
+        for _, mrow in df_wszystkie_miejsca.iterrows():
+            baza_miejsc_dict[str(mrow['numer_miejsca'])] = str(mrow['typ'])
+            baza_miejsc_dict[str(mrow['nazwa']).lower()] = str(mrow['typ'])
+
     for idx, (_, k) in enumerate(kroki_df.iterrows()):
         krok_row_id = int(k['id'])
         nazwa = str(k['nazwa'])
+        nazwa_lower = nazwa.lower()
         okienko = str(k.get('okienko_zwiedzania', ''))
         krok_num = str(k['krok_wycieczki'])
         wspolrzedne = str(k.get('wspolrzedne', ''))
@@ -2243,6 +2264,54 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
         is_first = (idx == 0)
         is_last = (idx == total_steps - 1)
         
+        lat_parsed, lon_parsed = sparsuj_wspolrzedne(wspolrzedne)
+        has_nav = (lat_parsed is not None and lon_parsed is not None)
+        nav_btn_html = ""
+        if has_nav:
+            gps_url = f"https://www.google.com/maps/search/?api=1&query={coords_clean}"
+            nav_btn_html = f'<a href="{gps_url}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>'
+
+        # Wykrycie typu miejsca i dopasowanie ikony
+        matched_typ = baza_miejsc_dict.get(krok_num)
+        if not matched_typ:
+            for k_name_db, k_typ_db in baza_miejsc_dict.items():
+                if len(k_name_db) > 3 and k_name_db in nazwa_lower:
+                    matched_typ = k_typ_db
+                    break
+
+        kat = kategoryzuj_typ(matched_typ) if matched_typ else kategoryzuj_typ(nazwa_lower)
+        icon_from_cat = pobierz_ikonke_kategorii(kat)
+
+        # Precyzyjne dopasowanie emoji kontekstowych
+        if "sklep" in nazwa_lower or "market" in nazwa_lower or "zakup" in nazwa_lower:
+            detected_icon = "🛒"
+        elif "apteka" in nazwa_lower:
+            detected_icon = "💊"
+        elif "kawa" in nazwa_lower or "cafe" in nazwa_lower:
+            detected_icon = "☕"
+        elif "widok" in nazwa_lower or "punkt widokowy" in nazwa_lower:
+            detected_icon = "📸"
+        elif "parking" in nazwa_lower or "postój" in nazwa_lower:
+            detected_icon = "🅿️"
+        elif "toaleta" in nazwa_lower or "wc" in nazwa_lower:
+            detected_icon = "🚻"
+        elif "obiad" in nazwa_lower or "lunch" in nazwa_lower or "jedzenie" in nazwa_lower or "przekąska" in nazwa_lower:
+            detected_icon = "🍴"
+        elif "plaż" in nazwa_lower or "beach" in nazwa_lower:
+            detected_icon = "🏖️"
+        elif icon_from_cat is not None:
+            detected_icon = icon_from_cat
+        else:
+            detected_icon = None
+
+        badge_symbol = detected_icon if detected_icon is not None else (krok_num if (krok_num and krok_num != "0") else str(idx))
+
+        is_in_places_db = matched_typ is not None
+        is_custom_flat = not is_first and not is_last and (
+            not is_in_places_db or 
+            any(w in nazwa_lower for w in ["sklep", "market", "zakup", "apteka", "postój", "parking", "kawa", "cafe", "toaleta", "punkt widokowy", "widok"])
+        )
+
         if is_first:
             # 1. KROK: POBUDKA
             df_pos = pob_posilki_dla_kroku(k['id'])
@@ -2278,7 +2347,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             )
             timeline_full_html.append(row_pobudka)
 
-            # 2. KROK: WYJAZD (NA STAŁE, ZIELONE TŁO)
+            # 2. KROK: WYJAZD
             godzina_wyjazdu_wyswietl = godzina_koniec if godzina_koniec else wyjazd_val
             row_wyjazd = (
                 f'<div class="timeline-step-row-wrapper">'
@@ -2315,7 +2384,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                     opis_tekst = f"<span style='color:#8C5338; font-weight:700;'>🍲 {' / '.join(posiłki_str)}</span>"
 
             gps_url = f"https://www.google.com/maps/search/?api=1&query={DOMEK_LAT},{DOMEK_LON}"
-            nav_btn_html = f'<a href="{gps_url}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>'
+            nav_btn_html_domek = f'<a href="{gps_url}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>'
 
             row_html = (
                 f'<div class="timeline-step-row-wrapper">'
@@ -2327,25 +2396,41 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 f'<div class="timeline-item-title">Powrót do domku</div>'
                 f'<div class="timeline-item-desc">{opis_tekst if opis_tekst else "Wypoczynek i relaks"}</div>'
                 f'</div>'
-                f'{nav_btn_html}'
+                f'{nav_btn_html_domek}'
                 f'</div>'
                 f'</div>'
                 f'</div>'
             )
             timeline_full_html.append(row_html)
-        else:
-            if "obiad" in nazwa.lower() or "lunch" in nazwa.lower() or "jedzenie" in nazwa.lower() or "przerwa" in nazwa.lower() or "sklep" in nazwa.lower() or "zakupy" in nazwa.lower():
-                badge_symbol = "🛒" if "sklep" in nazwa.lower() or "zakupy" in nazwa.lower() else "🍴"
-                badge_class = "badge-obiad"
-            else:
-                badge_symbol = krok_num if (krok_num and krok_num != "0") else str(idx)
-                badge_class = "badge-miejsce"
+        
+        elif is_custom_flat:
+            # PŁASKI, ZIELONY, NIEROZWIJALNY KROK SPOZA LISTY
+            opis_kroku_cust = str(k.get('opis', '')).strip()
+            if opis_kroku_cust in ["Brak", "None", ""]:
+                opis_kroku_cust = ""
 
-            has_nav = bool(coords_clean and ',' in coords_clean)
-            nav_btn_html = ""
-            if has_nav:
-                gps_url = f"https://www.google.com/maps/search/?api=1&query={coords_clean}"
-                nav_btn_html = f'<a href="{gps_url}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>'
+            row_custom = (
+                f'<div class="timeline-step-row-wrapper">'
+                f'<div class="timeline-row-frameless">'
+                f'<div class="timeline-row-inner">'
+                f'<div class="timeline-time">'
+                f'<span class="timeline-time-start">{godzina_start}</span>'
+                f'{(f"<span class=\'timeline-time-end\'>do {godzina_koniec}</span>") if (godzina_koniec and godzina_koniec != godzina_start) else ""}'
+                f'</div>'
+                f'<div class="timeline-center-col"><div class="timeline-icon-badge-static badge-pobudka">{badge_symbol}</div></div>'
+                f'<div class="timeline-content-col">'
+                f'<div class="timeline-item-title">{nazwa}</div>'
+                f'<div class="timeline-item-desc">{opis_kroku_cust}</div>'
+                f'</div>'
+                f'{nav_btn_html}'
+                f'</div>'
+                f'</div>'
+                f'</div>'
+            )
+            timeline_full_html.append(row_custom)
+
+        else:
+            badge_class = "badge-obiad" if "🍴" in str(badge_symbol) else "badge-miejsce"
 
             df_pos = pob_posilki_dla_kroku(k['id'])
             opis_tekst = ""
@@ -2467,7 +2552,10 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 czas_dojazdu_dalej = match_row.iloc[0]['czas_przejazdu']
                 postoj_val = match_row.iloc[0]['szacowany_czas_postoju']
                 if pd.notna(czas_dojazdu_dalej) and str(czas_dojazdu_dalej).strip() != "":
-                    transit_html = f'<div class="timeline-transit-text">🚗 {czas_dojazdu_dalej} | + {postoj_val}m</div>'
+                    if postoj_val is not None and int(postoj_val) > 0:
+                        transit_html = f'<div class="timeline-transit-text">🚗 {czas_dojazdu_dalej} | + {postoj_val}m</div>'
+                    else:
+                        transit_html = f'<div class="timeline-transit-text">🚗 {czas_dojazdu_dalej}</div>'
 
             spacer_html = (
                 f'<div class="timeline-transit-spacer">'
@@ -2520,7 +2608,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
     st.markdown(full_timeline_string, unsafe_allow_html=True)
 
-    # Interaktywna obsługa checklisty zakupów dla kroków (jeśli występują w wycieczce)
+    # Interaktywna obsługa checklisty zakupów dla kroków
     kroki_z_zakupami = []
     for _, k in kroki_df.iterrows():
         df_zak = pobierz_zakupy_dla_kroku(k['id'])
