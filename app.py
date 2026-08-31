@@ -734,6 +734,7 @@ div[data-testid="stCheckbox"] label {
     gap: 3px;
 }
 
+/* GLOBALNY STYL PRZYCISKÓW */
 .stButton > button {
     background-color: #2E251E !important;
     color: #FFFFFF !important;
@@ -742,7 +743,39 @@ div[data-testid="stCheckbox"] label {
     border-radius: 20px !important;
     padding: 0.5rem 1rem !important;
     min-height: 44px !important;
-    font-size: 10.5pt !important;
+    font-size: 10pt !important;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.08) !important;
+}
+
+/* JEDNOLITY STYL DLA PRZYCISKÓW SZYBKICH PRZYSTANKÓW (AKTYWNYCH I ZABLOKOWANYCH) */
+div.st-key-btn_add_shop_am_1 button,
+div.st-key-btn_add_shop_pm_1 button,
+div.st-key-btn_add_market_am_1 button,
+div.st-key-btn_add_market_pm_1 button,
+div[class*="st-key-btn_add_shop_"] button,
+div[class*="st-key-btn_add_market_"] button {
+    height: 44px !important;
+    min-height: 44px !important;
+    max-height: 44px !important;
+    font-size: 9pt !important;
+    font-weight: 800 !important;
+    border-radius: 16px !important;
+    margin-bottom: 6px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+}
+
+/* STAN WYGASZONY / ZABLOKOWANY PRZYCISKÓW */
+div[class*="st-key-btn_add_shop_"] button:disabled,
+div[class*="st-key-btn_add_market_"] button:disabled {
+    background-color: #D6CEBA !important;
+    color: #73695F !important;
+    border: 1.5px solid #C4BC9E !important;
+    opacity: 0.85 !important;
+    cursor: not-allowed !important;
+    box-shadow: none !important;
 }
 
 .note-card {
@@ -763,6 +796,25 @@ DOMEK_LAT = 35.5914
 DOMEK_LON = 24.0918
 SKLEP_LAT = 35.586222
 SKLEP_LON = 24.091861
+
+# --- ROZPISKA LOKALIZACJI TARGU (LAIKI) W CHANII WG DNI TYGODNIA ---
+LAIKI_SCHEDULE = {
+    0: {"dzien_pl": "Poniedziałek", "opis_miejsca": "Plac Markopoulou / ul. Malinou", "coords": "35.5118, 24.0239"},
+    1: {"dzien_pl": "Wtorek", "opis_miejsca": "Plac Agias Marinas / ul. Plastira", "coords": "35.4962, 24.0148"},
+    2: {"dzien_pl": "Środa", "opis_miejsca": "ul. Therisou 1 / dawny Biochym", "coords": "35.5057, 24.0094"},
+    3: {"dzien_pl": "Czwartek", "opis_miejsca": "Nea Chora – dawna ABEA / Akti Kanari", "coords": "35.5147, 24.0076"},
+    4: None,  # Piątek - brak targu w Chanii
+    5: {"dzien_pl": "Sobota", "opis_miejsca": "ul. Minoos przy murach weneckich", "coords": "35.5166, 24.0237"},
+    6: None   # Niedziela - dzień wolny
+}
+
+def pobierz_dane_rynku_dla_daty(data_str):
+    try:
+        dt = datetime.strptime(str(data_str), "%Y-%m-%d").date()
+        weekday = dt.weekday()
+    except:
+        weekday = date.today().weekday()
+    return LAIKI_SCHEDULE.get(weekday), weekday
 
 CATEGORIES_CONFIG = {
     "Must have": {"color": "#B35446", "slug": "must_have", "icon": "🏛️"},
@@ -785,7 +837,7 @@ def kategoryzuj_typ(typ_str):
         return "Plaża"
     elif "activ" in t or "aktywn" in t or "wąwóz" in t or "wawoz" in t or "sport" in t:
         return "Activity"
-    elif "shop" in t or "sklep" in t or "zakup" in t or "market" in t:
+    elif "shop" in t or "sklep" in t or "zakup" in t or "market" in t or "rynek" in t or "targ" in t:
         return "Shop"
     else:
         return "Other"
@@ -950,8 +1002,8 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, anchor_krok_id=None, anchor
         is_l = (idx == len(kroki) - 1)
         nazwa_lower = str(k[4]).lower()
         
-        if "sklep" in nazwa_lower or "market" in nazwa_lower or "zakup" in nazwa_lower or "apteka" in nazwa_lower:
-            domyslny_czas = 20
+        if "sklep" in nazwa_lower or "market" in nazwa_lower or "zakup" in nazwa_lower or "apteka" in nazwa_lower or "rynek" in nazwa_lower or "targ" in nazwa_lower:
+            domyslny_czas = 25
         elif "plaż" in nazwa_lower or "beach" in nazwa_lower:
             domyslny_czas = 90
         elif is_f or is_l:
@@ -1310,6 +1362,15 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, calosciowy_opis_wycieczki=None, c
             cursor.execute('UPDATE wycieczka SET calosciowa_taktyka_dnia = ? WHERE id = ?', (calosciowa_taktyka_dnia, str(id)))
         if planowana_data is not None:
             cursor.execute('UPDATE wycieczka SET planowana_data = ? WHERE id = ?', (planowana_data, str(id)))
+            
+            # Synchronizacja lokalizacji Rynku w Chanii przy zmianie daty (czysta nazwa i aktualne współrzędne)
+            rynek_info, _ = pobierz_dane_rynku_dla_daty(planowana_data)
+            if rynek_info:
+                cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? AND (nazwa LIKE "%Rynek w Chanii%" OR nazwa LIKE "%Targ w Chanii%")', (str(id),))
+                rynek_rows = cursor.fetchall()
+                for r_id in rynek_rows:
+                    cursor.execute('UPDATE krok_wycieczki SET nazwa = "Rynek w Chanii", wspolrzedne = ? WHERE id = ?', (rynek_info['coords'], r_id[0]))
+
         if szacowany_czas_ogarniania_rano is not None:
             cursor.execute('UPDATE wycieczka SET szacowany_czas_ogarniania_rano = ? WHERE id = ?', (szacowany_czas_ogarniania_rano, str(id)))
         if czas_wyjazdu is not None:
@@ -1355,28 +1416,80 @@ def dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki, pozycja="koniec"):
         cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
         istniejace = cursor.fetchall()
         
+        nazwa = "Sklep przy domku"
         if pozycja == "start":
-            nazwa = "Sklep przy domku (Rano)"
-            if len(istniejace) > 1:
-                for row in istniejace[1:]:
-                    stary_krok = int(row[1])
-                    cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(stary_krok + 1), row[0]))
-                target_krok_num = "1"
-            else:
-                target_krok_num = "1"
+            # Sklep rano jest ZAWSZE pierwszym punktem po domku (krok 1)
+            target_krok_num = 1
+            for row in istniejace:
+                k_num = int(row[1])
+                if k_num >= 1:
+                    cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(k_num + 1), row[0]))
         else:
-            nazwa = "Sklep przy domku (Powrót)"
+            # Sklep wieczorem jest ZAWSZE ostatnim punktem przed powrotem do domku
             if istniejace and ("domek" in istniejace[-1][2].lower() or "powrót" in istniejace[-1][2].lower()):
                 ostatni_id = istniejace[-1][0]
-                target_krok_num = str(len(istniejace) - 1)
+                target_krok_num = len(istniejace) - 1
                 cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(len(istniejace)), ostatni_id))
             else:
-                target_krok_num = str(len(istniejace))
+                target_krok_num = len(istniejace)
 
         cursor.execute('''
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, opis)
             VALUES (?, ?, ?, ?, '07:00 - 07:20', 'Brak', 'Brak', 'Klimatyzowany sklep, szybkie zakupy', 'Szybkie zakupy bez zwłoki', '')
-        ''', (str(id_wycieczki), target_krok_num, nazwa, f"{SKLEP_LAT}, {SKLEP_LON}"))
+        ''', (str(id_wycieczki), str(target_krok_num), nazwa, f"{SKLEP_LAT}, {SKLEP_LON}"))
+        conn.commit()
+
+    przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
+    return f"Dodano '{nazwa}' i przeliczono harmonogram."
+
+def dodaj_rynek_w_chanii_do_wycieczki(id_wycieczki, pozycja="start"):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT planowana_data FROM wycieczka WHERE id = ?', (str(id_wycieczki),))
+        row_w = cursor.fetchone()
+        plan_data = row_w[0] if row_w and row_w[0] else date.today().strftime("%Y-%m-%d")
+
+    rynek_info, weekday = pobierz_dane_rynku_dla_daty(plan_data)
+    if not rynek_info:
+        return "Dzisiaj w Chanii nie ma targu miejskiego (Laiki)."
+
+    wspolrzedne = rynek_info['coords']
+    nazwa = "Rynek w Chanii"
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
+        istniejace = cursor.fetchall()
+        
+        # Sprawdzamy czy Sklep rano lub wieczorem już istnieje na trasie
+        has_sklep_rano = any("sklep" in str(r[2]).lower() and int(r[1]) == 1 for r in istniejace)
+        has_sklep_wieczor = any("sklep" in str(r[2]).lower() and int(r[1]) == max(len(istniejace)-2, 1) for r in istniejace)
+
+        if pozycja == "start":
+            # Rano kolejność: Domek (0) -> Sklep (1 jeśli jest) -> Rynek (1 lub 2)
+            target_idx = 2 if has_sklep_rano else 1
+            for row in istniejace:
+                k_num = int(row[1])
+                if k_num >= target_idx:
+                    cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(k_num + 1), row[0]))
+            target_krok_num = target_idx
+        else:
+            # Wieczorem kolejność: Rynek -> Sklep (jeśli jest) -> Domek Powrót
+            if istniejace and ("domek" in istniejace[-1][2].lower() or "powrót" in istniejace[-1][2].lower()):
+                offset = 2 if has_sklep_wieczor else 1
+                target_idx = len(istniejace) - offset
+                for row in istniejace:
+                    k_num = int(row[1])
+                    if k_num >= target_idx:
+                        cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (str(k_num + 1), row[0]))
+                target_krok_num = target_idx
+            else:
+                target_krok_num = len(istniejace)
+
+        cursor.execute('''
+            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji, podsumowanie_taktyki, opis)
+            VALUES (?, ?, ?, ?, '08:00 - 08:35', 'Brak', 'Brak', 'Gwarny targ na świeżym powietrzu', 'Lokalne owoce, oliwki i sery', '')
+        ''', (str(id_wycieczki), str(target_krok_num), nazwa, wspolrzedne))
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
@@ -1537,7 +1650,7 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="edytuj_wycieczke",
-                description="Aktualizuje parametry wycieczki, w tym szacowany czas do wyjazdu (np. '0.5h', '45m') oraz godzinę wyjazdu (np. '06:30'). Zmiana czasu do wyjazdu automatycznie przelicza cały harmonogram.",
+                description="Aktualizuje parametry wycieczki, w tym szacowany czas do wyjazdu (np. '0.5h', '45m') oraz godzinę wyjazdu (np. '06:30'). Zmiana czasu do wyjazdu lub daty automatycznie przelicza cały harmonogram.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1554,14 +1667,14 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="dodaj_krok_wycieczki",
-                description="Dodaje krok do wycieczki (np. sklep przy trasie, aptekę, punkt widokowy, kawiarnię lub dowolne inne miejsce spoza listy). Jeśli brak współrzędnych, parametr 'wspolrzedne' pozostaw pusty lub None. Backend automatycznie wstawia punkt przed powrotem do bazy i przelicza godziny!",
+                description="Dodaje krok do wycieczki (np. sklep przy trasie, rynek w Chanii, aptekę, punkt widokowy, kawiarnię). Jeśli brak współrzędnych, parametr 'wspolrzedne' pozostaw pusty lub None. Backend automatycznie wstawia punkt i przelicza godziny!",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
                         "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
                         "krok_wycieczki": types.Schema(type=types.Type.STRING, description="Numer kroku (opcjonalny, backend ustala go sam)"),
-                        "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca / 'Sklep przy trasie' / 'Apteka' itp."),
-                        "wspolrzedne": types.Schema(type=types.Type.STRING, description="GPS jako 'lat, lon' (np. '35.586222, 24.091861') lub None/pusty string, gdy brak koordynatów"),
+                        "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca / 'Rynek w Chanii' / 'Sklep przy domku' itp."),
+                        "wspolrzedne": types.Schema(type=types.Type.STRING, description="GPS jako 'lat, lon' (np. '35.5166, 24.0237') lub None/pusty string, gdy brak koordynatów"),
                         "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Orientacyjny czas pobytu, np. '17:00 - 17:25'"),
                         "godzina_ewakuacji": types.Schema(type=types.Type.STRING, description="KRYTYCZNA godzina graniczna przed upałem/tłumem lub 'Brak'"),
                         "czerwona_strefa_ostrzezenie": types.Schema(type=types.Type.STRING, description="Ostrzeżenie o upale/tłumie lub 'Brak'"),
@@ -1591,12 +1704,12 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="usun_krok_wycieczki",
-                description="Usuwa wskazany krok / atrakcję / sklep z wycieczki i natychmiast przelicza cały harmonogram. Używaj ZAWSZE, gdy użytkownik prosi o usunięcie, pominięcie lub wykasowanie punktu.",
+                description="Usuwa wskazany krok / atrakcję / sklep / rynek z wycieczki i natychmiast przelicza cały harmonogram. Używaj ZAWSZE, gdy użytkownik prosi o usunięcie, pominięcie lub wykasowanie punktu.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
                         "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki (np. '1')"),
-                        "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID z bazy (DB_ID), numer kroku lub nazwa usuwanego punktu (np. 'Cretaquarium', 'Sklep', '2')"),
+                        "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID z bazy (DB_ID), numer kroku lub nazwa usuwanego punktu (np. 'Cretaquarium', 'Sklep', 'Rynek w Chanii', '2')"),
                     },
                     required=["id_wycieczki", "krok_wycieczki"]
                 ),
@@ -1617,7 +1730,7 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="dodaj_produkt_zakupow",
-                description="Dodaje produkt do listy zakupów wycieczki. Może być przypisany do całej wycieczki (id_kroku=None) lub do konkretnego kroku na trasie (np. Sklepu lub atrakcji). PAMIĘTAJ: Nigdy nie przypisuj zakupów do Domku/Bazy.",
+                description="Dodaje produkt do listy zakupów wycieczki. Może być przypisany do całej wycieczki (id_kroku=None) lub do konkretnego kroku na trasie (np. Sklepu lub Rynku). PAMIĘTAJ: Nigdy nie przypisuj zakupów do Domku/Bazy.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -2031,19 +2144,19 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
         zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny()
         system_prompt = f"""Jesteś asystentem podróży CretAi na Kretę, pomagającym zarządzać wycieczką objazdową z dziećmi i rodzicami z ADHD. Dziś: {dzisiaj_str}.
 {zewnetrzny_kontekst}
-- ZASADA DODAWANIA MIEJSC SPOZA LISTY (SKLEPY, APTEKI, PUNKTY WIDOKOWE, POSTOJE ITD.):
+- ZASADA DODAWANIA MIEJSC SPOZA LISTY (SKLEPY, RYNKI, APTEKI, PUNKTY WIDOKOWE, POSTOJE ITD.):
   1. Gdy użytkownik prosi o dodanie nowego miejsca, sklepu lub postoju spoza głównej bazy miejsc, a NIE PODAŁ współrzędnych GPS:
      - Zapytaj go krótko: "Czy masz współrzędne GPS lub pinezkę dla [Nazwa punktu]? Jeśli nie, mogę dodać ten punkt jako postój orientacyjny bez przycisku nawigacji."
      - Jeśli użytkownik wprost odpowie podając współrzędne -> dodaj krok z parametrem `wspolrzedne='lat, lon'`.
      - Jeśli użytkownik odpowie "nie mam", "dodaj bez", "jedziemy na oko" lub w pierwszym poleceniu wyraźnie zażąda dodania bez współrzędnych -> natychmiast wywołaj `dodaj_krok_wycieczki(..., wspolrzedne=None)` (wtedy aplikacja nie wyświetli przycisku nawigacji i ustawi zielone tło).
   2. Jeśli użytkownik od razu w pierwszym pytaniu podał współrzędne (lub chodzi o znany Sklep przy domku: {SKLEP_LAT}, {SKLEP_LON}) -> dodaj od razu bez dopytywania.
-  3. Domyślny czas postoju dla sklepów, marketów, aptek, szybkich postojów: 15-25 min.
+  3. Domyślny czas postoju dla sklepów, marketów, rynków, aptek, szybkich postojów: 15-25 min.
   4. Dla punktów spoza listy parametr `godzina_ewakuacji` i `czerwona_strefa_ostrzezenie` ZAWSZE ustawiaj na 'Brak'.
 - ZASADA CZASU DO WYJAZDU: Wycieczka posiada parametr `szacowany_czas_ogarniania_rano` (domyślnie '0.5h', wyświetlany jako Czas do wyjazdu) oraz `czas_wyjazdu`. Pobudka i wyjazd są ściśle powiązane tym czasem. Gdy użytkownik mówi 'wyjeżdżamy o 07:00' lub zmienia czas do wyjazdu, backend automatycznie przelicza wyjazd i cały harmonogram wycieczki.
-- ZASADA USUWANIA KROKÓW: Gdy użytkownik prosi o usunięcie, wykasowanie, pominięcie lub rezygnację z atrakcji/sklepu (np. 'usuń Cretaquarium', 'nie jedziemy do akwarium', 'skasuj krok 2'), ZAWSZE natychmiast wywołaj `usun_krok_wycieczki(id_wycieczki='1', krok_wycieczki='nazwa lub numer')`.
+- ZASADA USUWANIA KROKÓW: Gdy użytkownik prosi o usunięcie, wykasowanie, pominięcie lub rezygnację z atrakcji/sklepu/rynku (np. 'usuń Cretaquarium', 'nie jedziemy na rynek', 'skasuj krok 2'), ZAWSZE natychmiast wywołaj `usun_krok_wycieczki(id_wycieczki='1', krok_wycieczki='nazwa lub numer')`.
 - ZASADA LISTY ZAKUPÓW:
   1. Możesz dodawać zakupy ogólne dla całej wycieczki za pomocą funkcji `dodaj_produkt_zakupow(id_wycieczki, nazwa_produktu, ilosc)` bez podawania `id_kroku` lub podając `id_kroku=None`.
-  2. Jeśli zakupy dotyczą konkretnego punktu trasy (np. Sklepu lub atrakcji), podaj właściwe `id_kroku`. PAMIĘTAJ: Nigdy nie przypisuj zakupów do Domku (bazy startowej/końcowej).
+  2. Jeśli zakupy dotyczą konkretnego punktu trasy (np. Sklepu, Rynku lub atrakcji), podaj właściwe `id_kroku`. PAMIĘTAJ: Nigdy nie przypisuj zakupów do Domku (bazy startowej/końcowej).
 - ZASADA CZASU I HARMONOGRAMU (KASKADOWE PRZELICZANIE):
   1. Gdy użytkownik mówi: 'chcę być w X do godziny HH:MM' (np. 'chcę być w Knossos do 12:00'), oznacza to GODZINĘ WYJAZDU z tego punktu. Wywołaj `edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, godzina_wyjazdu_do='12:00')`.
   2. Gdy użytkownik mówi: 'chcę dotrzeć/dojechać do X na/do godziny HH:MM' (np. 'chcę dotrzeć do Knossos na 10:00'), oznacza to GODZINĘ PRZYJAZDU. Wywołaj `edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, godzina_dotarcia_na='10:00')`.
@@ -2053,7 +2166,7 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
      - Duże atrakcje / Pałace / Parki: 90-120 min.
      - Plaże / Wypoczynek: 90-150 min.
      - Punkty widokowe / Zdjęcia: 20-30 min.
-     - Sklepy / Markety: 20-25 min.
+     - Sklepy / Markety / Rynki: 20-30 min.
   6. POJĘCIE 'godzina_ewakuacji': To wyłącznie krytyczna granica termiczna/sensoryczna (np. '11:30' przed upałem w ruinach). Dla sklepów, plaż czy punktów bez zagrożenia ZAWSZE podawaj 'Brak'."""
         
         chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
@@ -2331,19 +2444,8 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             gps_url = f"https://www.google.com/maps/search/?api=1&query={coords_clean}"
             nav_btn_html = f'<a href="{gps_url}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>'
 
-        # Wykrycie typu miejsca i dopasowanie ikony
-        matched_typ = baza_miejsc_dict.get(krok_num)
-        if not matched_typ:
-            for k_name_db, k_typ_db in baza_miejsc_dict.items():
-                if len(k_name_db) > 3 and k_name_db in nazwa_lower:
-                    matched_typ = k_typ_db
-                    break
-
-        kat = kategoryzuj_typ(matched_typ) if matched_typ else kategoryzuj_typ(nazwa_lower)
-        icon_from_cat = pobierz_ikonke_kategorii(kat)
-
-        # Precyzyjne dopasowanie emoji kontekstowych
-        if "sklep" in nazwa_lower or "market" in nazwa_lower or "zakup" in nazwa_lower:
+        # Wykrycie typu miejsca i dopasowanie ikony (Zarówno Sklep jak i Rynek = 🛒)
+        if "sklep" in nazwa_lower or "market" in nazwa_lower or "zakup" in nazwa_lower or "rynek" in nazwa_lower or "targ" in nazwa_lower or "laiki" in nazwa_lower:
             detected_icon = "🛒"
         elif "apteka" in nazwa_lower:
             detected_icon = "💊"
@@ -2359,17 +2461,22 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             detected_icon = "🍴"
         elif "plaż" in nazwa_lower or "beach" in nazwa_lower:
             detected_icon = "🏖️"
-        elif icon_from_cat is not None:
-            detected_icon = icon_from_cat
         else:
-            detected_icon = None
+            matched_typ = baza_miejsc_dict.get(krok_num)
+            if not matched_typ:
+                for k_name_db, k_typ_db in baza_miejsc_dict.items():
+                    if len(k_name_db) > 3 and k_name_db in nazwa_lower:
+                        matched_typ = k_typ_db
+                        break
+            kat = kategoryzuj_typ(matched_typ) if matched_typ else kategoryzuj_typ(nazwa_lower)
+            detected_icon = pobierz_ikonke_kategorii(kat)
 
         badge_symbol = detected_icon if detected_icon is not None else (krok_num if (krok_num and krok_num != "0") else str(idx))
 
-        is_in_places_db = matched_typ is not None
+        is_in_places_db = ("numer_miejsca" in k and pd.notna(k.get("numer_miejsca"))) or (krok_num in baza_miejsc_dict)
         is_custom_flat = not is_first and not is_last and (
             not is_in_places_db or 
-            any(w in nazwa_lower for w in ["sklep", "market", "zakup", "apteka", "postój", "parking", "kawa", "cafe", "toaleta", "punkt widokowy", "widok"])
+            any(w in nazwa_lower for w in ["sklep", "market", "zakup", "apteka", "postój", "parking", "kawa", "cafe", "toaleta", "punkt widokowy", "widok", "rynek", "targ"])
         )
 
         if is_first:
@@ -2469,6 +2576,14 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
             if opis_kroku_cust in ["Brak", "None", ""]:
                 opis_kroku_cust = ""
 
+            # Czysty tytuł w UI bez dopisków
+            tytul_kroku_display = nazwa
+            if "rynek" in nazwa_lower or "targ" in nazwa_lower:
+                tytul_kroku_display = "Rynek w Chanii"
+                rynek_info_krok, _ = pobierz_dane_rynku_dla_daty(planowana_data_val)
+                dzien_nazwa = rynek_info_krok["dzien_pl"] if rynek_info_krok else dzien_tyg_val.capitalize()
+                opis_kroku_cust = f"<span style='color:#8C5338; font-weight:700;'>{dzien_nazwa} (max 14:00)</span>"
+
             row_custom = (
                 f'<div class="timeline-step-row-wrapper">'
                 f'<div class="timeline-row-frameless">'
@@ -2479,7 +2594,7 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                 f'</div>'
                 f'<div class="timeline-center-col"><div class="timeline-icon-badge-static badge-pobudka">{badge_symbol}</div></div>'
                 f'<div class="timeline-content-col">'
-                f'<div class="timeline-item-title">{nazwa}</div>'
+                f'<div class="timeline-item-title">{tytul_kroku_display}</div>'
                 f'<div class="timeline-item-desc">{opis_kroku_cust}</div>'
                 f'</div>'
                 f'{nav_btn_html}'
@@ -2678,38 +2793,52 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
     with st.expander("🛒 Zaopatrzenie", expanded=False):
         # --- ZMODERNIZOWANY MODUŁ: SZYBKIE PRZYSTANKI NA TRASIE ---
-        st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 6px;'>⚡ Szybkie przystanki na trasie</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 8px;'>⚡ Szybkie przystanki na trasie</div>", unsafe_allow_html=True)
         
-        has_shop_start = any("sklep" in str(r['nazwa']).lower() and ("start" in str(r['nazwa']).lower() or "rano" in str(r['nazwa']).lower() or int(r['krok_wycieczki']) == 1) for _, r in kroki_df.iterrows())
-        has_shop_end = any("sklep" in str(r['nazwa']).lower() and ("powrót" in str(r['nazwa']).lower() or "koniec" in str(r['nazwa']).lower() or int(r['krok_wycieczki']) == max(len(kroki_df)-2, 1)) for _, r in kroki_df.iterrows())
+        has_shop_start = any("sklep" in str(r['nazwa']).lower() and int(r['krok_wycieczki']) == 1 for _, r in kroki_df.iterrows())
+        has_shop_end = any("sklep" in str(r['nazwa']).lower() and int(r['krok_wycieczki']) == max(len(kroki_df)-2, 1) for _, r in kroki_df.iterrows())
+        
+        has_market_start = any(("rynek" in str(r['nazwa']).lower() or "targ" in str(r['nazwa']).lower()) and int(r['krok_wycieczki']) <= 2 for _, r in kroki_df.iterrows())
+        has_market_end = any(("rynek" in str(r['nazwa']).lower() or "targ" in str(r['nazwa']).lower()) and int(r['krok_wycieczki']) >= max(len(kroki_df)-3, 1) for _, r in kroki_df.iterrows())
+
+        rynek_dla_daty, weekday_idx = pobierz_dane_rynku_dla_daty(planowana_data_val)
+        rynek_czynny = (rynek_dla_daty is not None)
 
         col_qs_am, col_qs_pm = st.columns(2)
         
         with col_qs_am:
-            st.markdown("<div style='font-size: 8pt; font-weight: 800; color: #5D7A60; text-transform: uppercase; margin-bottom: 4px;'>🌅 Po wyjeździe</div>", unsafe_allow_html=True)
-            if not has_shop_start:
-                if st.button("🛒 Sklep rano", key=f"btn_add_shop_am_{wycieczka_id}", use_container_width=True):
-                    dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="start")
-                    st.session_state["flash_toast"] = "🌅 Dodano Sklep po wyjeździe!"
-                    st.rerun()
-            else:
-                st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #5D7A60; padding: 6px 0;'>✓ Sklep zaplanowany</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 8pt; font-weight: 800; color: #5D7A60; text-transform: uppercase; margin-bottom: 6px;'>🌅 Po wyjeździe</div>", unsafe_allow_html=True)
             
-            # Przycisk Rynku w Chanii (Placeholder UX na przyszłość)
-            st.button("🏛️ Rynek w Chanii", key=f"btn_add_market_am_{wycieczka_id}", use_container_width=True, disabled=True, help="Opcja pojawi się wkrótce!")
+            # Przycisk Sklepu Rano
+            btn_shop_am_label = "✓ Sklep rano dodany" if has_shop_start else "🛒 Sklep rano"
+            if st.button(btn_shop_am_label, key=f"btn_add_shop_am_{wycieczka_id}", use_container_width=True, disabled=has_shop_start):
+                dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="start")
+                st.session_state["flash_toast"] = "🌅 Dodano Sklep po wyjeździe!"
+                st.rerun()
+            
+            # Przycisk Rynku Rano
+            btn_market_am_label = "✓ Rynek rano dodany" if has_market_start else ("🛒 Rynek rano" if rynek_czynny else "🛒 Rynek (nieczynny)")
+            if st.button(btn_market_am_label, key=f"btn_add_market_am_{wycieczka_id}", use_container_width=True, disabled=(has_market_start or not rynek_czynny), help=f"Lokalizacja: {rynek_dla_daty['opis_miejsca']}" if rynek_czynny else "Dziś brak targu w Chanii"):
+                dodaj_rynek_w_chanii_do_wycieczki(wycieczka_id, pozycja="start")
+                st.session_state["flash_toast"] = f"🌅 Dodano Rynek w Chanii ({rynek_dla_daty['dzien_pl']})!"
+                st.rerun()
 
         with col_qs_pm:
-            st.markdown("<div style='font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;'>🌇 Przed powrotem</div>", unsafe_allow_html=True)
-            if not has_shop_end:
-                if st.button("🛒 Sklep powrót", key=f"btn_add_shop_pm_{wycieczka_id}", use_container_width=True):
-                    dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="koniec")
-                    st.session_state["flash_toast"] = "🌇 Dodano Sklep przed powrotem!"
-                    st.rerun()
-            else:
-                st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #8C5338; padding: 6px 0;'>✓ Sklep zaplanowany</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 6px;'>🌇 Przed powrotem</div>", unsafe_allow_html=True)
             
-            # Przycisk Rynku w Chanii (Placeholder UX na przyszłość)
-            st.button("🏛️ Rynek w Chanii", key=f"btn_add_market_pm_{wycieczka_id}", use_container_width=True, disabled=True, help="Opcja pojawi się wkrótce!")
+            # Przycisk Sklepu Powrót
+            btn_shop_pm_label = "✓ Sklep powrót dodany" if has_shop_end else "🛒 Sklep powrót"
+            if st.button(btn_shop_pm_label, key=f"btn_add_shop_pm_{wycieczka_id}", use_container_width=True, disabled=has_shop_end):
+                dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="koniec")
+                st.session_state["flash_toast"] = "🌇 Dodano Sklep przed powrotem!"
+                st.rerun()
+            
+            # Przycisk Rynku Powrót
+            btn_market_pm_label = "✓ Rynek powrót dodany" if has_market_end else ("🛒 Rynek powrót" if rynek_czynny else "🛒 Rynek (nieczynny)")
+            if st.button(btn_market_pm_label, key=f"btn_add_market_pm_{wycieczka_id}", use_container_width=True, disabled=(has_market_end or not rynek_czynny), help=f"Lokalizacja: {rynek_dla_daty['opis_miejsca']}" if rynek_czynny else "Dziś brak targu w Chanii"):
+                dodaj_rynek_w_chanii_do_wycieczki(wycieczka_id, pozycja="koniec")
+                st.session_state["flash_toast"] = f"🌇 Dodano Rynek w Chanii ({rynek_dla_daty['dzien_pl']})!"
+                st.rerun()
 
         st.markdown("<div style='border-top: 1px solid #D6CEBC; margin: 12px 0 10px 0;'></div>", unsafe_allow_html=True)
 
