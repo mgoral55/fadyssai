@@ -1176,12 +1176,25 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS zakupy (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_wycieczki TEXT,
             id_kroku INTEGER,
             nazwa_produktu TEXT NOT NULL,
             ilosc TEXT,
             kupione INTEGER DEFAULT 0,
+            FOREIGN KEY (id_wycieczki) REFERENCES wycieczka(id) ON DELETE CASCADE,
             FOREIGN KEY (id_kroku) REFERENCES krok_wycieczki(id) ON DELETE CASCADE
         )
+    ''')
+
+    cursor.execute("PRAGMA table_info(zakupy)")
+    cols_zakupy = [col[1] for col in cursor.fetchall()]
+    if "id_wycieczki" not in cols_zakupy:
+        cursor.execute("ALTER TABLE zakupy ADD COLUMN id_wycieczki TEXT")
+
+    cursor.execute('''
+        UPDATE zakupy 
+        SET id_wycieczki = (SELECT id_wycieczki FROM krok_wycieczki WHERE krok_wycieczki.id = zakupy.id_kroku)
+        WHERE id_wycieczki IS NULL AND id_kroku IS NOT NULL
     ''')
 
     cursor.execute('''
@@ -1442,12 +1455,17 @@ def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=N
         conn.commit()
     return "Dodano notatkę!"
 
-def dodaj_produkt_zakupow(id_kroku, nazwa_produktu, ilosc="1"):
+def dodaj_produkt_zakupow(id_wycieczki, nazwa_produktu, id_kroku=None, ilosc="1"):
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('INSERT INTO zakupy (id_kroku, nazwa_produktu, ilosc, kupione) VALUES (?, ?, ?, 0)', (str(id_kroku), nazwa_produktu, str(ilosc)))
+        krok_val = str(id_kroku) if id_kroku not in [None, "", "None", "null"] else None
+        cursor.execute('''
+            INSERT INTO zakupy (id_wycieczki, id_kroku, nazwa_produktu, ilosc, kupione) 
+            VALUES (?, ?, ?, ?, 0)
+        ''', (str(id_wycieczki), krok_val, nazwa_produktu, str(ilosc)))
         conn.commit()
-    return f"Dodano produkt '{nazwa_produktu}' do listy zakupów."
+    lokalizacja = f"kroku #{krok_val}" if krok_val else "całej wycieczki"
+    return f"Dodano produkt '{nazwa_produktu}' do listy zakupów ({lokalizacja})."
 
 def zmien_status_zakupu(zakup_id, kupione):
     with get_db() as conn:
@@ -1458,6 +1476,11 @@ def zmien_status_zakupu(zakup_id, kupione):
 def pobierz_zakupy_dla_kroku(id_kroku):
     with get_db() as conn:
         df = pd.read_sql('SELECT * FROM zakupy WHERE id_kroku = ? ORDER BY id ASC', conn, params=(str(id_kroku),))
+    return df
+
+def pobierz_zakupy_dla_wycieczki(id_wycieczki):
+    with get_db() as conn:
+        df = pd.read_sql('SELECT * FROM zakupy WHERE id_wycieczki = ? ORDER BY id ASC', conn, params=(str(id_wycieczki),))
     return df
 
 # Deklaracja narzędzi bazy danych CRUD oraz natywnego Google Search
@@ -1561,15 +1584,16 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="dodaj_produkt_zakupow",
-                description="Dodaje produkt bezpośrednio do checklisty zakupowej powiązanej z konkretnym krokiem wycieczki (np. składniki na obiad w kroku Sklepu).",
+                description="Dodaje produkt do listy zakupów wycieczki. Może być przypisany do całej wycieczki (id_kroku=None) lub do konkretnego kroku na trasie (np. Sklepu lub atrakcji). PAMIĘTAJ: Nigdy nie przypisuj zakupów do Domku/Bazy.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
-                        "id_kroku": types.Schema(type=types.Type.STRING, description="ID bazy danych kroku wycieczki (DB_ID)"),
+                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki (np. '1')"),
                         "nazwa_produktu": types.Schema(type=types.Type.STRING, description="Nazwa produktu zakupowego"),
-                        "ilosc": types.Schema(type=types.Type.STRING, description="Ilość przeliczona na 8 osób, np. '1 kg', '12 sztuk', '400g'"),
+                        "id_kroku": types.Schema(type=types.Type.STRING, description="Opcjonalne DB_ID kroku wycieczki. Jeśli zakup ogólny dla wycieczki, pozostaw None."),
+                        "ilosc": types.Schema(type=types.Type.STRING, description="Ilość/opakowanie, np. '1 kg', '12 sztuk', '400g'"),
                     },
-                    required=["id_kroku", "nazwa_produktu"]
+                    required=["id_wycieczki", "nazwa_produktu"]
                 ),
             )
         ]
@@ -1844,7 +1868,7 @@ def pobierz_notatki(id_wycieczki=None, id_miejsca=None):
     return df
 
 def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
-    st.markdown("### 📌 Notatki")
+    st.markdown('<div class="section-unified-header">📌 Notatki</div>', unsafe_allow_html=True)
     df_notatki = pobierz_notatki(id_wycieczki=id_wycieczki, id_miejsca=id_miejsca)
 
     if not df_notatki.empty:
@@ -1984,6 +2008,9 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
   4. Dla punktów spoza listy parametr `godzina_ewakuacji` i `czerwona_strefa_ostrzezenie` ZAWSZE ustawiaj na 'Brak'.
 - ZASADA CZASU DO WYJAZDU: Wycieczka posiada parametr `szacowany_czas_ogarniania_rano` (domyślnie '0.5h', wyświetlany jako Czas do wyjazdu) oraz `czas_wyjazdu`. Pobudka i wyjazd są ściśle powiązane tym czasem. Gdy użytkownik mówi 'wyjeżdżamy o 07:00' lub zmienia czas do wyjazdu, backend automatycznie przelicza wyjazd i cały harmonogram wycieczki.
 - ZASADA USUWANIA KROKÓW: Gdy użytkownik prosi o usunięcie, wykasowanie, pominięcie lub rezygnację z atrakcji/sklepu (np. 'usuń Cretaquarium', 'nie jedziemy do akwarium', 'skasuj krok 2'), ZAWSZE natychmiast wywołaj `usun_krok_wycieczki(id_wycieczki='1', krok_wycieczki='nazwa lub numer')`.
+- ZASADA LISTY ZAKUPÓW:
+  1. Możesz dodawać zakupy ogólne dla całej wycieczki za pomocą funkcji `dodaj_produkt_zakupow(id_wycieczki, nazwa_produktu, ilosc)` bez podawania `id_kroku` lub podając `id_kroku=None`.
+  2. Jeśli zakupy dotyczą konkretnego punktu trasy (np. Sklepu lub atrakcji), podaj właściwe `id_kroku`. PAMIĘTAJ: Nigdy nie przypisuj zakupów do Domku (bazy startowej/końcowej).
 - ZASADA CZASU I HARMONOGRAMU (KASKADOWE PRZELICZANIE):
   1. Gdy użytkownik mówi: 'chcę być w X do godziny HH:MM' (np. 'chcę być w Knossos do 12:00'), oznacza to GODZINĘ WYJAZDU z tego punktu. Wywołaj `edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, godzina_wyjazdu_do='12:00')`.
   2. Gdy użytkownik mówi: 'chcę dotrzeć/dojechać do X na/do godziny HH:MM' (np. 'chcę dotrzeć do Knossos na 10:00'), oznacza to GODZINĘ PRZYJAZDU. Wywołaj `edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, godzina_dotarcia_na='10:00')`.
@@ -2568,8 +2595,12 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
     
     full_timeline_string = "".join(timeline_full_html)
 
-    # Wstrzyknięcie kart zakupów dla poszczególnych kroków
+    # Wstrzyknięcie kart zakupów dla poszczególnych kroków (z pominięciem domku)
     for _, k in kroki_df.iterrows():
+        nazwa_kroku = str(k['nazwa']).lower()
+        if "domek" in nazwa_kroku:
+            continue
+
         krok_row_id = int(k['id'])
         ph = f"###SHOPPING_LIST_PLACEHOLDER_{krok_row_id}###"
         if ph in full_timeline_string:
@@ -2608,50 +2639,89 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
 
     st.markdown(full_timeline_string, unsafe_allow_html=True)
 
-    # Interaktywna obsługa checklisty zakupów dla kroków
-    kroki_z_zakupami = []
-    for _, k in kroki_df.iterrows():
-        df_zak = pobierz_zakupy_dla_kroku(k['id'])
-        if not df_zak.empty:
-            kroki_z_zakupami.append((int(k['id']), str(k['nazwa']), df_zak))
+    # Centralna sekcja i rozwijana karta: Zakupy Dnia
+    st.markdown('<div class="section-unified-header">🛒 Zakupy Dnia</div>', unsafe_allow_html=True)
+    df_wszystkie_zakupy = pobierz_zakupy_dla_wycieczki(wycieczka_id)
 
-    if kroki_z_zakupami:
-        st.markdown('<div class="section-unified-header">🛒 Zakupy Dnia</div>', unsafe_allow_html=True)
-        with st.expander("🛒 Lista zakupów", expanded=False):
-            for k_id, k_nazwa, df_zak in kroki_z_zakupami:
-                st.markdown(f"<div style='font-size: 10pt; font-weight: 800; color: #8C5338; margin-top: 4px; margin-bottom: 4px;'>📍 {k_nazwa}</div>", unsafe_allow_html=True)
-                for _, zrow in df_zak.iterrows():
+    with st.expander("🛒 Lista zakupów", expanded=False):
+        # 1. Formularz szybkiego dodawania pozycji (całkowity brak Domku w opcjach)
+        with st.form(key=f"form_add_shopping_item_{wycieczka_id}", clear_on_submit=True):
+            st.markdown("<div style='font-size: 9.5pt; font-weight: 800; color: #8C5338; margin-bottom: 4px;'>➕ Dodaj nową pozycję do listy</div>", unsafe_allow_html=True)
+            col_nazwa, col_ilosc = st.columns([2, 1])
+            with col_nazwa:
+                nowy_prod = st.text_input("Produkt", placeholder="np. Woda 1.5L, Owoce, Plastry", label_visibility="collapsed")
+            with col_ilosc:
+                nowa_ilosc = st.text_input("Ilość", placeholder="Ilość (np. 6 szt)", label_visibility="collapsed")
+
+            # Przygotowanie opcji przypisania: Cała wycieczka (ogólne) lub konkretny krok poza Domkiem
+            opcje_przypisania = [("📦 Cała wycieczka (ogólne)", None)]
+            for _, k_row in kroki_df.iterrows():
+                nazwa_k = str(k_row['nazwa'])
+                if "domek" not in nazwa_k.lower():
+                    opcje_przypisania.append((f"📍 Krok {k_row['krok_wycieczki']}: {nazwa_k}", int(k_row['id'])))
+
+            wybrany_target = st.selectbox(
+                "Przypisz do:",
+                options=opcje_przypisania,
+                format_func=lambda x: x[0]
+            )
+
+            btn_add_item = st.form_submit_button("➕ Dodaj do listy", use_container_width=True)
+            if btn_add_item and nowy_prod.strip():
+                dodaj_produkt_zakupow(
+                    id_wycieczki=wycieczka_id,
+                    nazwa_produktu=nowy_prod.strip(),
+                    id_kroku=wybrany_target[1],
+                    ilosc=nowa_ilosc.strip() if nowa_ilosc.strip() else "1"
+                )
+                st.session_state["flash_toast"] = f"🛒 Dodano: {nowy_prod.strip()}"
+                st.rerun()
+
+        st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+
+        # 2. Wyświetlanie elementów checklisty
+        if df_wszystkie_zakupy.empty:
+            st.markdown("<div style='font-size: 9pt; color: #8C827A; font-style: italic; margin-top: 6px;'>Lista zakupów jest pusta. Dodaj produkty powyżej!</div>", unsafe_allow_html=True)
+        else:
+            # A) Zakupy ogólne na całą wycieczkę
+            ogolne_zakupy = df_wszystkie_zakupy[df_wszystkie_zakupy['id_kroku'].isna() | (df_wszystkie_zakupy['id_kroku'] == '')]
+            if not ogolne_zakupy.empty:
+                st.markdown("<div style='font-size: 9.5pt; font-weight: 800; color: #8C5338; margin: 8px 0 4px 0;'>📦 Na całą wycieczkę:</div>", unsafe_allow_html=True)
+                for _, zrow in ogolne_zakupy.iterrows():
                     z_id = zrow['id']
                     z_nazwa = str(zrow['nazwa_produktu'])
                     z_ilosc = f" ({zrow['ilosc']})" if pd.notna(zrow['ilosc']) and str(zrow['ilosc']).strip() else ""
                     z_kup = bool(zrow['kupione'])
                     
-                    label_prod = f"{z_nazwa}{z_ilosc}"
-                    nowy_status = st.checkbox(label_prod, value=z_kup, key=f"cb_zakup_krok_{z_id}")
+                    nowy_status = st.checkbox(f"{z_nazwa}{z_ilosc}", value=z_kup, key=f"cb_zakup_main_{z_id}")
                     if nowy_status != z_kup:
                         zmien_status_zakupu(z_id, nowy_status)
                         st.rerun()
 
-    if pokaz_mape:
-        punkty_trasy, surowe_wspolrzedne = [], []
-        for _, k in kroki_df.iterrows():
-            lat, lon = sparsuj_wspolrzedne(k['wspolrzedne'])
-            if lat is not None and lon is not None:
-                punkty_trasy.append((lat, lon, str(k['krok_wycieczki']), str(k['nazwa'])))
-                surowe_wspolrzedne.append((lat, lon))
-        if punkty_trasy:
-            m_trasa = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="CartoDB positron")
-            for lat, lon, krok, nazwa in punkty_trasy:
-                is_d = "Domek" in nazwa
-                icon_bg = "#2E251E" if is_d else "#C06C4E"
-                icon_sym = "🏠" if is_d else krok
-                icon_html = f'<div style="background-color:{icon_bg};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:2px solid white;">{icon_sym}</div>'
-                folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13)), tooltip=nazwa).add_to(m_trasa)
-            trasa_po_drogach = pobierz_trase_osrm(surowe_wspolrzedne)
-            if trasa_po_drogach:
-                folium.PolyLine(trasa_po_drogach, color="#8C5338", weight=4, opacity=0.9).add_to(m_trasa)
-            st_folium(m_trasa, width=None, height=260, returned_objects=[], key=f"map_route_{wycieczka_id}")
+            # B) Zakupy przypisane do konkretnych kroków (z pominięciem domku)
+            for _, k in kroki_df.iterrows():
+                if "domek" in str(k['nazwa']).lower():
+                    continue
 
+                k_id = int(k['id'])
+                zakupy_kroku = df_wszystkie_zakupy[df_wszystkie_zakupy['id_kroku'] == k_id]
+                if not zakupy_kroku.empty:
+                    st.markdown(f"<div style='font-size: 9.5pt; font-weight: 800; color: #8C5338; margin: 10px 0 4px 0;'>📍 {k['nazwa']}:</div>", unsafe_allow_html=True)
+                    for _, zrow in zakupy_kroku.iterrows():
+                        z_id = zrow['id']
+                        z_nazwa = str(zrow['nazwa_produktu'])
+                        z_ilosc = f" ({zrow['ilosc']})" if pd.notna(zrow['ilosc']) and str(zrow['ilosc']).strip() else ""
+                        z_kup = bool(zrow['kupione'])
+                        
+                        nowy_status = st.checkbox(f"{z_nazwa}{z_ilosc}", value=z_kup, key=f"cb_zakup_krok_view_{z_id}")
+                        if nowy_status != z_kup:
+                            zmien_status_zakupu(z_id, nowy_status)
+                            st.rerun()
+
+    # --- SEKCJA NOTATKI (PRZENIESIONA NAD ZADANIA DLA DZIECI) ---
+    renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
+
+    # --- SEKCJA ZADANIA DLA DZIECI ---
     st.markdown('<div class="section-unified-header">🎯 Zadania dla dzieci</div>', unsafe_allow_html=True)
     grupy_zadan = pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df)
     
@@ -2674,8 +2744,6 @@ def renderuj_karte_wycieczki(wycieczka_id, pokaz_mape=False, pokaz_pogode=False)
                             st.rerun()
         else:
             st.markdown("<div style='font-size: 9pt; color: #8C827A; font-style: italic;'>Brak zadań dla tej wycieczki.</div>", unsafe_allow_html=True)
-
-    renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
 
     st.markdown('<div class="section-unified-header">🤖 Asystent AI</div>', unsafe_allow_html=True)
     renderuj_globalny_czat_ai(aktualny_uzytkownik, inline=True)
