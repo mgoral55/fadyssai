@@ -40,7 +40,6 @@ header[data-testid="stHeader"] { background-color: transparent !important; box-s
 [data-testid="stSidebar"] * { color: #2B2118 !important; }
 h1, h2, h3, h4, h5 { color: #2F241D !important; font-weight: 800; }
 
-/* Zapobieganie zoomowaniu w iOS Safari i dopasowanie mobilne */
 input, textarea, .stChatInput textarea { 
     background-color: #FAF8F2 !important; 
     color: #2B2118 !important; 
@@ -160,7 +159,6 @@ div.st-key-btn_date_picker { margin-bottom: 10px !important; }
 div[data-testid="stCheckbox"] { margin-bottom: 4px !important; background-color: #B4C29D !important; border: none !important; border-radius: 0px !important; padding: 0px !important; box-shadow: none !important; accent-color: #8C5338 !important; }
 div[data-testid="stCheckbox"] label { font-size: 9pt !important; font-weight: 700 !important; color: #2B2118 !important; }
 
-/* Mobilny Pływający Asystent AI */
 .floating-ai-container { position: fixed; bottom: 10px; left: 6px; right: 6px; max-width: 520px; margin: 0 auto; z-index: 999998; }
 .custom-nav-bar { display: flex; justify-content: space-between; gap: 6px; width: 100%; }
 .custom-nav-btn { flex: 1; background-color: #FAF8F2; border: 1.5px solid #D6D2C4; color: #2B2118; padding: 7px 3px; text-align: center; border-radius: 14px; font-size: 10.5px; font-weight: 800; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 2px; }
@@ -170,7 +168,6 @@ div[class*="st-key-btn_add_shop_"] button, div[class*="st-key-btn_add_market_"] 
 div[class*="st-key-btn_add_shop_"] button:disabled, div[class*="st-key-btn_add_market_"] button:disabled { background-color: #D6CEBA !important; color: #73695F !important; border: 1.5px solid #C4BC9E !important; opacity: 0.85 !important; cursor: not-allowed !important; box-shadow: none !important; }
 .note-card { background-color: #F4EFE6; border: 1.5px solid #D8D2BC; border-radius: 16px; padding: 12px; margin-bottom: 8px; }
 
-/* Optymalizacja dymków czatu na telefonie */
 [data-testid="stChatMessage"] { padding: 8px 10px !important; margin-bottom: 6px !important; border-radius: 14px !important; font-size: 9.5pt !important; }
 [data-testid="stChatMessageContent"] p { font-size: 9.5pt !important; line-height: 1.35 !important; margin-bottom: 0 !important; }
 </style>
@@ -458,24 +455,32 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
                     f"💡 PROPOZYCJA: Zaplanuj tę atrakcję z samego rana (np. 08:00–10:00) lub w tych godzinach wybierz klimatyzowane Cretaquarium, jaskinię lub obiad w tawernie w cieniu."
                 )
 
-    # 2. Walidacja luki żywieniowej (Maksymalnie 4h między posiłkami głównymi)
-    with get_db() as conn:
-        kroki = conn.cursor().execute(
-            'SELECT okienko_zwiedzania, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC',
-            (str(id_wycieczki),)
-        ).fetchall()
-    
-    if kroki and g_start:
-        ostatni_krok = kroki[-1]
-        g_prev = sparsuj_godzine_minuty(ostatni_krok[0].split("-")[-1].strip())
-        if g_prev:
-            prev_dec = g_prev[0] + g_prev[1] / 60.0
-            if (godz_dec - prev_dec) > 4.0:
-                return False, (
-                    f"⛔ ODMOWA: Czas od poprzedniego punktu przekracza 4.0 godziny bez posiłku głównego. "
-                    f"Dzieci z AuDHD wejdą w stan silnego przebodźcowania i głodu (Hangry). "
-                    f"💡 PROPOZYCJA: Zaplanuj przerwę na obiad lub powrót do domku/tawernę przed wejściem do '{nazwa_nowego_miejsca}'."
-                )
+    # 2. Walidacja luki żywieniowej (Maksymalnie 4h wyłącznie między posiłkami głównymi: śniadanie, obiad, kolacja)
+    if g_start:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT p.rodzaj_posilku, p.sugerowana_godzina, k.okienko_zwiedzania, k.nazwa
+                FROM posilki_kroku p
+                JOIN krok_wycieczki k ON p.id_kroku = k.id
+                WHERE k.id_wycieczki = ? AND p.rodzaj_posilku IN ('śniadanie', 'obiad', 'kolacja')
+                ORDER BY CAST(k.krok_wycieczki AS INTEGER) ASC
+            ''', (str(id_wycieczki),))
+            glowne_posilki = cursor.fetchall()
+        
+        if glowne_posilki:
+            ostatni_posilek = glowne_posilki[-1]
+            pos_godz_str = ostatni_posilek[1] or (ostatni_posilek[2].split("-")[0].strip() if ostatni_posilek[2] else None)
+            g_pos = sparsuj_godzine_minuty(pos_godz_str)
+            if g_pos:
+                pos_dec = g_pos[0] + g_pos[1] / 60.0
+                if (godz_dec - pos_dec) > 4.0:
+                    return False, (
+                        f"⛔ ODMOWA: Od ostatniego posiłku głównego ({ostatni_posilek[0]} w punkcie '{ostatni_posilek[3]}', ok. {pos_godz_str}) "
+                        f"do planowanego punktu '{nazwa_nowego_miejsca}' ({planowane_okienko}) mija ponad 4.0 godziny bez posiłku głównego. "
+                        f"Aplikacja nie traktuje mikroprzekąsek jako zastępstwa. Dzieci z AuDHD wejdą w stan silnego przebodźcowania i głodu (Hangry). "
+                        f"💡 PROPOZYCJA: Zaplanuj powrót do domku w Stavros na domowy obiad lub przerwę na posiłek główny (lub prowiant domowy na wynos) przed '{nazwa_nowego_miejsca}'."
+                    )
 
     return True, ""
 
@@ -565,7 +570,10 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
         for i in range(len(kroki)):
             s_str, e_str = start_times[i].strftime("%H:%M"), end_times[i].strftime("%H:%M")
             cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (f"{s_str} - {e_str}", kroki[i][0]))
+            
+            # Automatyczne przeliczenie i spięcie sugerowanej godziny posiłku ze startem kroku
             cursor.execute('UPDATE posilki_kroku SET sugerowana_godzina = ? WHERE id_kroku = ?', (s_str, kroki[i][0]))
+            
             if i < len(kroki) - 1:
                 cursor.execute('''
                     INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
@@ -805,7 +813,6 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy="", okienko_zwiedzania="12:0
     if not miejsce_info:
         return f"⛔ BŁĄD: Nie znaleziono miejsca '{nazwa_z_bazy}' w lokalnej bazie miejsc!"
 
-    # STRAŻNIK AuDHD
     bezpieczny, powod_odmowy = sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, miejsce_info['nazwa'], okienko_zwiedzania)
     if not bezpieczny:
         return powod_odmowy
@@ -905,7 +912,6 @@ def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, nazwa=None, wspolrzedne=
             return f"Nie znaleziono kroku '{krok_wycieczki}' w wycieczce #{id_wycieczki}."
         krok_id, stary_nazwa = res[0], res[1]
         
-        # STRAŻNIK AuDHD przy edycji godzin
         if okienko_zwiedzania:
             bezpieczny, powod_odmowy = sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa or stary_nazwa, okienko_zwiedzania)
             if not bezpieczny:
@@ -973,7 +979,7 @@ def dodaj_produkt_zakupow(id_wycieczki, nazwa_produktu, id_kroku=None, ilosc="1"
     lokalizacja = f"kroku #{krok_val}" if krok_val else "całej wycieczki"
     return f"Dodano produkt '{nazwa_produktu}' do listy zakupów ({lokalizacja})."
 
-def zarzadzaj_posilkiem_kroku(id_wycieczki, id_kroku, rodzaj_posilku, miejsce="restauracja", sugerowana_godzina="13:30", opis="Safe food: drób/ryby/domowe"):
+def zarzadzaj_posilkiem_kroku(id_wycieczki, id_kroku, rodzaj_posilku, miejsce="w domku", sugerowana_godzina="13:30", opis="Safe food: drób/ryby/domowe"):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -1081,7 +1087,7 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="dodaj_notatke",
-                description="Dodaje notatkę do wycieczki lub miejsca (np. taktyka obiadowa, zapasy na wynos).",
+                description="Dodaje notatkę do wycieczki lub miejsca (np. taktyka obiadu domowego w Stavros, przygotowanie domowych kanapek / prowiantu na wynos do torby termicznej).",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1149,7 +1155,7 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="zarzadzaj_posilkiem_kroku",
-                description="Dodaje główny posiłek (śniadanie, obiad, kolacja) powiązany z krokiem wycieczki, uwzględniając restrykcje (bez wieprzowiny, safe foods).",
+                description="Dodaje główny posiłek (śniadanie, obiad, kolacja). Domyślnie preferuj obiad w domku w Stavros lub prowiant domowy na wynos.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1158,7 +1164,7 @@ cretai_tools = [
                         "rodzaj_posilku": types.Schema(type=types.Type.STRING, description="'śniadanie', 'obiad' lub 'kolacja'"),
                         "miejsce": types.Schema(type=types.Type.STRING, description="'w domku', 'restauracja' lub 'po drodze'"),
                         "sugerowana_godzina": types.Schema(type=types.Type.STRING, description="Godzina np. '13:30'"),
-                        "opis": types.Schema(type=types.Type.STRING, description="Opis uwzględniający restrykcje żywieniowe")
+                        "opis": types.Schema(type=types.Type.STRING, description="Opis posiłku (safe foods, drób, domowe kanapki)")
                     },
                     required=["id_wycieczki", "id_kroku", "rodzaj_posilku"]
                 ),
@@ -1532,11 +1538,14 @@ Zwracaj się do użytkownika po imieniu w sposób bardzo personalny, dopasowany 
 - Gdy propozycja rodzica jest zła (narusza lekko zasady, np. zła pora, małe ryzyko): zwracaj się bezpośrednio (np. "To zły pomysł, {uzytkownik}").
 - Gdy propozycja rodzica jest bardzo zła / katastrofalna dla dzieci z AuDHD (np. pełne słońce w upale 11:30-15:30, głód >4h, brak cienia): reaguj kategorycznie i ostrzegawczo (np. "To bardzo zły pomysł, {uzytkownik}").
 
-ZASADA NACZELNA (STRAŻNIK AuDHD & POSIŁKI):
+ZASADA NACZELNA (STRAŻNIK AuDHD & TAKTYKA POSIŁKÓW):
 Zanim wykonasz JAKIEKOLWIEK działania na bazie danych (narzędzia CRUD), ZAWSZE sprawdź:
 1. Upał i słońce w oknie 11:30–15:30 – zakaz planowania odsłoniętych ruin i miejsc bez cienia w tych godzinach!
-2. Luki żywieniowe – maksymalny odstęp między posiłkami głównymi (śniadanie, obiad, kolacja) nie może przekraczać 4 godzin. Aplikacja nie obsługuje przekąsek w tle.
-3. Preferencja obiadowa – priorytetem finansowym i sensorycznym jest obiad gotowany w domku w Stavros (zabezpieczany lunchem na wynos / kanapkami w torbie termicznej na drogę powrotną, zapisując taktykę w notatkach wycieczki).
+2. Luki żywieniowe (Zasada 4H) – maksymalny odstęp wyłącznie między posiłkami głównymi (śniadanie, obiad, kolacja) nie może przekraczać 4.0 godzin. Przekąski w tle nie resetują tego limitu.
+3. Taktyka obiadów domowych:
+   - Domyślnie preferuj powrót na obiad do naszej bazy (domek w Stavros), by zapewnić wyciszenie sensoryczne i bezpieczne posiłki (safe foods).
+   - W przypadku dłuższego okna zwiedzania lub braku możliwości szybkiego powrotu – zaplanuj przygotowanie domowych kanapek / prowiantu na wynos w torbie termicznej.
+   - Gdy decydujesz się na taktykę kanapek na wynos lub obiad w trasie, AUTOMATYCZNIE wywołaj funkcję `dodaj_notatke`, zapisując taktykę prowiantu w notatkach bieżącej wycieczki.
 4. Bufor poranny – minimalny czas w domku rano.
 Jeśli którekolwiek z wymagań jest niespełnione, ODMÓW wykonania polecenia, wyjaśnij ryzyko fizjologiczne/sensoryczne dla dzieci i zaproponuj lepszą, bezpieczną alternatywę."""
 
