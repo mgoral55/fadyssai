@@ -10,6 +10,7 @@ import urllib.request
 import json
 import re
 import math
+import base64
 import time as py_time
 from datetime import datetime, date, time, timedelta
 
@@ -33,13 +34,22 @@ st.markdown("""
 <style>
 header[data-testid="stHeader"] { background-color: transparent !important; box-shadow: none !important; }
 [data-testid="stHeaderActionElements"] { display: none !important; }
-.block-container { padding-top: 1.0rem !important; padding-bottom: 140px !important; max-width: 540px; }
+.block-container { padding-top: 0.6rem !important; padding-bottom: 120px !important; max-width: 540px; }
 .stApp { background-color: #B4C29D !important; color: #2F241D !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 [data-testid="stSidebar"] { background-color: #F6F0DD !important; border-right: 1.5px solid #E2DEC8 !important; }
 [data-testid="stSidebar"] * { color: #2B2118 !important; }
 h1, h2, h3, h4, h5 { color: #2F241D !important; font-weight: 800; }
-input, textarea, .stChatInput textarea { background-color: #FAF8F2 !important; color: #2B2118 !important; border: 1.5px solid #D6D2C4 !important; border-radius: 16px !important; }
-::placeholder { color: #8C827A !important; }
+
+/* Zapobieganie zoomowaniu w iOS Safari i dopasowanie mobilne */
+input, textarea, .stChatInput textarea { 
+    background-color: #FAF8F2 !important; 
+    color: #2B2118 !important; 
+    border: 1.5px solid #D6D2C4 !important; 
+    border-radius: 16px !important; 
+    font-size: 16px !important; 
+}
+::placeholder { color: #8C827A !important; font-size: 14px !important; }
+
 div[data-baseweb="select"], div[data-baseweb="select"] > div, div[data-baseweb="select"] * { background-color: #FAF8F2 !important; color: #2B2118 !important; fill: #2B2118 !important; }
 div[data-baseweb="select"] > div { border: 1.5px solid #D6D2C4 !important; border-radius: 16px !important; }
 div[data-baseweb="popover"], div[data-baseweb="popover"] > div, ul[role="listbox"], li[role="option"] { background-color: #FAF8F2 !important; color: #2B2118 !important; }
@@ -47,92 +57,122 @@ li[role="option"]:hover, li[aria-selected="true"] { background-color: #EFE8D1 !i
 div[data-baseweb="input"], div[data-baseweb="input"] > div, div[data-baseweb="input"] input { background-color: #FAF8F2 !important; color: #2B2118 !important; border-color: #D6D2C4 !important; }
 div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 8px !important; }
 div[data-testid="stHorizontalBlock"] > div { flex: 1 1 0px !important; min-width: 0 !important; }
-div.st-key-btn_date_picker button { background-color: #F6F0DD !important; color: #2B2118 !important; border: 1.5px solid #E2DEC8 !important; border-radius: 20px !important; padding: 14px 16px !important; min-height: 52px !important; font-size: 1.02rem !important; font-weight: 800 !important; width: 100% !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; }
+
+div.st-key-btn_date_picker button { background-color: #F6F0DD !important; color: #2B2118 !important; border: 1.5px solid #E2DEC8 !important; border-radius: 20px !important; padding: 12px 14px !important; min-height: 48px !important; font-size: 0.98rem !important; font-weight: 800 !important; width: 100% !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; }
 div.st-key-btn_date_picker button:hover { border-color: #8C5338 !important; background-color: #EFE8D1 !important; }
+
 div[data-testid="stPopover"] { width: 100% !important; }
-div[data-testid="stPopover"] > button, div[data-testid="stPopover"] > button:disabled, div[data-testid="stPopover"] > button[aria-expanded], div[data-testid="stPopover"] > button:focus, div[data-testid="stPopover"] > button:active { background-color: #F6F0DD !important; color: #2B2118 !important; border: 1.5px solid #E2DEC8 !important; border-radius: 20px !important; padding: 18px 10px !important; min-height: 72px !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; }
-div[data-testid="stPopover"] > button * { color: #2B2118 !important; font-weight: 900 !important; font-size: 1.15rem !important; }
+div[data-testid="stPopover"] > button, div[data-testid="stPopover"] > button:disabled, div[data-testid="stPopover"] > button[aria-expanded], div[data-testid="stPopover"] > button:focus, div[data-testid="stPopover"] > button:active { background-color: #F6F0DD !important; color: #2B2118 !important; border: 1.5px solid #E2DEC8 !important; border-radius: 20px !important; padding: 14px 8px !important; min-height: 64px !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; }
+div[data-testid="stPopover"] > button * { color: #2B2118 !important; font-weight: 900 !important; font-size: 1.05rem !important; }
 div[data-testid="stPopover"] > button:hover { border-color: #8C5338 !important; background-color: #EFE8D1 !important; }
-[data-testid="stExpander"] { border: 1.5px solid #E2DEC8 !important; border-radius: 24px !important; background-color: #F6F0DD !important; margin-bottom: 6px !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; overflow: hidden !important; }
-[data-testid="stExpander"] summary { font-size: 10pt !important; font-weight: 800 !important; color: #2B2118 !important; }
+
+[data-testid="stExpander"] { border: 1.5px solid #E2DEC8 !important; border-radius: 20px !important; background-color: #F6F0DD !important; margin-bottom: 6px !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; overflow: hidden !important; }
+[data-testid="stExpander"] summary { font-size: 9.5pt !important; font-weight: 800 !important; color: #2B2118 !important; padding: 10px 14px !important; }
 [data-testid="stExpander"] summary:hover { color: #8C5338 !important; }
 [data-testid="stExpander"] summary svg { fill: #8C5338 !important; color: #8C5338 !important; }
-[data-testid="stExpander"] [data-testid="stExpanderDetails"] { background-color: #F6F0DD !important; border-top: 1px solid #D1C7AE !important; padding: 12px 14px !important; }
-.top-sticky-nav-container { position: sticky; top: 0; z-index: 999; background-color: #B4C29D; padding: 8px 0 12px 0; margin-bottom: 8px; border-bottom: 1.5px solid rgba(255, 255, 255, 0.2); }
+[data-testid="stExpander"] [data-testid="stExpanderDetails"] { background-color: #F6F0DD !important; border-top: 1px solid #D1C7AE !important; padding: 10px 12px !important; }
+
+.top-sticky-nav-container { position: sticky; top: 0; z-index: 999; background-color: #B4C29D; padding: 6px 0 10px 0; margin-bottom: 6px; border-bottom: 1.5px solid rgba(255, 255, 255, 0.2); }
 .custom-top-nav-bar { display: flex; justify-content: space-between; gap: 8px; width: 100%; }
-.custom-top-nav-btn { flex: 1; background-color: #EFE8D6; border: 1.5px solid #D6CEBC; color: #8A7B70; padding: 8px 4px; text-align: center; border-radius: 14px; font-size: 11px; font-weight: 800; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 3px; box-shadow: 0 2px 6px rgba(0,0,0,0.03); }
+.custom-top-nav-btn { flex: 1; background-color: #EFE8D6; border: 1.5px solid #D6CEBC; color: #8A7B70; padding: 7px 4px; text-align: center; border-radius: 14px; font-size: 11px; font-weight: 800; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 2px; box-shadow: 0 2px 6px rgba(0,0,0,0.03); }
 .custom-top-nav-btn.active { background-color: #F6F0DD; color: #8C5338; border-color: #C8C0AC; font-weight: 900; }
-.adventure-header { background: #2E251E; border: none; border-radius: 20px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; margin-bottom: 8px; box-shadow: 0 6px 18px rgba(46, 37, 30, 0.15); }
-.adventure-title-text { font-size: 1.15rem; font-weight: 900; color: #F9F7F1; letter-spacing: 0.02em; text-transform: uppercase; }
-.trip-top-section { padding: 4px 4px 6px 4px; margin-top: 4px; }
-.trip-main-title { font-size: 26pt; font-weight: 900; color: #2B2118; letter-spacing: -0.5px; line-height: 1.15; margin-bottom: 4px; }
-div.st-key-btn_date_picker { margin-bottom: 12px !important; }
-.section-unified-header { font-size: 1.25rem !important; font-weight: 800 !important; color: #2B2118 !important; margin-top: 16px !important; margin-bottom: 8px !important; display: flex; align-items: center; gap: 8px; }
-.section-body-text { font-size: 9.5pt; color: #2B2118; font-weight: 600; line-height: 1.4; margin-bottom: 12px; }
-.overview-card { background-color: #F6F0DD; border: 1.5px solid #E2DEC8; border-radius: 24px; padding: 16px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
-.overview-card-title { font-size: 10pt; font-weight: 800; color: #2B2118; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
-.overview-card-text { font-size: 9.5pt; color: #2B2118; font-weight: 600; line-height: 1.4; }
-.logistics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.logistics-pill { background-color: #FAF8F2; border: 1.5px solid #E2DEC8; border-radius: 16px; padding: 10px 12px; }
-.logistics-pill-title { font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 3px; display: flex; align-items: center; gap: 4px; }
-.logistics-pill-value { font-size: 11pt; font-weight: 900; color: #2B2118; }
-.overview-details-card { background-color: #F6F0DD; border: 1.5px solid #E2DEC8; border-radius: 24px; padding: 14px 16px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
-.overview-details-card summary { font-size: 10pt; color: #2B2118; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+
+.adventure-header { background: #2E251E; border: none; border-radius: 18px; padding: 8px 14px; display: flex; align-items: center; gap: 10px; margin-bottom: 8px; box-shadow: 0 4px 14px rgba(46, 37, 30, 0.15); }
+.adventure-header-img { height: 28px; width: auto; max-width: 100px; object-fit: contain; }
+.adventure-title-text { font-size: 1.05rem; font-weight: 900; color: #F9F7F1; letter-spacing: 0.02em; text-transform: uppercase; }
+
+.trip-top-section { padding: 2px 4px 4px 4px; margin-top: 2px; }
+.trip-main-title { font-size: 22pt; font-weight: 900; color: #2B2118; letter-spacing: -0.5px; line-height: 1.15; margin-bottom: 4px; }
+div.st-key-btn_date_picker { margin-bottom: 10px !important; }
+
+.section-unified-header { font-size: 1.15rem !important; font-weight: 800 !important; color: #2B2118 !important; margin-top: 14px !important; margin-bottom: 6px !important; display: flex; align-items: center; gap: 6px; }
+.section-body-text { font-size: 9pt; color: #2B2118; font-weight: 600; line-height: 1.4; margin-bottom: 10px; }
+
+.overview-card { background-color: #F6F0DD; border: 1.5px solid #E2DEC8; border-radius: 20px; padding: 14px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
+.overview-card-title { font-size: 9.5pt; font-weight: 800; color: #2B2118; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.overview-card-text { font-size: 9pt; color: #2B2118; font-weight: 600; line-height: 1.4; }
+
+.logistics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.logistics-pill { background-color: #FAF8F2; border: 1.5px solid #E2DEC8; border-radius: 14px; padding: 8px 10px; }
+.logistics-pill-title { font-size: 7.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 2px; display: flex; align-items: center; gap: 4px; }
+.logistics-pill-value { font-size: 10pt; font-weight: 900; color: #2B2118; }
+
+.overview-details-card { background-color: #F6F0DD; border: 1.5px solid #E2DEC8; border-radius: 20px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
+.overview-details-card summary { font-size: 9.5pt; color: #2B2118; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; }
 .overview-details-card summary::-webkit-details-marker { display: none; }
-.overview-details-card summary::after { content: "▼"; font-size: 8pt; color: #8C5338; }
-.timeline-master-container { position: relative; display: flex; flex-direction: column; width: 100%; margin-bottom: 16px; }
-.timeline-master-continuous-line { position: absolute; left: 94px; top: 32px; bottom: 32px; width: 3.5px; background-color: rgba(0, 0, 0, 0.25) !important; transform: translateX(-50%); z-index: 1 !important; pointer-events: none; }
+.overview-details-card summary::after { content: "▼"; font-size: 7.5pt; color: #8C5338; }
+
+.timeline-master-container { position: relative; display: flex; flex-direction: column; width: 100%; margin-bottom: 14px; }
+.timeline-master-continuous-line { position: absolute; left: 88px; top: 28px; bottom: 28px; width: 3px; background-color: rgba(0, 0, 0, 0.22) !important; transform: translateX(-50%); z-index: 1 !important; pointer-events: none; }
 .timeline-step-row-wrapper { position: relative; width: 100%; z-index: 2; }
-.timeline-row-frameless { position: relative; display: flex; align-items: center; min-height: 56px; background-color: transparent !important; border: none !important; padding: 6px 12px; box-sizing: border-box; }
-.timeline-step-expander { position: relative; background-color: #F6F0DD; border: 1.5px solid #E2DEC8; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); overflow: hidden; box-sizing: border-box; }
-.timeline-step-expander summary { list-style: none !important; cursor: pointer; padding: 10px 12px; background-color: #F6F0DD; border-radius: 20px; display: block; }
+.timeline-row-frameless { position: relative; display: flex; align-items: center; min-height: 52px; background-color: transparent !important; border: none !important; padding: 4px 8px; box-sizing: border-box; }
+
+.timeline-step-expander { position: relative; background-color: #F6F0DD; border: 1.5px solid #E2DEC8; border-radius: 18px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); overflow: hidden; box-sizing: border-box; }
+.timeline-step-expander summary { list-style: none !important; cursor: pointer; padding: 8px 10px; background-color: #F6F0DD; border-radius: 18px; display: block; }
 .timeline-step-expander summary::-webkit-details-marker, .timeline-step-expander summary::marker { display: none !important; }
 .timeline-step-expander[open] summary { border-bottom: 1.5px solid #E2DEC8; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-.timeline-row-inner { position: relative; display: flex; align-items: center; min-height: 44px; width: 100%; }
-.timeline-time { position: relative; width: 58px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: center; z-index: 2; }
-.timeline-time-start { font-size: 11pt; font-weight: 900; color: #2B2118; }
-.timeline-time-end { font-size: 8.5pt; font-weight: 700; color: #8C5338; margin-top: 2px; }
-.timeline-center-col { position: relative; width: 48px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; margin-right: 8px; }
-.timeline-icon-badge-static { position: relative; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13pt; font-weight: 900; color: #FFFFFF !important; border: 2.5px solid #FFFFFF !important; box-shadow: 0 2px 6px rgba(0,0,0,0.15); z-index: 5 !important; opacity: 1 !important; }
+
+.timeline-row-inner { position: relative; display: flex; align-items: center; min-height: 40px; width: 100%; }
+.timeline-time { position: relative; width: 54px; flex-shrink: 0; display: flex; flex-direction: column; justify-content: center; z-index: 2; }
+.timeline-time-start { font-size: 10.5pt; font-weight: 900; color: #2B2118; }
+.timeline-time-end { font-size: 8pt; font-weight: 700; color: #8C5338; margin-top: 1px; }
+
+.timeline-center-col { position: relative; width: 44px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; margin-right: 6px; }
+.timeline-icon-badge-static { position: relative; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12pt; font-weight: 900; color: #FFFFFF !important; border: 2px solid #FFFFFF !important; box-shadow: 0 2px 5px rgba(0,0,0,0.15); z-index: 5 !important; }
+
 .badge-pobudka, .badge-wyjazd, .badge-powrot { background-color: #94A77E !important; }
 .badge-miejsce { background-color: #C06C4E !important; }
 .badge-obiad { background-color: #B56749 !important; }
-.timeline-content-col { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: center; z-index: 2; }
-.timeline-item-title { font-size: 12.5pt; font-weight: 900; color: #2B2118; }
-.timeline-item-desc { font-size: 9.5pt; color: #4A3E36; }
-.timeline-nav-btn { position: relative; flex-shrink: 0; width: auto; min-width: 50px; height: 48px; background-color: transparent !important; border: none !important; border-radius: 14px; text-align: center; text-decoration: none !important; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; margin-left: 8px; padding: 0 4px; z-index: 2; }
-.timeline-nav-btn span:first-child { font-size: 13pt; color: #8C5338; }
-.timeline-nav-btn span:last-child { font-size: 7.5pt; font-weight: 800; color: #2B2118; }
-.timeline-step-expander .timeline-expander-body { position: relative; padding: 12px 14px; background-color: #F6F0DD !important; z-index: 3; }
-.step-details-card { position: relative; background-color: #EDE8D6 !important; border: 1.5px solid #D6CEBA; border-radius: 18px; padding: 14px; margin-bottom: 8px; z-index: 3; }
-.step-desc-bubble { background-color: #E2DAC4; border-radius: 16px; padding: 12px 14px; font-size: 10pt; color: #2B2118; font-weight: 600; margin-bottom: 10px; }
-.step-evac-pill { background-color: rgba(220, 80, 80, 0.08); border: 1.5px solid rgba(220, 80, 80, 0.3); border-radius: 16px; padding: 10px 14px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
-.step-evac-pill-title { font-size: 9pt; font-weight: 800; color: #DC5050; text-transform: uppercase; }
-.step-evac-pill-val { font-size: 11pt; font-weight: 900; color: #DC5050; }
-.step-warn-box { background-color: rgba(226, 140, 50, 0.1); border: 1.5px solid rgba(226, 140, 50, 0.35); border-radius: 16px; padding: 10px 14px; margin-bottom: 10px; }
-.step-warn-title { font-size: 8.5pt; font-weight: 800; color: #C06C4E; text-transform: uppercase; }
-.step-warn-text { font-size: 9pt; font-weight: 700; color: #2B2118; }
-.step-combined-card { background-color: #E2DAC4; border-radius: 18px; padding: 12px 14px; margin-bottom: 12px; }
-.step-combined-card summary { font-size: 10pt; font-weight: 800; color: #8C5338; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; }
+
+.timeline-content-col { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: center; z-index: 2; min-width: 0; }
+.timeline-item-title { font-size: 11.5pt; font-weight: 900; color: #2B2118; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.timeline-item-desc { font-size: 9pt; color: #4A3E36; }
+
+.timeline-nav-btn { position: relative; flex-shrink: 0; width: auto; min-width: 44px; height: 42px; background-color: transparent !important; border: none !important; border-radius: 12px; text-align: center; text-decoration: none !important; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; margin-left: 6px; padding: 0 2px; z-index: 2; }
+.timeline-nav-btn span:first-child { font-size: 12pt; color: #8C5338; }
+.timeline-nav-btn span:last-child { font-size: 7pt; font-weight: 800; color: #2B2118; }
+
+.timeline-step-expander .timeline-expander-body { position: relative; padding: 10px 12px; background-color: #F6F0DD !important; z-index: 3; }
+.step-details-card { position: relative; background-color: #EDE8D6 !important; border: 1.5px solid #D6CEBA; border-radius: 16px; padding: 12px; margin-bottom: 6px; z-index: 3; }
+.step-desc-bubble { background-color: #E2DAC4; border-radius: 14px; padding: 10px 12px; font-size: 9.5pt; color: #2B2118; font-weight: 600; margin-bottom: 8px; }
+.step-evac-pill { background-color: rgba(220, 80, 80, 0.08); border: 1.5px solid rgba(220, 80, 80, 0.3); border-radius: 14px; padding: 8px 12px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+.step-evac-pill-title { font-size: 8.5pt; font-weight: 800; color: #DC5050; text-transform: uppercase; }
+.step-evac-pill-val { font-size: 10.5pt; font-weight: 900; color: #DC5050; }
+.step-warn-box { background-color: rgba(226, 140, 50, 0.1); border: 1.5px solid rgba(226, 140, 50, 0.35); border-radius: 14px; padding: 8px 12px; margin-bottom: 8px; }
+.step-warn-title { font-size: 8pt; font-weight: 800; color: #C06C4E; text-transform: uppercase; }
+.step-warn-text { font-size: 8.5pt; font-weight: 700; color: #2B2118; }
+
+.step-combined-card { background-color: #E2DAC4; border-radius: 16px; padding: 10px 12px; margin-bottom: 10px; }
+.step-combined-card summary { font-size: 9.5pt; font-weight: 800; color: #8C5338; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; }
 .step-combined-card summary::-webkit-details-marker { display: none; }
-.step-combined-card summary::after { content: "▼"; font-size: 8pt; color: #8C5338; }
-.step-subitem-title { font-size: 9.5pt; font-weight: 800; margin-bottom: 3px; }
-.step-subitem-body { font-size: 9pt; color: #2B2118; font-weight: 600; }
-.step-action-vertical-bar { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; margin-bottom: 4px; }
-.step-action-vertical-btn { background-color: #C3CBB5; border: 1.5px solid #ACB79C; border-radius: 16px; padding: 10px 14px; text-align: center; text-decoration: none !important; display: flex; align-items: center; justify-content: center; gap: 8px; }
-.step-action-vertical-btn span:first-child { font-size: 13pt; }
-.step-action-vertical-btn span:last-child { font-size: 9.5pt; font-weight: 800; color: #2B2118; }
-.timeline-transit-spacer { position: relative; width: 100%; min-height: 28px; display: flex; align-items: center; margin: 4px 0; z-index: 2; }
-.timeline-transit-text { margin-left: 118px; font-size: 9pt; font-weight: 800; color: #2B2118; display: flex; align-items: center; gap: 6px; z-index: 2; background: transparent; border: none; padding: 0; }
-div[data-testid="stCheckbox"] { margin-bottom: 6px !important; background-color: #B4C29D !important; border: none !important; border-radius: 0px !important; padding: 0px !important; box-shadow: none !important; accent-color: #8C5338 !important; }
-div[data-testid="stCheckbox"] label { font-size: 9.5pt !important; font-weight: 700 !important; color: #2B2118 !important; }
-.floating-ai-container { position: fixed; bottom: 15px; left: 8px; right: 8px; max-width: 520px; margin: 0 auto; z-index: 999998; }
-.custom-nav-bar { display: flex; justify-content: space-between; gap: 8px; width: 100%; }
-.custom-nav-btn { flex: 1; background-color: #FAF8F2; border: 1.5px solid #D6D2C4; color: #2B2118; padding: 8px 4px; text-align: center; border-radius: 16px; font-size: 11px; font-weight: 800; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.stButton > button { background-color: #2E251E !important; color: #FFFFFF !important; border: none !important; font-weight: 800 !important; border-radius: 20px !important; padding: 0.5rem 1rem !important; min-height: 44px !important; font-size: 10pt !important; box-shadow: 0 3px 8px rgba(0,0,0,0.08) !important; }
-div[class*="st-key-btn_add_shop_"] button, div[class*="st-key-btn_add_market_"] button { height: 44px !important; min-height: 44px !important; max-height: 44px !important; font-size: 9pt !important; font-weight: 800 !important; border-radius: 16px !important; margin-bottom: 6px !important; display: flex !important; align-items: center !important; justify-content: center !important; text-align: center !important; }
+.step-combined-card summary::after { content: "▼"; font-size: 7.5pt; color: #8C5338; }
+.step-subitem-title { font-size: 9pt; font-weight: 800; margin-bottom: 2px; }
+.step-subitem-body { font-size: 8.5pt; color: #2B2118; font-weight: 600; }
+
+.step-action-vertical-bar { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; margin-bottom: 2px; }
+.step-action-vertical-btn { background-color: #C3CBB5; border: 1.5px solid #ACB79C; border-radius: 14px; padding: 8px 12px; text-align: center; text-decoration: none !important; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.step-action-vertical-btn span:first-child { font-size: 12pt; }
+.step-action-vertical-btn span:last-child { font-size: 9pt; font-weight: 800; color: #2B2118; }
+
+.timeline-transit-spacer { position: relative; width: 100%; min-height: 24px; display: flex; align-items: center; margin: 3px 0; z-index: 2; }
+.timeline-transit-text { margin-left: 110px; font-size: 8.5pt; font-weight: 800; color: #2B2118; display: flex; align-items: center; gap: 5px; z-index: 2; background: transparent; border: none; padding: 0; }
+
+div[data-testid="stCheckbox"] { margin-bottom: 4px !important; background-color: #B4C29D !important; border: none !important; border-radius: 0px !important; padding: 0px !important; box-shadow: none !important; accent-color: #8C5338 !important; }
+div[data-testid="stCheckbox"] label { font-size: 9pt !important; font-weight: 700 !important; color: #2B2118 !important; }
+
+/* Mobilny Pływający Asystent AI */
+.floating-ai-container { position: fixed; bottom: 10px; left: 6px; right: 6px; max-width: 520px; margin: 0 auto; z-index: 999998; }
+.custom-nav-bar { display: flex; justify-content: space-between; gap: 6px; width: 100%; }
+.custom-nav-btn { flex: 1; background-color: #FAF8F2; border: 1.5px solid #D6D2C4; color: #2B2118; padding: 7px 3px; text-align: center; border-radius: 14px; font-size: 10.5px; font-weight: 800; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+
+.stButton > button { background-color: #2E251E !important; color: #FFFFFF !important; border: none !important; font-weight: 800 !important; border-radius: 18px !important; padding: 0.4rem 0.8rem !important; min-height: 40px !important; font-size: 9.5pt !important; box-shadow: 0 3px 8px rgba(0,0,0,0.08) !important; }
+div[class*="st-key-btn_add_shop_"] button, div[class*="st-key-btn_add_market_"] button { height: 40px !important; min-height: 40px !important; max-height: 40px !important; font-size: 8.5pt !important; font-weight: 800 !important; border-radius: 14px !important; margin-bottom: 4px !important; display: flex !important; align-items: center !important; justify-content: center !important; text-align: center !important; }
 div[class*="st-key-btn_add_shop_"] button:disabled, div[class*="st-key-btn_add_market_"] button:disabled { background-color: #D6CEBA !important; color: #73695F !important; border: 1.5px solid #C4BC9E !important; opacity: 0.85 !important; cursor: not-allowed !important; box-shadow: none !important; }
-.note-card { background-color: #F4EFE6; border: 1.5px solid #D8D2BC; border-radius: 18px; padding: 14px; margin-bottom: 10px; }
+.note-card { background-color: #F4EFE6; border: 1.5px solid #D8D2BC; border-radius: 16px; padding: 12px; margin-bottom: 8px; }
+
+/* Optymalizacja dymków czatu na telefonie */
+[data-testid="stChatMessage"] { padding: 8px 10px !important; margin-bottom: 6px !important; border-radius: 14px !important; font-size: 9.5pt !important; }
+[data-testid="stChatMessageContent"] p { font-size: 9.5pt !important; line-height: 1.35 !important; margin-bottom: 0 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -142,6 +182,30 @@ if "flash_toast" in st.session_state and st.session_state["flash_toast"]:
 
 DOMEK_LAT, DOMEK_LON = 35.5914, 24.0918
 SKLEP_LAT, SKLEP_LON = 35.586222, 24.091861
+
+# --- OBSŁUGA LOGO ---
+def pobierz_logo_b64(sciezka_pliku="logo.png"):
+    if os.path.exists(sciezka_pliku):
+        try:
+            with open(sciezka_pliku, "rb") as f:
+                return f"data:image/png;base64,{base64.b64encode(f.read()).decode()}"
+        except:
+            return None
+    return None
+
+def render_adventure_header(tytul_belki):
+    logo_base64 = pobierz_logo_b64("logo.png")
+    if logo_base64:
+        logo_html = f'<img src="{logo_base64}" class="adventure-header-img" alt="CretAi Logo">'
+    else:
+        logo_html = '<div style="font-size:22px;">🧭</div>'
+    
+    st.markdown(f"""
+    <div class="adventure-header">
+        {logo_html}
+        <div><div class="adventure-title-text">{tytul_belki}</div></div>
+    </div>
+    """, unsafe_allow_html=True)
 
 LAIKI_SCHEDULE = {
     0: {"dzien_pl": "Poniedziałek", "opis_miejsca": "Plac Markopoulou / ul. Malinou", "coords": "35.5118, 24.0239"},
@@ -272,7 +336,6 @@ def sformatuj_date_pl(data_str):
     return dt, dt.day, MIESIACE_PL[dt.month - 1], DNI_TYGODNIA_PL[dt.weekday()]
 
 def wczytaj_pliki_regul(katalog="rule", plik_glowny="SYSTEM_RULES_KRETA_ADHD.md"):
-    """Wczytuje ujednolicony plik reguł lub zawartość folderu rule/."""
     if os.path.exists(plik_glowny):
         try:
             with open(plik_glowny, 'r', encoding='utf-8') as f:
@@ -320,7 +383,7 @@ def formatuj_komunikat_bledu_ai(e):
     kod = getattr(e, 'code', None) or getattr(e, 'status_code', None)
     msg = str(e)
     if "429" in msg or kod == 429 or "RESOURCE_EXHAUSTED" in msg:
-        return "⏳ Przekroczono limit zapytań (429 Rate Limit)", "Wyczerpano limit zapytań dla klucza API. Odczekaj chwilę."
+        return "⏳ Przekroczono limit zapytań (429 Rate Limit)", "Wyczerpano limit zapytań na minutę (RPM/TPM). Odczekaj chwilę."
     if "401" in msg or "403" in msg or kod in [401, 403]:
         return "🔑 Błąd uwierzytelnienia klucza API", "Wprowadzony klucz API jest nieprawidłowy lub wygasł."
     return f"⚠️ Błąd połączenia z API ({type(e).__name__})", "Nie udało się zrealizować zapytania przez AI."
@@ -1144,9 +1207,9 @@ def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
     if max_temp >= 32:
         ostrzezenia.append(f"🔥 Ekstremalny upał! Maksymalna temperatura sięgnie {max_temp}°C.")
 
-    st.markdown(f'<div class="section-unified-header">🌤️ Pogoda na trasie</div><div style="font-size: 10.5pt; color: #2B2118; font-weight: 700; margin-bottom: 12px;">Temperatura: <b>{min_temp}°C do {max_temp}°C</b></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="section-unified-header">🌤️ Pogoda na trasie</div><div style="font-size: 10pt; color: #2B2118; font-weight: 700; margin-bottom: 10px;">Temperatura: <b>{min_temp}°C do {max_temp}°C</b></div>', unsafe_allow_html=True)
     for ost in ostrzezenia:
-        st.markdown(f'<div style="color: #DC5050; font-weight: 800; font-size: 9.5pt; margin-top: 2px;">{ost}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="color: #DC5050; font-weight: 800; font-size: 9pt; margin-top: 2px;">{ost}</div>', unsafe_allow_html=True)
 
 def pobierz_historie_czatu_z_db(uzytkownik):
     with get_db() as conn:
@@ -1179,7 +1242,7 @@ def renderuj_sekcje_notatek(id_wycieczki=None, id_miejsca=None):
 
     if not df_notatki.empty:
         for _, note in df_notatki.iterrows():
-            st.markdown(f'<div class="note-card"><div style="font-weight: 800; font-size: 10.5pt; color: #2B2118; margin-bottom: 4px;">📌 {note.get("tytul") or "Notatka"}</div><div style="font-size: 9.5pt; color: #4A3E36;">{note["zawartosc"]}</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="note-card"><div style="font-weight: 800; font-size: 10pt; color: #2B2118; margin-bottom: 3px;">📌 {note.get("tytul") or "Notatka"}</div><div style="font-size: 9pt; color: #4A3E36;">{note["zawartosc"]}</div></div>', unsafe_allow_html=True)
 
     with st.expander("➕ Dodaj nową notatkę", expanded=False):
         with st.form(key=f"form_add_note_{id_wycieczki}_{id_miejsca}", clear_on_submit=True):
@@ -1233,7 +1296,7 @@ def wczytaj_kontekst_zewnetrzny(aktywne_id_wycieczki="1"):
         try:
             wycieczka_df = pd.read_sql('SELECT id, tytul_wycieczki, planowana_data, szacowany_czas_ogarniania_rano, czas_wyjazdu FROM wycieczka WHERE id = ?', conn, params=(str(aktywne_id_wycieczki),))
             kroki_df = pd.read_sql('SELECT id, krok_wycieczki, nazwa, okienko_zwiedzania FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn, params=(str(aktywne_id_wycieczki),))
-            miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, opis, ochrona_slonce FROM miejsca', conn)
+            miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa FROM miejsca', conn)
         except:
             wycieczka_df, kroki_df, miejsca_df = pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
@@ -1245,9 +1308,9 @@ def wczytaj_kontekst_zewnetrzny(aktywne_id_wycieczki="1"):
             tekst += f"- ID DB:{k['id']} | #{k['krok_wycieczki']} {k['nazwa']} ({k['okienko_zwiedzania']})\n"
             
     if not miejsca_df.empty:
-        tekst += "\nDOSTĘPNA BAZA MIEJSC (użyj dodaj_krok_wycieczki z dokładną nazwą):\n"
+        tekst += "\nDOSTĘPNA BAZA MIEJSC (nazwy do dodania przez narzędzia):\n"
         for _, m in miejsca_df.iterrows():
-            tekst += f"- #{m['numer_miejsca']} {m['nazwa']} | {m['opis']} (Słońce: {m['ochrona_slonce']})\n"
+            tekst += f"- #{m['numer_miejsca']} {m['nazwa']}\n"
     return tekst
 
 def dodaj_marker_domku(m):
@@ -1303,21 +1366,21 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
     with st.expander(f"💬 Asystent AI ({uzytkownik})", expanded=False):
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.markdown(f"<span style='font-size: 9pt; font-weight: 800;'>🧠 TRYB AuDHD • {uzytkownik}</span>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size: 8.5pt; font-weight: 800; padding-top: 6px;'>🧠 TRYB AuDHD • {uzytkownik}</div>", unsafe_allow_html=True)
         with col2:
-            if st.button("🗑️ Wyczyść", key=f"btn_clear_{uzytkownik}_{'inline' if inline else 'float'}", use_container_width=True):
+            if st.button("🗑️ Czyść", key=f"btn_clear_{uzytkownik}_{'inline' if inline else 'float'}", use_container_width=True):
                 wyczysc_historie_czatu_w_db(uzytkownik)
                 st.session_state["flash_toast"] = "🗑️ Wyczyszczono czat."
                 st.rerun()
 
         chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
-        chat_container = st.container(height=260)
+        chat_container = st.container(height=190)
         with chat_container:
             for message in chat_historia_z_db:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"] if isinstance(message["content"], str) else "")
 
-        prompt = st.chat_input("Napisz np. 'wyjazd o 7:30', 'kup woda', 'dodaj Knossos'...", key=f"chat_input_{uzytkownik}_{'inline' if inline else 'float'}")
+        prompt = st.chat_input("Napisz np. 'wyjazd o 7:30', 'kup woda'...", key=f"chat_input_{uzytkownik}_{'inline' if inline else 'float'}")
         if prompt:
             zapisz_wiadomosc_w_db(uzytkownik, "user", prompt)
             akt_wyc_id = pobierz_aktywna_wycieczke_id()
@@ -1362,17 +1425,31 @@ ZASADA NACZELNA: Zawsze przestrzegaj powyższych reguł systemowych (CZĘŚĆ 1 
                                 contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
                                 executed_actions = []
 
-                                for loop_idx in range(2):
-                                    response = client.models.generate_content(
-                                        model=wybrany_model,
-                                        contents=contents,
-                                        config=types.GenerateContentConfig(
-                                            tools=cretai_tools,
-                                            system_instruction=system_prompt,
-                                            temperature=0.0,
-                                            max_output_tokens=350
+                                config = types.GenerateContentConfig(
+                                    tools=cretai_tools,
+                                    system_instruction=system_prompt,
+                                    temperature=0.1,
+                                    max_output_tokens=1024
+                                )
+
+                                for loop_idx in range(3):
+                                    try:
+                                        response = client.models.generate_content(
+                                            model=wybrany_model,
+                                            contents=contents,
+                                            config=config
                                         )
-                                    )
+                                    except Exception as api_err:
+                                        if "429" in str(api_err):
+                                            py_time.sleep(2.0)
+                                            response = client.models.generate_content(
+                                                model=wybrany_model,
+                                                contents=contents,
+                                                config=config
+                                            )
+                                        else:
+                                            raise api_err
+
                                     candidate = response.candidates[0] if response and response.candidates else None
                                     calls = []
                                     if hasattr(response, 'function_calls') and response.function_calls:
@@ -1395,6 +1472,7 @@ ZASADA NACZELNA: Zawsze przestrzegaj powyższych reguł systemowych (CZĘŚĆ 1 
                                                 types.Part.from_function_response(name=call_name, response={"result": str(wynik_bazy)})
                                             )
                                         contents.append(types.Content(role="user", parts=function_responses_parts))
+                                        py_time.sleep(0.5)
                                     else:
                                         if candidate and candidate.content and candidate.content.parts:
                                             assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
@@ -1409,7 +1487,7 @@ ZASADA NACZELNA: Zawsze przestrzegaj powyższych reguł systemowych (CZĘŚĆ 1 
                                 client_c = anthropic.Anthropic(api_key=api_key_input)
                                 resp = client_c.messages.create(
                                     model=wybrany_model,
-                                    max_tokens=350,
+                                    max_tokens=1024,
                                     system=system_prompt,
                                     messages=[{"role": "user", "content": prompt}]
                                 )
@@ -1428,9 +1506,9 @@ ZASADA NACZELNA: Zawsze przestrzegaj powyższych reguł systemowych (CZĘŚĆ 1 
                     except Exception as e:
                         naglowek_bledu, komunikat = formatuj_komunikat_bledu_ai(e)
                         st.markdown(f"""
-                        <div style="background-color: rgba(220, 80, 80, 0.15); border: 2px solid #DC5050; border-radius: 16px; padding: 12px; margin: 8px 0;">
-                            <div style="font-weight: 900; color: #DC5050; font-size: 10pt;">{naglowek_bledu}</div>
-                            <div style="font-size: 9pt; color: #2B2118; margin-top: 4px;">{komunikat}</div>
+                        <div style="background-color: rgba(220, 80, 80, 0.15); border: 2px solid #DC5050; border-radius: 14px; padding: 10px; margin: 6px 0;">
+                            <div style="font-weight: 900; color: #DC5050; font-size: 9.5pt;">{naglowek_bledu}</div>
+                            <div style="font-size: 8.5pt; color: #2B2118; margin-top: 3px;">{komunikat}</div>
                         </div>
                         """, unsafe_allow_html=True)
 
@@ -1532,7 +1610,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
     if pd.notna(w_gen.get('calosciowy_opis_wycieczki')) and str(w_gen['calosciowy_opis_wycieczki']).strip():
         st.markdown(f"""
-        <div style="margin-top: 4px; margin-bottom: 12px;">
+        <div style="margin-top: 4px; margin-bottom: 10px;">
             <div class="section-unified-header">📝 Cel wycieczki</div>
             <div class="section-body-text">{w_gen['calosciowy_opis_wycieczki']}</div>
         </div>
@@ -1552,7 +1630,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
     st.markdown('<div class="section-unified-header">🧭 Logistyka</div>', unsafe_allow_html=True)
     col_log1, col_log2, col_log3 = st.columns(3)
     with col_log1:
-        st.markdown('<div style="text-align: center; font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;">⏰ Pobudka</div>', unsafe_allow_html=True)
+        st.markdown('<div style="text-align: center; font-size: 7.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 3px;">⏰ Pobudka</div>', unsafe_allow_html=True)
         with st.popover(pobudka_val, use_container_width=True):
             g_pob = sparsuj_godzine_minuty(pobudka_val) or (6, 0)
             t_pob = st.time_input("Nowa godzina pobudki", value=time(g_pob[0], g_pob[1]), step=300, key=f"ti_pob_{wycieczka_id}")
@@ -1562,7 +1640,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 st.rerun()
 
     with col_log2:
-        st.markdown('<div style="text-align: center; font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;">🎒 Czas do wyjazdu</div>', unsafe_allow_html=True)
+        st.markdown('<div style="text-align: center; font-size: 7.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 3px;">🎒 Wyjazd za</div>', unsafe_allow_html=True)
         with st.popover(ogarnianie_val, use_container_width=True):
             nowy_czas_ogarniania = st.text_input("Szacowany czas rano", value=ogarnianie_val, key=f"ti_ogarnianie_{wycieczka_id}")
             if st.button("💾 Zapisz", key=f"btn_save_ogarnianie_{wycieczka_id}", use_container_width=True):
@@ -1571,7 +1649,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 st.rerun()
 
     with col_log3:
-        st.markdown('<div style="text-align: center; font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;">🏠 Powrót</div>', unsafe_allow_html=True)
+        st.markdown('<div style="text-align: center; font-size: 7.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 3px;">🏠 Powrót</div>', unsafe_allow_html=True)
         with st.popover(powrot_val, use_container_width=True):
             g_pow = sparsuj_godzine_minuty(powrot_val) or (17, 33)
             t_pow = st.time_input("Nowa godzina powrotu", value=time(g_pow[0], g_pow[1]), step=300, key=f"ti_pow_{wycieczka_id}")
@@ -1583,9 +1661,9 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
     if pd.notna(w_gen.get('calosciowa_taktyka_dnia')) and str(w_gen['calosciowa_taktyka_dnia']).strip():
         st.markdown('<div class="section-unified-header">🧠 Taktyka</div>', unsafe_allow_html=True)
         st.markdown(f"""
-        <details class="overview-details-card" style="margin-top: 6px;">
+        <details class="overview-details-card" style="margin-top: 4px;">
             <summary style="font-weight: normal !important;">🧠 Taktyka dnia</summary>
-            <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
+            <div style="margin-top: 8px; border-top: 1px solid #D1C7AE; padding-top: 6px;">
                 <div class="section-body-text" style="margin-bottom: 0;">{w_gen['calosciowa_taktyka_dnia']}</div>
             </div>
         </details>
@@ -1692,7 +1770,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             resto_maps_url = f"https://www.google.com/maps/search/restaurant/@{coords_clean},15z" if coords_clean else "#"
 
             pogoda_kroku = pobierz_szczegoly_pogody_dla_godziny(k['wspolrzedne'], planowana_data_val, okienko)
-            pogoda_html = f'<div style="background-color: #FAF8F2; border: 1.5px solid #D8D2BC; border-radius: 16px; padding: 10px 14px; margin-bottom: 12px; text-align: center;"><div style="font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 3px;">☀️ POGODA ({pogoda_kroku["data"]})</div><div style="font-size: 10.5pt; font-weight: 800; color: #2B2118;">{pogoda_kroku["temp"]}°C (odcz. {pogoda_kroku["feel"]}°C), {pogoda_kroku["desc"]} 💨 {pogoda_kroku["wind"]} km/h | UV {pogoda_kroku["uv"]}</div></div>' if pogoda_kroku else ""
+            pogoda_html = f'<div style="background-color: #FAF8F2; border: 1.5px solid #D8D2BC; border-radius: 14px; padding: 8px 12px; margin-bottom: 10px; text-align: center;"><div style="font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 2px;">☀️ POGODA ({pogoda_kroku["data"]})</div><div style="font-size: 9.5pt; font-weight: 800; color: #2B2118;">{pogoda_kroku["temp"]}°C (odcz. {pogoda_kroku["feel"]}°C), {pogoda_kroku["desc"]} 💨 {pogoda_kroku["wind"]} km/h | UV {pogoda_kroku["uv"]}</div></div>' if pogoda_kroku else ""
             opis_glowny = str(k.get('opis', '')).strip()
             opis_glowny_html = f'<div class="step-desc-bubble">{opis_glowny}</div>' if (opis_glowny and opis_glowny != "None") else ""
 
@@ -1710,10 +1788,10 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 f'{warn_html}'
                 f'<details class="step-combined-card">'
                 f'<summary>🎯 Taktyka & Regeneracja</summary>'
-                f'<div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">'
+                f'<div style="margin-top: 8px; border-top: 1px solid #D1C7AE; padding-top: 6px;">'
                 f'<div class="step-subitem-title" style="color: #8C5338;">🎯 Taktyka</div>'
                 f'<div class="step-subitem-body">{k.get("podsumowanie_taktyki", "Brak szczegółów taktyki")}</div>'
-                f'<div class="step-subitem-title" style="color: #6D8257; margin-top: 8px;">🌿 Regeneracja</div>'
+                f'<div class="step-subitem-title" style="color: #6D8257; margin-top: 6px;">🌿 Regeneracja</div>'
                 f'<div class="step-subitem-body">{k.get("strefa_luzu_i_regeneracji", "Brak strefy regeneracji")}</div>'
                 f'</div>'
                 f'</details>'
@@ -1774,9 +1852,9 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                     z_kup = bool(zrow['kupione'])
                     strike_style = "text-decoration: line-through; opacity: 0.6;" if z_kup else ""
                     checked_attr = "checked" if z_kup else ""
-                    ilosc_badge = f'<span style="font-size: 8pt; background: #D1C7AE; color: #2B2118; padding: 2px 6px; border-radius: 8px; font-weight: 800; margin-left: auto;">{z_ilosc}</span>' if z_ilosc else ""
-                    zak_items_html.append(f'<div style="display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,0.05);"><input type="checkbox" {checked_attr} disabled style="accent-color: #8C5338; width: 16px; height: 16px;"><span style="font-size: 9.5pt; font-weight: 700; color: #2B2118; {strike_style}">{zrow["nazwa_produktu"]}</span>{ilosc_badge}</div>')
-                card_zakupy_html = f'<details class="step-combined-card" style="margin-top: 8px; margin-bottom: 8px;"><summary>🛒 Lista zakupów ({len(df_zak)})</summary><div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">{"".join(zak_items_html)}</div></details>'
+                    ilosc_badge = f'<span style="font-size: 7.5pt; background: #D1C7AE; color: #2B2118; padding: 2px 5px; border-radius: 6px; font-weight: 800; margin-left: auto;">{z_ilosc}</span>' if z_ilosc else ""
+                    zak_items_html.append(f'<div style="display: flex; align-items: center; gap: 6px; padding: 4px 0; border-bottom: 1px solid rgba(0,0,0,0.05);"><input type="checkbox" {checked_attr} disabled style="accent-color: #8C5338; width: 15px; height: 15px;"><span style="font-size: 9pt; font-weight: 700; color: #2B2118; {strike_style}">{zrow["nazwa_produktu"]}</span>{ilosc_badge}</div>')
+                card_zakupy_html = f'<details class="step-combined-card" style="margin-top: 6px; margin-bottom: 6px;"><summary>🛒 Lista zakupów ({len(df_zak)})</summary><div style="margin-top: 8px; border-top: 1px solid #D1C7AE; padding-top: 6px;">{"".join(zak_items_html)}</div></details>'
                 full_timeline_string = full_timeline_string.replace(ph, card_zakupy_html)
             else:
                 full_timeline_string = full_timeline_string.replace(ph, "")
@@ -1786,7 +1864,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
     df_wszystkie_zakupy = zakupy_wszystkie_df
 
     with st.expander("🛒 Zaopatrzenie", expanded=False):
-        st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 8px;'>⚡ Szybkie przystanki na trasie</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 6px;'>⚡ Szybkie przystanki na trasie</div>", unsafe_allow_html=True)
         has_shop_start = any("sklep" in str(r['nazwa']).lower() and int(r['krok_wycieczki']) == 1 for _, r in kroki_df.iterrows())
         has_shop_end = any("sklep" in str(r['nazwa']).lower() and int(r['krok_wycieczki']) == max(len(kroki_df)-2, 1) for _, r in kroki_df.iterrows())
         has_market_start = any(("rynek" in str(r['nazwa']).lower() or "targ" in str(r['nazwa']).lower()) and int(r['krok_wycieczki']) <= 2 for _, r in kroki_df.iterrows())
@@ -1797,35 +1875,35 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
         col_qs_am, col_qs_pm = st.columns(2)
         with col_qs_am:
-            st.markdown("<div style='font-size: 8pt; font-weight: 800; color: #5D7A60; text-transform: uppercase; margin-bottom: 6px;'>🌅 Po wyjeździe</div>", unsafe_allow_html=True)
-            if st.button("✓ Sklep rano dodany" if has_shop_start else "🛒 Sklep rano", key=f"btn_add_shop_am_{wycieczka_id}", use_container_width=True, disabled=has_shop_start):
+            st.markdown("<div style='font-size: 7.5pt; font-weight: 800; color: #5D7A60; text-transform: uppercase; margin-bottom: 4px;'>🌅 Po wyjeździe</div>", unsafe_allow_html=True)
+            if st.button("✓ Sklep dodany" if has_shop_start else "🛒 Sklep rano", key=f"btn_add_shop_am_{wycieczka_id}", use_container_width=True, disabled=has_shop_start):
                 dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="start")
                 st.session_state["flash_toast"] = "🌅 Dodano Sklep po wyjeździe!"
                 st.rerun()
             
-            btn_market_am_label = "✓ Rynek rano dodany" if has_market_start else ("🛒 Rynek rano" if rynek_czynny else "🛒 Rynek (nieczynny)")
+            btn_market_am_label = "✓ Rynek dodany" if has_market_start else ("🛒 Rynek rano" if rynek_czynny else "🛒 Rynek (nieczynny)")
             if st.button(btn_market_am_label, key=f"btn_add_market_am_{wycieczka_id}", use_container_width=True, disabled=(has_market_start or not rynek_czynny), help=f"Lokalizacja: {rynek_dla_daty['opis_miejsca']}" if rynek_czynny else "Dziś brak targu w Chanii"):
                 dodaj_rynek_w_chanii_do_wycieczki(wycieczka_id, pozycja="start")
                 st.session_state["flash_toast"] = f"🌅 Dodano Rynek w Chanii ({rynek_dla_daty['dzien_pl']})!"
                 st.rerun()
 
         with col_qs_pm:
-            st.markdown("<div style='font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 6px;'>🌇 Przed powrotem</div>", unsafe_allow_html=True)
-            if st.button("✓ Sklep powrót dodany" if has_shop_end else "🛒 Sklep powrót", key=f"btn_add_shop_pm_{wycieczka_id}", use_container_width=True, disabled=has_shop_end):
+            st.markdown("<div style='font-size: 7.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;'>🌇 Przed powrotem</div>", unsafe_allow_html=True)
+            if st.button("✓ Sklep dodany" if has_shop_end else "🛒 Sklep powrót", key=f"btn_add_shop_pm_{wycieczka_id}", use_container_width=True, disabled=has_shop_end):
                 dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="koniec")
                 st.session_state["flash_toast"] = "🌇 Dodano Sklep przed powrotem!"
                 st.rerun()
             
-            btn_market_pm_label = "✓ Rynek powrót dodany" if has_market_end else ("🛒 Rynek powrót" if rynek_czynny else "🛒 Rynek (nieczynny)")
+            btn_market_pm_label = "✓ Rynek dodany" if has_market_end else ("🛒 Rynek powrót" if rynek_czynny else "🛒 Rynek (nieczynny)")
             if st.button(btn_market_pm_label, key=f"btn_add_market_pm_{wycieczka_id}", use_container_width=True, disabled=(has_market_end or not rynek_czynny), help=f"Lokalizacja: {rynek_dla_daty['opis_miejsca']}" if rynek_czynny else "Dziś brak targu w Chanii"):
                 dodaj_rynek_w_chanii_do_wycieczki(wycieczka_id, pozycja="koniec")
                 st.session_state["flash_toast"] = f"🌇 Dodano Rynek w Chanii ({rynek_dla_daty['dzien_pl']})!"
                 st.rerun()
 
-        st.markdown("<div style='border-top: 1px solid #D6CEBC; margin: 12px 0 10px 0;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='border-top: 1px solid #D6CEBC; margin: 10px 0 8px 0;'></div>", unsafe_allow_html=True)
 
         with st.form(key=f"form_add_shopping_item_{wycieczka_id}", clear_on_submit=True):
-            st.markdown("<div style='font-size: 9.5pt; font-weight: 800; color: #8C5338; margin-bottom: 4px;'>➕ Dodaj nową pozycję do listy</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 9pt; font-weight: 800; color: #8C5338; margin-bottom: 3px;'>➕ Dodaj nową pozycję do listy</div>", unsafe_allow_html=True)
             col_nazwa, col_ilosc = st.columns([2, 1])
             with col_nazwa:
                 nowy_prod = st.text_input("Produkt", placeholder="np. Woda 1.5L, Owoce, Plastry", label_visibility="collapsed")
@@ -1848,14 +1926,14 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 st.session_state["flash_toast"] = f"🛒 Dodano: {nowy_prod.strip()}"
                 st.rerun()
 
-        st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
 
         if df_wszystkie_zakupy.empty:
-            st.markdown("<div style='font-size: 9pt; color: #8C827A; font-style: italic; margin-top: 6px;'>Lista zakupów jest pusta. Dodaj produkty powyżej!</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 8.5pt; color: #8C827A; font-style: italic; margin-top: 4px;'>Lista zakupów jest pusta. Dodaj produkty powyżej!</div>", unsafe_allow_html=True)
         else:
             ogolne_zakupy = df_wszystkie_zakupy[df_wszystkie_zakupy['id_kroku'].isna() | (df_wszystkie_zakupy['id_kroku'] == '')]
             if not ogolne_zakupy.empty:
-                st.markdown("<div style='font-size: 9.5pt; font-weight: 800; color: #8C5338; margin: 8px 0 4px 0;'>📦 Na całą wycieczkę:</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size: 9pt; font-weight: 800; color: #8C5338; margin: 6px 0 3px 0;'>📦 Na całą wycieczkę:</div>", unsafe_allow_html=True)
                 render_shopping_checkbox_list(ogolne_zakupy, "zakup_main")
 
             for _, k in kroki_df.iterrows():
@@ -1864,7 +1942,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 k_id = int(k['id'])
                 zakupy_kroku = df_wszystkie_zakupy[df_wszystkie_zakupy['id_kroku'] == k_id]
                 if not zakupy_kroku.empty:
-                    st.markdown(f"<div style='font-size: 9.5pt; font-weight: 800; color: #8C5338; margin: 10px 0 4px 0;'>📍 {k['nazwa']}:</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size: 9pt; font-weight: 800; color: #8C5338; margin: 8px 0 3px 0;'>📍 {k['nazwa']}:</div>", unsafe_allow_html=True)
                     render_shopping_checkbox_list(zakupy_kroku, "zakup_krok_view")
 
     renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
@@ -1885,7 +1963,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                             zapisz_status_zadania(klucz, nowy_stan)
                             st.rerun()
         else:
-            st.markdown("<div style='font-size: 9pt; color: #8C827A; font-style: italic;'>Brak zadań dla tej wycieczki.</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 8.5pt; color: #8C827A; font-style: italic;'>Brak zadań dla tej wycieczki.</div>", unsafe_allow_html=True)
 
     czy_odbyta = bool(w_gen.get('odbyta', 0))
     st.markdown('<div class="section-unified-header">🏁 Status Wycieczki</div>', unsafe_allow_html=True)
@@ -1896,21 +1974,11 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
     renderuj_globalny_czat_ai(aktualny_uzytkownik, inline=True)
 
 if st.session_state.active_tab == "route":
-    st.markdown("""
-<div class="adventure-header">
-<div style="font-size:24px;">🚗</div>
-<div><div class="adventure-title-text">CretAi • Aktualna Wycieczka</div></div>
-</div>
-""", unsafe_allow_html=True)
+    render_adventure_header("CretAi • Aktualna Wycieczka")
     renderuj_karte_wycieczki(pobierz_aktywna_wycieczke_id(), df_miejsca, pokaz_mape=False, pokaz_pogode=True)
 
 elif st.session_state.active_tab == "map":
-    st.markdown("""
-<div class="adventure-header">
-<div style="font-size:24px;">🗺️</div>
-<div><div class="adventure-title-text">CretAi • Nasze wycieczki</div></div>
-</div>
-""", unsafe_allow_html=True)
+    render_adventure_header("CretAi • Nasze wycieczki")
     
     st.session_state.show_completed_trips = st.checkbox("Pokaż ukończone wycieczki", value=st.session_state.show_completed_trips)
     wycieczki_options_filtrowane = pobierz_skrocone_opcje_wycieczek(pokaz_ukonczone=st.session_state.show_completed_trips)
@@ -1944,10 +2012,10 @@ elif st.session_state.active_tab == "map":
             kolor = "#A8A29E" if bool(row.get('odwiedzone', 0)) else pobierz_kolor_kategorii(kategoryzuj_typ(row.get('typ')))
             map_coords_lookup[(round(lat, 4), round(lon, 4))] = (num, nazwa)
             
-            icon_html = f'<div style="background-color:{kolor};color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:2px solid white;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">{num}</div>'
-            folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13)), tooltip=f"#{num} {nazwa}").add_to(m_all)
+            icon_html = f'<div style="background-color:{kolor};color:white;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;border:2px solid white;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">{num}</div>'
+            folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12)), tooltip=f"#{num} {nazwa}").add_to(m_all)
             
-    map_out = st_folium(m_all, width=None, height=340, returned_objects=["last_object_clicked"], key="map_all_trips_view")
+    map_out = st_folium(m_all, width=None, height=300, returned_objects=["last_object_clicked"], key="map_all_trips_view")
     if map_out and map_out.get("last_object_clicked"):
         c_lat, c_lng = map_out["last_object_clicked"].get("lat"), map_out["last_object_clicked"].get("lng")
         if c_lat is not None and c_lng is not None:
@@ -1966,9 +2034,9 @@ elif st.session_state.active_tab == "map":
         df_przypisane = pobierz_wycieczki_dla_miejsca(nr_m, nazwa_m)
         
         with st.container():
-            st.markdown(f'<div style="font-size: 11pt; font-weight: 900; color: #2B2118; margin-bottom: 4px;">📍 {nr_m}. {nazwa_m}</div><div style="font-size: 9.5pt; font-weight: 800; color: #8C5338; margin-bottom: 8px;">🗺️ Występuje w wycieczkach:</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size: 10.5pt; font-weight: 900; color: #2B2118; margin-bottom: 3px;">📍 {nr_m}. {nazwa_m}</div><div style="font-size: 9pt; font-weight: 800; color: #8C5338; margin-bottom: 6px;">🗺️ Występuje w wycieczkach:</div>', unsafe_allow_html=True)
             if df_przypisane.empty:
-                st.markdown("<div style='font-size: 9pt; color: #8C827A; font-style: italic; margin-bottom: 4px;'>Nie jest przypisany</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size: 8.5pt; color: #8C827A; font-style: italic; margin-bottom: 3px;'>Nie jest przypisany</div>", unsafe_allow_html=True)
             else:
                 for _, row_trip in df_przypisane.iterrows():
                     w_id, w_tytul = str(row_trip['id']), str(row_trip['tytul_wycieczki'])
@@ -1981,19 +2049,14 @@ elif st.session_state.active_tab == "map":
         renderuj_karte_wycieczki(wybrana_mapa_sb.split(". ")[0], df_miejsca, pokaz_mape=True, pokaz_pogode=False)
 
 elif st.session_state.active_tab == "zabytek":
-    st.markdown("""
-<div class="adventure-header">
-<div style="font-size:24px;">🏛️</div>
-<div><div class="adventure-title-text">CretAi • Baza Miejsc</div></div>
-</div>
-""", unsafe_allow_html=True)
+    render_adventure_header("CretAi • Baza Miejsc")
     
     all_cats = list(CATEGORIES_CONFIG.keys())
     active_cat = st.session_state.selected_category
     
     cat_style_rules = [
         """
-        div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 6px !important; margin-bottom: 0px !important; }
+        div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; margin-bottom: 0px !important; }
         div[data-testid="stHorizontalBlock"] > div { flex: 1 1 0px !important; min-width: 0 !important; }
         """
     ]
@@ -2007,7 +2070,7 @@ elif st.session_state.active_tab == "zabytek":
         cat_style_rules.append(f"""
         div.st-key-btn_cat_filter_{conf['slug']} button {{
             background-color: {bg} !important; color: {text_c} !important; border: 1.5px solid {border} !important;
-            opacity: {opacity} !important; height: 32px !important; border-radius: 10px !important; width: 100% !important;
+            opacity: {opacity} !important; height: 30px !important; border-radius: 9px !important; width: 100% !important; font-size: 8.5pt !important;
         }}
         """)
 
@@ -2029,7 +2092,7 @@ elif st.session_state.active_tab == "zabytek":
                 st.session_state.selected_category = None if active_cat == cat_name else cat_name
                 st.rerun()
 
-    st.markdown("<div style='margin-top: 6px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-top: 4px;'></div>", unsafe_allow_html=True)
     st.checkbox(
         "Pokaż odwiedzone miejsca", 
         value=st.session_state.get("show_visited_places", False), 
@@ -2056,11 +2119,11 @@ elif st.session_state.active_tab == "zabytek":
                 num = str(row.get('numer_miejsca', ''))
                 kolor = "#A8A29E" if bool(row.get('odwiedzone', 0)) else pobierz_kolor_kategorii(row.get('kategoria_normalizowana', 'Other'))
                 marker_coords_dict[(round(lat, 4), round(lon, 4))] = num
-                icon_html = f'<div style="background-color:{kolor};color:#FFFFFF;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;border:2px solid #FFFFFF;box-shadow:0 2px 5px rgba(0,0,0,0.25);">{num}</div>'
-                folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(26, 26), icon_anchor=(13, 13))).add_to(m_miejsca)
+                icon_html = f'<div style="background-color:{kolor};color:#FFFFFF;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;border:2px solid #FFFFFF;box-shadow:0 2px 5px rgba(0,0,0,0.25);">{num}</div>'
+                folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12))).add_to(m_miejsca)
 
     map_key = f"map_places_view_{st.session_state.show_visited_places}_{st.session_state.selected_category}"
-    map_output = st_folium(m_miejsca, width=None, height=320, returned_objects=["last_object_clicked"], key=map_key)
+    map_output = st_folium(m_miejsca, width=None, height=290, returned_objects=["last_object_clicked"], key=map_key)
 
     if map_output and map_output.get("last_object_clicked"):
         c_lat, c_lng = map_output["last_object_clicked"].get("lat"), map_output["last_object_clicked"].get("lng")
@@ -2102,10 +2165,10 @@ elif st.session_state.active_tab == "zabytek":
             czy_odwiedzone = bool(p.get('odwiedzone', 0))
 
             st.markdown(f"""
-            <div class="overview-card" style="margin-top: 10px;">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
-                    <div style="font-size: 15pt; font-weight: 900; color: #2B2118; line-height: 1.2;">{p.get('numer_miejsca')}. {p.get('nazwa')}</div>
-                    <span style="background-color: {kolor_p}; color: #FAF8F2; font-size: 8.5pt; font-weight: 800; padding: 3px 10px; border-radius: 12px;">{kat_p}</span>
+            <div class="overview-card" style="margin-top: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+                    <div style="font-size: 13pt; font-weight: 900; color: #2B2118; line-height: 1.2;">{p.get('numer_miejsca')}. {p.get('nazwa')}</div>
+                    <span style="background-color: {kolor_p}; color: #FAF8F2; font-size: 8pt; font-weight: 800; padding: 2px 8px; border-radius: 10px;">{kat_p}</span>
                 </div>
                 <div class="overview-card-text">{p.get('opis', '')}</div>
             </div>
@@ -2117,19 +2180,19 @@ elif st.session_state.active_tab == "zabytek":
                 <div class="logistics-grid">
                     <div class="logistics-pill">
                         <div class="logistics-pill-title">🚗 Czas dojazdu</div>
-                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('czas_dojazdu', '—')}</div>
+                        <div class="logistics-pill-value" style="font-size: 9.5pt;">{p.get('czas_dojazdu', '—')}</div>
                     </div>
                     <div class="logistics-pill">
                         <div class="logistics-pill-title">⏱️ Czas na miejscu</div>
-                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('orientacyjny_czas', '—')}</div>
+                        <div class="logistics-pill-value" style="font-size: 9.5pt;">{p.get('orientacyjny_czas', '—')}</div>
                     </div>
                     <div class="logistics-pill">
                         <div class="logistics-pill-title">💶 Koszt (2+2)</div>
-                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('koszt', '—')}</div>
+                        <div class="logistics-pill-value" style="font-size: 9.5pt;">{p.get('koszt', '—')}</div>
                     </div>
                     <div class="logistics-pill">
                         <div class="logistics-pill-title">🕒 Godziny otwarcia</div>
-                        <div class="logistics-pill-value" style="font-size: 10pt;">{p.get('godziny_otwarcia', '—')}</div>
+                        <div class="logistics-pill-value" style="font-size: 9.5pt;">{p.get('godziny_otwarcia', '—')}</div>
                     </div>
                 </div>
             </div>
@@ -2152,9 +2215,9 @@ elif st.session_state.active_tab == "zabytek":
             st.markdown(f"""
             <details class="overview-details-card">
                 <summary>🧠 SPECYFIKA AuDHD & SENSORYKA</summary>
-                <div style="margin-top: 10px; border-top: 1px solid #D1C7AE; padding-top: 8px;">
-                    <div style="font-size: 9.5pt; color: #2B2118; margin-bottom: 6px;"><b>Potencjał meltdownu:</b> {p.get('potencjal_meltdownu', 'Średni')}</div>
-                    <div style="font-size: 9.5pt; color: #2B2118;"><b>Strategia zaradcza:</b> {p.get('strategie_meltdown', 'Brak')}</div>
+                <div style="margin-top: 8px; border-top: 1px solid #D1C7AE; padding-top: 6px;">
+                    <div style="font-size: 9pt; color: #2B2118; margin-bottom: 4px;"><b>Potencjał meltdownu:</b> {p.get('potencjal_meltdownu', 'Średni')}</div>
+                    <div style="font-size: 9pt; color: #2B2118;"><b>Strategia zaradcza:</b> {p.get('strategie_meltdown', 'Brak')}</div>
                 </div>
             </details>
             """, unsafe_allow_html=True)
