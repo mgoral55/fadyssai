@@ -907,7 +907,7 @@ with st.sidebar:
     aktualny_uzytkownik = st.selectbox("Profil użytkownika", options=["Tata", "Mama", "Dzieci"], index=0)
     wybrany_model = st.selectbox(
         "Model Gemini", 
-        options=["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"], 
+        options=["gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3.1-pro"], 
         index=0
     )
     env_gemini_key = os.environ.get("GEMINI_API_KEY", "")
@@ -1457,6 +1457,10 @@ def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="4
         ''', (
             nowy_nr, nazwa.strip(), kat_norm, wspolrzedne.strip(), czas_dojazdu_z_domku,
             orientacyjny_czas, koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd,
+            ochrona_slonce, potencjal_meltdownu, strat_m, opis, zadania_d
+        ) if 'strat_m' in locals() else (
+            nowy_nr, nazwa.strip(), kat_norm, wspolrzedne.strip(), czas_dojazdu_z_domku,
+            orientacyjny_czas, koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd,
             ochrona_slonce, potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci
         ))
         conn.commit()
@@ -1794,7 +1798,7 @@ def usun_wycieczke(id_wycieczki):
             
         cursor.execute("DELETE FROM zakupy WHERE id_wycieczki = ?", (str(id_wycieczki),))
         cursor.execute("DELETE FROM notatki WHERE id_wycieczki = ?", (str(id_wycieczki),))
-        cursor.execute("DELETE FROM krok_wycieczki WHERE id = ?", (str(id_wycieczki),))
+        cursor.execute("DELETE FROM krok_wycieczki WHERE id_wycieczki = ?", (str(id_wycieczki),))
         cursor.execute("DELETE FROM wycieczka WHERE id = ?", (str(id_wycieczki),))
         
         cursor.execute("SELECT aktualne_id_wycieczki FROM aktywna_wycieczka WHERE id = 1")
