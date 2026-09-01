@@ -20,12 +20,503 @@ try:
 except ImportError:
     ANTHROPIC_AVAILABLE = False
 
+DOMEK_LAT, DOMEK_LON = 35.5914, 24.0918
+SKLEP_LAT, SKLEP_LON = 35.586222, 24.091861
+
 # --- 0. BAZA DANYCH (CONCURRENCY & WAL) ---
 def get_db():
     conn = sqlite3.connect('cretai.db', timeout=30.0)
     conn.execute('PRAGMA journal_mode=WAL;')
     conn.execute('PRAGMA busy_timeout = 30000;')
     return conn
+
+def zaokraglij_do_5_minut(minuty):
+    return int(round(minuty / 5.0) * 5)
+
+@st.cache_data(ttl=86400)
+def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
+    url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
+        with urllib.request.urlopen(req, timeout=0.3) as response:
+            data = json.loads(response.read().decode())
+            if 'routes' in data and len(data['routes']) > 0:
+                minuty = zaokraglij_do_5_minut(int(round(data['routes'][0]['duration'] / 60)))
+                if minuty < 60: return f"~{minuty} min", minuty
+                godziny, reszta = minuty // 60, minuty % 60
+                return (f"~{godziny}h", minuty) if reszta == 0 else (f"~{godziny}h {reszta}m", minuty)
+    except:
+        pass
+    
+    try:
+        dist_km = math.sqrt(((lat2 - lat1) * 111.0)**2 + ((lon2 - lon1) * 85.0)**2) * 1.3
+        est_min = zaokraglij_do_5_minut(max(int(round((dist_km / 45.0) * 60)), 10))
+        return (f"~{est_min} min", est_min) if est_min < 60 else (f"~{est_min // 60}h {est_min % 60}m", est_min)
+    except:
+        return "~25 min", 25
+
+def sparsuj_wspolrzedne(wsp_str):
+    if not wsp_str or pd.isna(wsp_str):
+        return None, None
+    s = str(wsp_str).replace(' ', '').replace(';', ',')
+    if ',' not in s:
+        return None, None
+    try:
+        parts = s.split(',')
+        return float(parts[0].strip()), float(parts[1].strip())
+    except:
+        return None, None
+
+def sparsuj_godzine_minuty(czas_str):
+    if not czas_str:
+        return None
+    m = re.search(r'(\d{1,2}):(\d{2})', str(czas_str))
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+def klucz_sortowania_okienka(okienko_str):
+    res = sparsuj_godzine_minuty(okienko_str)
+    return res[0] * 60 + res[1] if res else 9999
+
+def oblicz_czas_trwania_okienka(okienko_str, domyslny_czas=45):
+    if not okienko_str or "-" not in str(okienko_str):
+        return domyslny_czas
+    try:
+        czesci = str(okienko_str).split("-")
+        g1, g2 = sparsuj_godzine_minuty(czesci[0]), sparsuj_godzine_minuty(czesci[1])
+        if g1 and g2:
+            return max((g2[0] * 60 + g2[1]) - (g1[0] * 60 + g1[1]), 15)
+    except:
+        pass
+    return domyslny_czas
+
+def sparsuj_czas_ogarniania_na_minuty(czas_str):
+    if not czas_str:
+        return 30
+    s = str(czas_str).lower()
+    g_match, m_match = re.search(r'(\d+(?:\.\d+)?)\s*h', s), re.search(r'(\d+)\s*m', s)
+    godziny = float(g_match.group(1)) if g_match else 0.0
+    minuty = int(m_match.group(1)) if m_match else 0
+    total = int(round(godziny * 60)) + minuty
+    if total == 0:
+        try:
+            total = int(float(s) * 60) if '.' in s else int(s)
+        except:
+            total = 30
+    return max(total, 15)
+
+CATEGORIES_CONFIG = {
+    "Must have": {"color": "#B35446", "slug": "must_have", "icon": "🏛️"},
+    "Nice to have": {"color": "#C47C48", "slug": "nice_to_have", "icon": "✨"},
+    "Plaża": {"color": "#4A7C8F", "slug": "plaza", "icon": "🏖️"},
+    "Activity": {"color": "#C6934B", "slug": "activity", "icon": "🧗"},
+    "Shop": {"color": "#7D5871", "slug": "shop", "icon": "🛒"},
+    "Other": {"color": "#5D7A60", "slug": "other", "icon": None}
+}
+
+def kategoryzuj_typ(typ_str):
+    if not typ_str or pd.isna(typ_str):
+        return "Other"
+    t = str(typ_str).lower().strip()
+    if any(w in t for w in ["plaż", "plaz", "beach", "zatoka", "morze"]): return "Plaża"
+    if any(w in t for w in ["activ", "aktywn", "wąwóz", "wawoz", "sport", "rower", "rejs", "ciuchcia", "pociąg"]): return "Activity"
+    if any(w in t for w in ["shop", "sklep", "zakup", "market", "rynek", "targ", "mydlarn", "winnica"]): return "Shop"
+    if "must" in t or any(w in t for w in ["pałac", "knossos", "muzeum", "archeo", "ogród botaniczny", "cretaquarium"]): return "Must have"
+    if "nice" in t or any(w in t for w in ["lappa", "wodospad", "argyroupoli", "kournas", "aptera", "farma", "arevitis", "manousakis"]): return "Nice to have"
+    return "Other"
+
+def pobierz_kolor_kategorii(kategoria):
+    return CATEGORIES_CONFIG.get(kategoria, CATEGORIES_CONFIG["Other"])["color"]
+
+def pobierz_ikonke_kategorii(kategoria):
+    return CATEGORIES_CONFIG.get(kategoria, CATEGORIES_CONFIG["Other"]).get("icon")
+
+def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, force_wyjazd_str=None, force_powrot_str=None):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT szacowany_czas_ogarniania_rano, pobudka, czas_wyjazdu FROM wycieczka WHERE id = ?', (str(id_wycieczki),))
+        row_og = cursor.fetchone()
+        if not row_og:
+            return
+        pobudka_z_bazy = row_og[1] if row_og and row_og[1] else '06:00'
+        minuty_ogarniania = sparsuj_czas_ogarniania_na_minuty(row_og[0] if row_og else '0.5h')
+
+        cursor.execute('SELECT id, krok_wycieczki, wspolrzedne, okienko_zwiedzania, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC, id ASC', (str(id_wycieczki),))
+        kroki = cursor.fetchall()
+    
+    if not kroki:
+        return
+
+    dojazdy_minuty, dojazdy_tekst = [], []
+    for idx in range(len(kroki) - 1):
+        lat1, lon1 = sparsuj_wspolrzedne(kroki[idx][2])
+        lat2, lon2 = sparsuj_wspolrzedne(kroki[idx + 1][2])
+        tekst_dojazdu, minuty_przejazdu = ("~25 min", 25) if lat1 is None or lon1 is None or lat2 is None or lon2 is None else oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2)
+        dojazdy_minuty.append(minuty_przejazdu)
+        dojazdy_tekst.append(tekst_dojazdu)
+
+    czasy_pobytu = []
+    for idx, k in enumerate(kroki):
+        nazwa_l = str(k[4]).lower()
+        dur_def = 25 if any(w in nazwa_l for w in ["sklep", "market", "zakup", "apteka", "rynek", "targ"]) else (90 if ("plaż" in nazwa_l or "beach" in nazwa_l) else (30 if (idx == 0 or idx == len(kroki) - 1) else 60))
+        czasy_pobytu.append(oblicz_czas_trwania_okienka(k[3], domyslny_czas=dur_def))
+
+    start_times, end_times = [None] * len(kroki), [None] * len(kroki)
+    if force_pobudka_str:
+        pobudka_z_bazy = force_pobudka_str
+
+    g_pob = sparsuj_godzine_minuty(pobudka_z_bazy) or (6, 0)
+    dt_pob = datetime(2026, 1, 1, g_pob[0], g_pob[1])
+    dt_wyj = dt_pob + timedelta(minutes=minuty_ogarniania)
+    last_idx = len(kroki) - 1
+
+    if force_powrot_str:
+        g_pow = sparsuj_godzine_minuty(force_powrot_str) or (17, 0)
+        dt_powrot_anchor = datetime(2026, 1, 1, g_pow[0], g_pow[1])
+        
+        end_times[last_idx] = dt_powrot_anchor
+        start_times[last_idx] = dt_powrot_anchor - timedelta(minutes=czasy_pobytu[last_idx])
+
+        for i in range(last_idx - 1, 0, -1):
+            end_times[i] = start_times[i + 1] - timedelta(minutes=dojazdy_minuty[i])
+            start_times[i] = end_times[i] - timedelta(minutes=czasy_pobytu[i])
+
+        end_times[0] = start_times[1] - timedelta(minutes=dojazdy_minuty[0])
+        dt_pob = end_times[0] - timedelta(minutes=minuty_ogarniania)
+        pobudka_z_bazy = dt_pob.strftime("%H:%M")
+        start_times[0] = dt_pob
+
+    elif force_wyjazd_str:
+        g_wyj = sparsuj_godzine_minuty(force_wyjazd_str) or (6, 30)
+        dt_wyj = datetime(2026, 1, 1, g_wyj[0], g_wyj[1])
+        dt_pob = dt_wyj - timedelta(minutes=minuty_ogarniania)
+        pobudka_z_bazy = dt_pob.strftime("%H:%M")
+        start_times[0], end_times[0] = dt_pob, dt_wyj
+        cur_dt = dt_wyj
+        for i in range(1, len(kroki)):
+            cur_dt = cur_dt + timedelta(minutes=dojazdy_minuty[i - 1])
+            start_times[i] = cur_dt
+            end_times[i] = start_times[i] + timedelta(minutes=czasy_pobytu[i])
+            cur_dt = end_times[i]
+    else:
+        cur_dt = dt_wyj
+        for i in range(len(kroki)):
+            if i == 0:
+                start_times[i], end_times[i] = dt_pob, dt_wyj
+            else:
+                start_times[i] = cur_dt
+                end_times[i] = cur_dt + timedelta(minutes=czasy_pobytu[i])
+            if i < len(kroki) - 1:
+                cur_dt = end_times[i] + timedelta(minutes=dojazdy_minuty[i])
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        krok_ids = [k[0] for k in kroki]
+        if krok_ids:
+            placeholders = ','.join(['?'] * len(krok_ids))
+            cursor.execute(f'DELETE FROM czasy_dojazdu WHERE id_kroku_z IN ({placeholders}) OR id_kroku_do IN ({placeholders})', krok_ids + krok_ids)
+
+        for i in range(len(kroki)):
+            s_str, e_str = start_times[i].strftime("%H:%M"), end_times[i].strftime("%H:%M")
+            cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (f"{s_str} - {e_str}", kroki[i][0]))
+            cursor.execute('UPDATE posilki_kroku SET sugerowana_godzina = ? WHERE id_kroku = ?', (s_str, kroki[i][0]))
+            
+            if i < len(kroki) - 1:
+                cursor.execute('''
+                    INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
+                    VALUES (?, ?, ?, 0)
+                ''', (kroki[i][0], kroki[i + 1][0], dojazdy_tekst[i]))
+
+        dt_wyjazd, dt_powrot = end_times[0], start_times[-1]
+        czas_trwania_h = round(max((dt_powrot - dt_wyjazd).total_seconds() / 3600.0, 0.5), 1)
+        cursor.execute('''
+            UPDATE wycieczka 
+            SET pobudka = ?, czas_wyjazdu = ?, szacowana_godzina_powrotu = ?, calkowity_czas_wycieczki_godziny = ?, czas_powrotu_do_domku = NULL
+            WHERE id = ?
+        ''', (pobudka_z_bazy, dt_wyjazd.strftime("%H:%M"), dt_powrot.strftime("%H:%M"), str(czas_trwania_h), str(id_wycieczki)))
+        conn.commit()
+
+# --- INICJALIZACJA BAZY DANYCH ---
+def init_db():
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS wycieczka (
+                id TEXT PRIMARY KEY,
+                tytul_wycieczki TEXT,
+                calosciowy_opis_wycieczki TEXT,
+                calosciowa_taktyka_dnia TEXT,
+                calkowity_czas_wycieczki_godziny TEXT,
+                szacowana_godzina_powrotu TEXT,
+                pobudka TEXT,
+                czas_wyjazdu TEXT,
+                planowana_data TEXT,
+                czas_powrotu_do_domku TEXT,
+                szacowany_czas_ogarniania_rano TEXT DEFAULT '0.5h',
+                odbyta INTEGER DEFAULT 0
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS krok_wycieczki (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_wycieczki TEXT,
+                krok_wycieczki INTEGER,
+                nazwa TEXT,
+                wspolrzedne TEXT,
+                okienko_zwiedzania TEXT,
+                godzina_ewakuacji TEXT,
+                czerwona_strefa_ostrzezenie TEXT,
+                strefa_luzu_i_regeneracji TEXT,
+                podsumowanie_taktyki TEXT,
+                potencjal_meltdownu TEXT,
+                strategie_meltdown TEXT,
+                opis TEXT
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS miejsca (
+                numer_miejsca TEXT PRIMARY KEY,
+                nazwa TEXT,
+                typ TEXT,
+                wspolrzedne TEXT,
+                czas_dojazdu TEXT,
+                orientacyjny_czas TEXT,
+                koszt TEXT,
+                godziny_otwarcia TEXT,
+                konieczna_akcja TEXT,
+                trudnosc_adhd TEXT,
+                ochrona_slonce TEXT,
+                potencjal_meltdownu TEXT,
+                strategie_meltdown TEXT,
+                opis TEXT,
+                zadania_dla_dzieci TEXT,
+                odwiedzone INTEGER DEFAULT 0
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS posilki_kroku (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_kroku INTEGER,
+                rodzaj_posilku TEXT,
+                miejsce TEXT,
+                sugerowana_godzina TEXT,
+                opis TEXT
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS czasy_dojazdu (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_kroku_z INTEGER,
+                id_kroku_do INTEGER,
+                czas_przejazdu TEXT,
+                szacowany_czas_postoju INTEGER DEFAULT 0
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS zakupy (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_wycieczki TEXT,
+                id_kroku INTEGER,
+                nazwa_produktu TEXT,
+                ilosc TEXT,
+                kupione INTEGER DEFAULT 0
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS notatki (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_wycieczki TEXT,
+                id_miejsca TEXT,
+                tytul TEXT,
+                zawartosc TEXT,
+                typ_notatki TEXT
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS czat_historia (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                uzytkownik TEXT,
+                rola TEXT,
+                tresc TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS statusy_zadan (
+                klucz TEXT PRIMARY KEY,
+                ukonczone INTEGER DEFAULT 0
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS aktywna_wycieczka (
+                id INTEGER PRIMARY KEY,
+                aktualne_id_wycieczki TEXT
+            )
+        ''')
+        cursor.execute('INSERT OR IGNORE INTO aktywna_wycieczka (id, aktualne_id_wycieczki) VALUES (1, "1")')
+
+        if os.path.exists('miejsca.csv'):
+            for enc in ['utf-8', 'utf-8-sig', 'cp1250', 'iso-8859-2']:
+                try:
+                    df_m = pd.read_csv('miejsca.csv', encoding=enc)
+                    for _, r in df_m.iterrows():
+                        nr_m = str(r.get('numer_miejsca', '')).strip()
+                        if not nr_m or nr_m == 'nan':
+                            continue
+                        nazwa_m = str(r.get('nazwa', '')).strip()
+                        raw_typ = str(r.get('typ', '')).strip() if pd.notna(r.get('typ')) else ''
+                        typ_m = raw_typ if raw_typ in CATEGORIES_CONFIG else kategoryzuj_typ(raw_typ or nazwa_m)
+                        wsp_m = str(r.get('wspolrzedne', '')).strip() if pd.notna(r.get('wspolrzedne')) else ''
+                        czas_d = str(r.get('czas_dojazdu', '')).strip() if pd.notna(r.get('czas_dojazdu')) else '—'
+                        orient_c = str(r.get('orientacyjny_czas', '')).strip() if pd.notna(r.get('orientacyjny_czas')) else '—'
+                        koszt_m = str(r.get('koszt', '')).strip() if pd.notna(r.get('koszt')) else '—'
+                        godz_otw = str(r.get('godziny_otwarcia', '')).strip() if pd.notna(r.get('godziny_otwarcia')) else '—'
+                        koniecz_akc = str(r.get('konieczna_akcja', '')).strip() if pd.notna(r.get('konieczna_akcja')) else ''
+                        trud_adhd = str(r.get('trudnosc_adhd', 'Średni')).strip() if pd.notna(r.get('trudnosc_adhd')) else 'Średni'
+                        ochr_slonce = str(r.get('ochrona_slonce', 'Standardowa')).strip() if pd.notna(r.get('ochrona_slonce')) else 'Standardowa'
+                        potencjal_m = str(r.get('potencjal_meltdownu', 'Średni')).strip() if pd.notna(r.get('potencjal_meltdownu')) else 'Średni'
+                        strat_m = str(r.get('strategie_meltdown', 'Brak')).strip() if pd.notna(r.get('strategie_meltdown')) else 'Brak'
+                        opis_m = str(r.get('opis', '')).strip() if pd.notna(r.get('opis')) else ''
+                        zadania_d = str(r.get('zadania_dla_dzieci', '')).strip() if pd.notna(r.get('zadania_dla_dzieci')) else ''
+
+                        cursor.execute('''
+                            INSERT OR REPLACE INTO miejsca (
+                                numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
+                                koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd, ochrona_slonce,
+                                potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci, odwiedzone
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                        ''', (
+                            nr_m, nazwa_m, typ_m, wsp_m, czas_d, orient_c,
+                            koszt_m, godz_otw, koniecz_akc, trud_adhd, ochr_slonce,
+                            potencjal_m, strat_m, opis_m, zadania_d, 0
+                        ))
+                    conn.commit()
+                    break
+                except Exception:
+                    continue
+
+        cursor.execute('SELECT COUNT(*) FROM wycieczka')
+        if cursor.fetchone()[0] == 0 and os.path.exists('wycieczki.csv'):
+            try:
+                df_csv = pd.read_csv('wycieczki.csv')
+                dzisiaj_str = date.today().strftime("%Y-%m-%d")
+                unikalne_wycieczki = df_csv['id_wycieczki'].unique()
+
+                for wid in unikalne_wycieczki:
+                    w_df = df_csv[df_csv['id_wycieczki'] == wid]
+                    first_row = w_df.iloc[0]
+
+                    pobudka_raw = str(first_row.get('godzina_pobudki', '06:00')).strip()
+                    pobudka_val = pobudka_raw if (pobudka_raw and pobudka_raw != '-') else '06:00'
+                    
+                    tytul_val = str(first_row.get('tytul_wycieczki', f'Wycieczka {wid}'))
+                    opis_val = str(first_row.get('calosciowy_opis_wycieczki', ''))
+                    taktyka_val = str(first_row.get('calosciowa_taktyka_dnia', ''))
+
+                    cursor.execute('''
+                        INSERT INTO wycieczka (
+                            id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia,
+                            pobudka, planowana_data, szacowany_czas_ogarniania_rano, odbyta
+                        ) VALUES (?, ?, ?, ?, ?, ?, '0.5h', 0)
+                    ''', (str(wid), tytul_val, opis_val, taktyka_val, pobudka_val, dzisiaj_str))
+
+                    # Krok 0: Start w domku
+                    cursor.execute('''
+                        INSERT INTO krok_wycieczki (
+                            id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis
+                        ) VALUES (?, 0, 'Nasz Domek (Start)', ?, '06:00 - 06:30', 'Poranne przygotowanie i wyjazd z domku')
+                    ''', (str(wid), f"{DOMEK_LAT}, {DOMEK_LON}"))
+                    id_kroku_start = cursor.lastrowid
+
+                    cursor.execute('''
+                        INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
+                        VALUES (?, 'śniadanie', 'w domku', '06:00', 'Śniadanie przed wyruszeniem w trasę')
+                    ''', (id_kroku_start,))
+
+                    # Kroki z CSV
+                    step_counter = 1
+                    for _, r in w_df.iterrows():
+                        nazwa_kroku = str(r.get('nazwa', '')).strip()
+                        wsp_kroku = str(r.get('wspolrzedne', '')).strip()
+                        okienko_kroku = str(r.get('okienko_zwiedzania', '')).strip()
+                        ewak_kroku = str(r.get('godzina_ewakuacji', '')).strip() if pd.notna(r.get('godzina_ewakuacji')) else None
+                        czerwona_kroku = str(r.get('czerwona_strefa_ostrzezenie', '')).strip() if pd.notna(r.get('czerwona_strefa_ostrzezenie')) else None
+                        strefa_kroku = str(r.get('strefa_luzu_i_regeneracji', '')).strip() if pd.notna(r.get('strefa_luzu_i_regeneracji')) else None
+                        taktyka_kroku = str(r.get('podsumowanie_taktyki', '')).strip() if pd.notna(r.get('podsumowanie_taktyki')) else None
+                        nr_miejsca_val = str(r.get('numer_miejsca', '')).strip() if pd.notna(r.get('numer_miejsca')) else ''
+                        
+                        if nr_miejsca_val and nr_miejsca_val not in ['nan', '-']:
+                            zadania_val = str(r.get('zadania_dla_dzieci', '')).strip() if pd.notna(r.get('zadania_dla_dzieci')) else ''
+                            opis_miejsca = str(r.get('podsumowanie_taktyki', '')).strip() if pd.notna(r.get('podsumowanie_taktyki')) else nazwa_kroku
+                            dynamiczny_typ = kategoryzuj_typ(nazwa_kroku)
+                            
+                            cursor.execute('''
+                                INSERT OR IGNORE INTO miejsca (
+                                    numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
+                                    koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd, ochrona_slonce,
+                                    potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci, odwiedzone
+                                ) VALUES (?, ?, ?, ?, '—', ?, '—', '—', '', 'Średni', 'Standardowa', 'Średni', ?, ?, ?, 0)
+                            ''', (
+                                nr_miejsca_val, nazwa_kroku, dynamiczny_typ, wsp_kroku, okienko_kroku,
+                                taktyka_kroku or '', opis_miejsca, zadania_val
+                            ))
+
+                        cursor.execute('''
+                            INSERT INTO krok_wycieczki (
+                                id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania,
+                                godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji,
+                                podsumowanie_taktyki, opis
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            str(wid), step_counter, nazwa_kroku, wsp_kroku, okienko_kroku,
+                            ewak_kroku, czerwona_kroku, strefa_kroku, taktyka_kroku, nazwa_kroku
+                        ))
+                        nowy_krok_id = cursor.lastrowid
+
+                        posilek_val = r.get('posilek')
+                        if pd.notna(posilek_val) and str(posilek_val).strip() and str(posilek_val).strip() != '-':
+                            p_str = str(posilek_val).strip()
+                            p_rodzaj = 'obiad' if any(w in p_str.lower() for w in ['obiad', 'lunch']) else ('kolacja' if 'kolacja' in p_str.lower() else 'przekąska')
+                            cursor.execute('''
+                                INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
+                                VALUES (?, ?, 'w kroku', '13:00', ?)
+                            ''', (nowy_krok_id, p_rodzaj, p_str))
+
+                        step_counter += 1
+
+                    # Krok końcowy: Powrót do domku
+                    cursor.execute('''
+                        INSERT INTO krok_wycieczki (
+                            id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis
+                        ) VALUES (?, ?, 'Nasz Domek (Powrót)', ?, '17:00 - 18:00', 'Powrót do bazy, odpoczynek i kolacja')
+                    ''', (str(wid), step_counter, f"{DOMEK_LAT}, {DOMEK_LON}"))
+                    id_kroku_end = cursor.lastrowid
+
+                    cursor.execute('''
+                        INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
+                        VALUES (?, 'kolacja', 'w domku', '19:00', 'Kolacja i regeneracja po wycieczce')
+                    ''', (id_kroku_end,))
+
+                conn.commit()
+
+                for wid in unikalne_wycieczki:
+                    przelicz_i_zsynchronizuj_wycieczke(str(wid))
+
+            except Exception as e:
+                print(f"Błąd importu wycieczki.csv podczas init_db: {e}")
+
+        conn.commit()
+
+init_db()
 
 # --- 1. DESIGN SYSTEM I KONFIGURACJA STRONY ---
 st.set_page_config(page_title="CretAi - Kreta", layout="centered", page_icon="🧭")
@@ -177,9 +668,6 @@ if "flash_toast" in st.session_state and st.session_state["flash_toast"]:
     st.toast(st.session_state["flash_toast"], icon="🧭")
     st.session_state["flash_toast"] = None
 
-DOMEK_LAT, DOMEK_LON = 35.5914, 24.0918
-SKLEP_LAT, SKLEP_LON = 35.586222, 24.091861
-
 # --- SIDEBAR CONFIG ---
 with st.sidebar:
     st.markdown("### ⚙️ Konfiguracja CretAi")
@@ -241,106 +729,6 @@ def pobierz_dane_rynku_dla_daty(data_str):
         weekday = date.today().weekday()
     return LAIKI_SCHEDULE.get(weekday), weekday
 
-CATEGORIES_CONFIG = {
-    "Must have": {"color": "#B35446", "slug": "must_have", "icon": "🏛️"},
-    "Nice to have": {"color": "#C47C48", "slug": "nice_to_have", "icon": "✨"},
-    "Plaża": {"color": "#4A7C8F", "slug": "plaza", "icon": "🏖️"},
-    "Activity": {"color": "#C6934B", "slug": "activity", "icon": "🧗"},
-    "Shop": {"color": "#7D5871", "slug": "shop", "icon": "🛒"},
-    "Other": {"color": "#5D7A60", "slug": "other", "icon": None}
-}
-
-def kategoryzuj_typ(typ_str):
-    if not typ_str or pd.isna(typ_str):
-        return "Other"
-    t = str(typ_str).lower().strip()
-    if "must" in t: return "Must have"
-    if "nice" in t: return "Nice to have"
-    if any(w in t for w in ["plaż", "plaz", "beach"]): return "Plaża"
-    if any(w in t for w in ["activ", "aktywn", "wąwóz", "wawoz", "sport"]): return "Activity"
-    if any(w in t for w in ["shop", "sklep", "zakup", "market", "rynek", "targ"]): return "Shop"
-    return "Other"
-
-def pobierz_kolor_kategorii(kategoria):
-    return CATEGORIES_CONFIG.get(kategoria, CATEGORIES_CONFIG["Other"])["color"]
-
-def pobierz_ikonke_kategorii(kategoria):
-    return CATEGORIES_CONFIG.get(kategoria, CATEGORIES_CONFIG["Other"]).get("icon")
-
-def zaokraglij_do_5_minut(minuty):
-    return int(round(minuty / 5.0) * 5)
-
-@st.cache_data(ttl=86400)
-def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
-    url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
-    try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
-        with urllib.request.urlopen(req, timeout=0.3) as response:
-            data = json.loads(response.read().decode())
-            if 'routes' in data and len(data['routes']) > 0:
-                minuty = zaokraglij_do_5_minut(int(round(data['routes'][0]['duration'] / 60)))
-                if minuty < 60: return f"~{minuty} min", minuty
-                godziny, reszta = minuty // 60, minuty % 60
-                return (f"~{godziny}h", minuty) if reszta == 0 else (f"~{godziny}h {reszta}m", minuty)
-    except:
-        pass
-    
-    try:
-        dist_km = math.sqrt(((lat2 - lat1) * 111.0)**2 + ((lon2 - lon1) * 85.0)**2) * 1.3
-        est_min = zaokraglij_do_5_minut(max(int(round((dist_km / 45.0) * 60)), 10))
-        return (f"~{est_min} min", est_min) if est_min < 60 else (f"~{est_min // 60}h {est_min % 60}m", est_min)
-    except:
-        return "~25 min", 25
-
-def sparsuj_wspolrzedne(wsp_str):
-    if not wsp_str or pd.isna(wsp_str):
-        return None, None
-    s = str(wsp_str).replace(' ', '').replace(';', ',')
-    if ',' not in s:
-        return None, None
-    try:
-        parts = s.split(',')
-        return float(parts[0].strip()), float(parts[1].strip())
-    except:
-        return None, None
-
-def sparsuj_godzine_minuty(czas_str):
-    if not czas_str:
-        return None
-    m = re.search(r'(\d{1,2}):(\d{2})', str(czas_str))
-    return (int(m.group(1)), int(m.group(2))) if m else None
-
-def klucz_sortowania_okienka(okienko_str):
-    res = sparsuj_godzine_minuty(okienko_str)
-    return res[0] * 60 + res[1] if res else 9999
-
-def oblicz_czas_trwania_okienka(okienko_str, domyslny_czas=45):
-    if not okienko_str or "-" not in str(okienko_str):
-        return domyslny_czas
-    try:
-        czesci = str(okienko_str).split("-")
-        g1, g2 = sparsuj_godzine_minuty(czesci[0]), sparsuj_godzine_minuty(czesci[1])
-        if g1 and g2:
-            return max((g2[0] * 60 + g2[1]) - (g1[0] * 60 + g1[1]), 15)
-    except:
-        pass
-    return domyslny_czas
-
-def sparsuj_czas_ogarniania_na_minuty(czas_str):
-    if not czas_str:
-        return 30
-    s = str(czas_str).lower()
-    g_match, m_match = re.search(r'(\d+(?:\.\d+)?)\s*h', s), re.search(r'(\d+)\s*m', s)
-    godziny = float(g_match.group(1)) if g_match else 0.0
-    minuty = int(m_match.group(1)) if m_match else 0
-    total = int(round(godziny * 60)) + minuty
-    if total == 0:
-        try:
-            total = int(float(s) * 60) if '.' in s else int(s)
-        except:
-            total = 30
-    return max(total, 15)
-
 DNI_TYGODNIA_PL = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"]
 MIESIACE_PL = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia"]
 
@@ -381,7 +769,7 @@ def formatuj_posilki_kroku(df_pos):
         p_rodzaj = str(prow.get('rodzaj_posilku', '')).strip().lower()
         p_godz = str(prow.get('sugerowana_godzina', '')).strip()
         p_miejsce = str(prow.get('miejsce', '')).strip().lower()
-        if p_rodzaj in ['śniadanie', 'obiad', 'kolacja']:
+        if p_rodzaj in ['śniadanie', 'obiad', 'kolacja', 'przekąska']:
             nazwa_p = p_rodzaj.capitalize()
             posiłki_str.append(f"{nazwa_p} ok {p_godz}" if (p_miejsce != 'w domku' and p_godz and p_godz not in ['None', 'Brak']) else nazwa_p)
     return f"<span style='color:#8C5338; font-weight:700;'>🍲 {' / '.join(posiłki_str)}</span>" if posiłki_str else ""
@@ -494,15 +882,6 @@ def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
 def pobierz_historie_czatu_z_db(uzytkownik):
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS czat_historia (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                uzytkownik TEXT,
-                rola TEXT,
-                tresc TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
         cursor.execute('SELECT rola, tresc FROM czat_historia WHERE uzytkownik = ? ORDER BY id ASC', (uzytkownik,))
         rows = cursor.fetchall()
     return [{"role": rola, "content": tresc} for rola, tresc in rows]
@@ -510,15 +889,6 @@ def pobierz_historie_czatu_z_db(uzytkownik):
 def zapisz_wiadomosc_w_db(uzytkownik, rola, tresc):
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS czat_historia (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                uzytkownik TEXT,
-                rola TEXT,
-                tresc TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
         cursor.execute('INSERT INTO czat_historia (uzytkownik, rola, tresc) VALUES (?, ?, ?)', (uzytkownik, rola, tresc))
         conn.commit()
 
@@ -530,17 +900,6 @@ def wyczysc_historie_czatu_w_db(uzytkownik):
 
 def pobierz_notatki(id_wycieczki=None, id_miejsca=None):
     with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS notatki (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                id_wycieczki TEXT,
-                id_miejsca TEXT,
-                tytul TEXT,
-                zawartosc TEXT,
-                typ_notatki TEXT
-            )
-        ''')
         if id_wycieczki:
             return pd.read_sql('SELECT * FROM notatki WHERE id_wycieczki = ?', conn, params=(str(id_wycieczki),))
         elif id_miejsca:
@@ -625,12 +984,6 @@ def sparsuj_liste_zadan(zadania_raw):
 def pobierz_status_zadania(klucz_zadania):
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS statusy_zadan (
-                klucz TEXT PRIMARY KEY,
-                ukonczone INTEGER DEFAULT 0
-            )
-        ''')
         cursor.execute('SELECT ukonczone FROM statusy_zadan WHERE klucz = ?', (klucz_zadania,))
         row = cursor.fetchone()
         return bool(row[0]) if row else False
@@ -638,12 +991,6 @@ def pobierz_status_zadania(klucz_zadania):
 def zapisz_status_zadania(klucz_zadania, status):
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS statusy_zadan (
-                klucz TEXT PRIMARY KEY,
-                ukonczone INTEGER DEFAULT 0
-            )
-        ''')
         cursor.execute('''
             INSERT INTO statusy_zadan (klucz, ukonczone) VALUES (?, ?)
             ON CONFLICT(klucz) DO UPDATE SET ukonczone = excluded.ukonczone
@@ -675,7 +1022,7 @@ def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df, df_wszystkie_miejs
 
     return grupy
 
-# --- ULEPSZONY PARSER DOPASOWANIA KROKÓW (SYNONYMS & ACCENT INSENSITIVE) ---
+# --- ULEPSZONY PARSER DOPASOWANIA KROKÓW ---
 def znajdz_id_kroku_w_db(cursor, id_wycieczki, identyfikator):
     ident_str = str(identyfikator).strip().lower()
     cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
@@ -707,17 +1054,11 @@ def render_shopping_checkbox_list(df_items, key_prefix):
 
 def pobierz_wszystkie_miejsca():
     with get_db() as conn:
-        return pd.read_sql('SELECT * FROM miejsca', conn)
+        return pd.read_sql('SELECT * FROM miejsca ORDER BY CAST(numer_miejsca AS INTEGER) ASC', conn)
 
 def pobierz_aktywna_wycieczke_id():
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS aktywna_wycieczka (
-                id INTEGER PRIMARY KEY,
-                aktualne_id_wycieczki TEXT
-            )
-        ''')
         cursor.execute('SELECT aktualne_id_wycieczki FROM aktywna_wycieczka WHERE id = 1')
         res = cursor.fetchone()
         if not res:
@@ -795,111 +1136,6 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
                     )
 
     return True, ""
-
-def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, force_wyjazd_str=None, force_powrot_str=None):
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT szacowany_czas_ogarniania_rano, pobudka, czas_wyjazdu FROM wycieczka WHERE id = ?', (str(id_wycieczki),))
-        row_og = cursor.fetchone()
-        if not row_og:
-            return
-        pobudka_z_bazy = row_og[1] if row_og and row_og[1] else '06:00'
-        minuty_ogarniania = sparsuj_czas_ogarniania_na_minuty(row_og[0] if row_og else '0.5h')
-
-        cursor.execute('SELECT id, krok_wycieczki, wspolrzedne, okienko_zwiedzania, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC, id ASC', (str(id_wycieczki),))
-        kroki = cursor.fetchall()
-    
-    if not kroki:
-        return
-
-    dojazdy_minuty, dojazdy_tekst = [], []
-    for idx in range(len(kroki) - 1):
-        lat1, lon1 = sparsuj_wspolrzedne(kroki[idx][2])
-        lat2, lon2 = sparsuj_wspolrzedne(kroki[idx + 1][2])
-        tekst_dojazdu, minuty_przejazdu = ("~25 min", 25) if lat1 is None or lon1 is None or lat2 is None or lon2 is None else oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2)
-        dojazdy_minuty.append(minuty_przejazdu)
-        dojazdy_tekst.append(tekst_dojazdu)
-
-    czasy_pobytu = []
-    for idx, k in enumerate(kroki):
-        nazwa_l = str(k[4]).lower()
-        dur_def = 25 if any(w in nazwa_l for w in ["sklep", "market", "zakup", "apteka", "rynek", "targ"]) else (90 if ("plaż" in nazwa_l or "beach" in nazwa_l) else (30 if (idx == 0 or idx == len(kroki) - 1) else 60))
-        czasy_pobytu.append(oblicz_czas_trwania_okienka(k[3], domyslny_czas=dur_def))
-
-    start_times, end_times = [None] * len(kroki), [None] * len(kroki)
-    if force_pobudka_str:
-        pobudka_z_bazy = force_pobudka_str
-
-    g_pob = sparsuj_godzine_minuty(pobudka_z_bazy) or (6, 0)
-    dt_pob = datetime(2026, 1, 1, g_pob[0], g_pob[1])
-    dt_wyj = dt_pob + timedelta(minutes=minuty_ogarniania)
-    last_idx = len(kroki) - 1
-
-    if force_powrot_str:
-        g_pow = sparsuj_godzine_minuty(force_powrot_str) or (17, 0)
-        dt_powrot_anchor = datetime(2026, 1, 1, g_pow[0], g_pow[1])
-        
-        end_times[last_idx] = dt_powrot_anchor
-        start_times[last_idx] = dt_powrot_anchor - timedelta(minutes=czasy_pobytu[last_idx])
-
-        for i in range(last_idx - 1, 0, -1):
-            end_times[i] = start_times[i + 1] - timedelta(minutes=dojazdy_minuty[i])
-            start_times[i] = end_times[i] - timedelta(minutes=czasy_pobytu[i])
-
-        end_times[0] = start_times[1] - timedelta(minutes=dojazdy_minuty[0])
-        dt_pob = end_times[0] - timedelta(minutes=minuty_ogarniania)
-        pobudka_z_bazy = dt_pob.strftime("%H:%M")
-        start_times[0] = dt_pob
-
-    elif force_wyjazd_str:
-        g_wyj = sparsuj_godzine_minuty(force_wyjazd_str) or (6, 30)
-        dt_wyj = datetime(2026, 1, 1, g_wyj[0], g_wyj[1])
-        dt_pob = dt_wyj - timedelta(minutes=minuty_ogarniania)
-        pobudka_z_bazy = dt_pob.strftime("%H:%M")
-        start_times[0], end_times[0] = dt_pob, dt_wyj
-        cur_dt = dt_wyj
-        for i in range(1, len(kroki)):
-            cur_dt = cur_dt + timedelta(minutes=dojazdy_minuty[i - 1])
-            start_times[i] = cur_dt
-            end_times[i] = start_times[i] + timedelta(minutes=czasy_pobytu[i])
-            cur_dt = end_times[i]
-    else:
-        cur_dt = dt_wyj
-        for i in range(len(kroki)):
-            if i == 0:
-                start_times[i], end_times[i] = dt_pob, dt_wyj
-            else:
-                start_times[i] = cur_dt
-                end_times[i] = cur_dt + timedelta(minutes=czasy_pobytu[i])
-            if i < len(kroki) - 1:
-                cur_dt = end_times[i] + timedelta(minutes=dojazdy_minuty[i])
-
-    with get_db() as conn:
-        cursor = conn.cursor()
-        krok_ids = [k[0] for k in kroki]
-        if krok_ids:
-            placeholders = ','.join(['?'] * len(krok_ids))
-            cursor.execute(f'DELETE FROM czasy_dojazdu WHERE id_kroku_z IN ({placeholders}) OR id_kroku_do IN ({placeholders})', krok_ids + krok_ids)
-
-        for i in range(len(kroki)):
-            s_str, e_str = start_times[i].strftime("%H:%M"), end_times[i].strftime("%H:%M")
-            cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (f"{s_str} - {e_str}", kroki[i][0]))
-            cursor.execute('UPDATE posilki_kroku SET sugerowana_godzina = ? WHERE id_kroku = ?', (s_str, kroki[i][0]))
-            
-            if i < len(kroki) - 1:
-                cursor.execute('''
-                    INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
-                    VALUES (?, ?, ?, 0)
-                ''', (kroki[i][0], kroki[i + 1][0], dojazdy_tekst[i]))
-
-        dt_wyjazd, dt_powrot = end_times[0], start_times[-1]
-        czas_trwania_h = round(max((dt_powrot - dt_wyjazd).total_seconds() / 3600.0, 0.5), 1)
-        cursor.execute('''
-            UPDATE wycieczka 
-            SET pobudka = ?, czas_wyjazdu = ?, szacowana_godzina_powrotu = ?, calkowity_czas_wycieczki_godziny = ?, czas_powrotu_do_domku = NULL
-            WHERE id = ?
-        ''', (pobudka_z_bazy, dt_wyjazd.strftime("%H:%M"), dt_powrot.strftime("%H:%M"), str(czas_trwania_h), str(id_wycieczki)))
-        conn.commit()
 
 # --- OPERACJE NA KROKACH I WYCIECZKACH ---
 def dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki, pozycja="koniec"):
@@ -1100,7 +1336,7 @@ def usun_posilek(id_posilku):
         conn.commit()
     return {"success": True, "action": "usun_posilek", "message": "Pomyślnie usunięto posiłek."}
 
-# --- MODUŁ DUPLIKACJI WYCIECZKI (DEEP COPY) ---
+# --- MODUŁ DUPLIKACJI WYCIECZKI ---
 def duplikuj_wycieczke(id_zrodlowe):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -2329,6 +2565,8 @@ if "show_visited_places" not in st.session_state:
     st.session_state.show_visited_places = False
 if "show_completed_trips" not in st.session_state:
     st.session_state.show_completed_trips = False
+if "last_handled_map_click" not in st.session_state:
+    st.session_state.last_handled_map_click = None
 
 df_miejsca = pobierz_wszystkie_miejsca()
 
@@ -2486,6 +2724,9 @@ elif st.session_state.active_tab == "zabytek":
         if not st.session_state.show_visited_places:
             df_miejsca_filtrowane = df_miejsca_filtrowane[df_miejsca_filtrowane['odwiedzone'] == 0]
 
+        df_miejsca_filtrowane['sort_num'] = pd.to_numeric(df_miejsca_filtrowane['numer_miejsca'], errors='coerce').fillna(9999)
+        df_miejsca_filtrowane = df_miejsca_filtrowane.sort_values(by='sort_num').drop(columns=['sort_num'])
+
     m_miejsca = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="CartoDB positron")
     dodaj_marker_domku(m_miejsca)
 
@@ -2503,16 +2744,28 @@ elif st.session_state.active_tab == "zabytek":
     map_key = f"map_places_view_{st.session_state.show_visited_places}_{st.session_state.selected_category}"
     map_output = st_folium(m_miejsca, width=None, height=290, returned_objects=["last_object_clicked"], key=map_key)
 
-    if map_output and map_output.get("last_object_clicked"):
-        c_lat, c_lng = map_output["last_object_clicked"].get("lat"), map_output["last_object_clicked"].get("lng")
-        if c_lat is not None and c_lng is not None:
-            clicked_id = marker_coords_dict.get((round(c_lat, 4), round(c_lng, 4)))
-            if clicked_id and st.session_state.active_place_id != str(clicked_id):
-                st.session_state.active_place_id = str(clicked_id)
-                st.query_params["place"] = str(clicked_id)
-                st.rerun()
-
+    sb_key = f"place_selectbox_selector_{st.session_state.show_visited_places}"
     miejsca_opcje_lista = [f"{r['numer_miejsca']}. {r['nazwa']}" for _, r in df_miejsca_filtrowane.iterrows()]
+
+    # Obsługa kliknięcia w mapę tylko wtedy, gdy jest to NOWE kliknięcie
+    if map_output and map_output.get("last_object_clicked"):
+        raw_click = map_output["last_object_clicked"]
+        c_lat, c_lng = raw_click.get("lat"), raw_click.get("lng")
+        if c_lat is not None and c_lng is not None:
+            click_tuple = (round(c_lat, 4), round(c_lng, 4))
+            if st.session_state.last_handled_map_click != click_tuple:
+                st.session_state.last_handled_map_click = click_tuple
+                clicked_id = marker_coords_dict.get(click_tuple)
+                if not clicked_id:
+                    for (mlat, mlon), nid in marker_coords_dict.items():
+                        if abs(mlat - c_lat) < 0.005 and abs(mlon - c_lng) < 0.005:
+                            clicked_id = nid
+                            break
+                if clicked_id:
+                    st.session_state.active_place_id = str(clicked_id)
+                    st.query_params["place"] = str(clicked_id)
+                    st.rerun()
+
     domyslny_indeks = 0
     if st.session_state.active_place_id:
         for idx, opt in enumerate(miejsca_opcje_lista):
@@ -2524,14 +2777,22 @@ elif st.session_state.active_tab == "zabytek":
         "",
         options=[None] + miejsca_opcje_lista,
         index=domyslny_indeks,
-        format_func=lambda x: "🔍 Wybierz z listy..." if x is None else x,
-        key=f"place_selectbox_selector_{st.session_state.show_visited_places}",
+        format_func=lambda x: "🔍 Lub wybierz z listy..." if x is None else x,
         label_visibility="collapsed"
     )
-    
-    docelowy_nr = selected_option.split(".")[0].strip() if selected_option else st.session_state.active_place_id
+
     if selected_option:
-        st.session_state.active_place_id = docelowy_nr
+        new_sel_id = selected_option.split(".")[0].strip()
+        if st.session_state.active_place_id != new_sel_id:
+            st.session_state.active_place_id = new_sel_id
+            st.query_params["place"] = new_sel_id
+            st.rerun()
+    elif selected_option is None and st.session_state.active_place_id is not None and domyslny_indeks == 0:
+        st.session_state.active_place_id = None
+        if "place" in st.query_params:
+            del st.query_params["place"]
+
+    docelowy_nr = st.session_state.active_place_id
 
     if docelowy_nr:
         p_row = df_miejsca[df_miejsca['numer_miejsca'] == str(docelowy_nr)]
