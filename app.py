@@ -2101,13 +2101,15 @@ def pobierz_skrocone_opcje_wycieczek(pokaz_ukonczone=False):
 def pobierz_wycieczki_dla_miejsca(numer_miejsca, nazwa_miejsca):
     with get_db() as conn:
         cursor = conn.cursor()
+        # Precyzyjne dopasowanie miejsca do trasy wycieczki po nazwie
+        nazwa_czysta = nazwa_miejsca.split('(')[0].strip().lower()
         cursor.execute('''
             SELECT DISTINCT w.id, w.tytul_wycieczki
             FROM wycieczka w
             JOIN krok_wycieczki k ON w.id = k.id_wycieczki
-            WHERE k.krok_wycieczki = ? OR LOWER(k.nazwa) LIKE ?
+            WHERE LOWER(k.nazwa) LIKE ? OR ? LIKE ('%' || LOWER(k.nazwa) || '%')
             ORDER BY CAST(w.id AS INTEGER) ASC
-        ''', (str(numer_miejsca), f"%{nazwa_miejsca.lower()}%"))
+        ''', (f"%{nazwa_czysta}%", nazwa_czysta))
         rows = cursor.fetchall()
     return pd.DataFrame(rows, columns=['id', 'tytul_wycieczki'])
 
@@ -2565,8 +2567,10 @@ if "show_visited_places" not in st.session_state:
     st.session_state.show_visited_places = False
 if "show_completed_trips" not in st.session_state:
     st.session_state.show_completed_trips = False
-if "last_handled_map_click" not in st.session_state:
-    st.session_state.last_handled_map_click = None
+if "last_map_click_place" not in st.session_state:
+    st.session_state.last_map_click_place = None
+if "last_map_click_trips" not in st.session_state:
+    st.session_state.last_map_click_trips = None
 
 df_miejsca = pobierz_wszystkie_miejsca()
 
@@ -2594,22 +2598,6 @@ elif st.session_state.active_tab == "map":
     st.session_state.show_completed_trips = st.checkbox("Pokaż ukończone wycieczki", value=st.session_state.show_completed_trips)
     wycieczki_options_filtrowane = pobierz_skrocone_opcje_wycieczek(pokaz_ukonczone=st.session_state.show_completed_trips)
     opcje_wycieczek_lista = [None] + wycieczki_options_filtrowane
-    selected_idx = 0
-    if "selected_trip_from_click" in st.session_state and st.session_state["selected_trip_from_click"]:
-        for i, opt in enumerate(opcje_wycieczek_lista):
-            if opt and opt.startswith(f"{st.session_state['selected_trip_from_click']}."):
-                selected_idx = i
-                break
-        st.session_state["selected_trip_from_click"] = None
-
-    wybrana_mapa_sb = st.selectbox(
-        "", 
-        options=opcje_wycieczek_lista, 
-        index=selected_idx, 
-        format_func=lambda x: "**Wybierz wycieczkę**" if x is None else x,
-        key="map_wycieczka_select", 
-        label_visibility="collapsed"
-    )
 
     m_all = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="CartoDB positron")
     dodaj_marker_domku(m_all)
@@ -2630,15 +2618,18 @@ elif st.session_state.active_tab == "map":
     if map_out and map_out.get("last_object_clicked"):
         c_lat, c_lng = map_out["last_object_clicked"].get("lat"), map_out["last_object_clicked"].get("lng")
         if c_lat is not None and c_lng is not None:
-            matched_place = map_coords_lookup.get((round(c_lat, 4), round(c_lng, 4)))
-            if not matched_place:
-                for (mlat, mlon), data_tuple in map_coords_lookup.items():
-                    if abs(mlat - c_lat) < 0.005 and abs(mlon - c_lng) < 0.005:
-                        matched_place = data_tuple
-                        break
-            if matched_place and st.session_state.map_tab_selected_place != matched_place:
-                st.session_state.map_tab_selected_place = matched_place
-                st.rerun()
+            click_pt = (round(c_lat, 4), round(c_lng, 4))
+            if st.session_state.last_map_click_trips != click_pt:
+                st.session_state.last_map_click_trips = click_pt
+                matched_place = map_coords_lookup.get(click_pt)
+                if not matched_place:
+                    for (mlat, mlon), data_tuple in map_coords_lookup.items():
+                        if abs(mlat - c_lat) < 0.005 and abs(mlon - c_lng) < 0.005:
+                            matched_place = data_tuple
+                            break
+                if matched_place:
+                    st.session_state.map_tab_selected_place = matched_place
+                    st.rerun()
 
     if st.session_state.map_tab_selected_place:
         nr_m, nazwa_m = st.session_state.map_tab_selected_place
@@ -2647,15 +2638,34 @@ elif st.session_state.active_tab == "map":
         with st.container():
             st.markdown(f'<div style="font-size: 10.5pt; font-weight: 900; color: #2B2118; margin-bottom: 3px;">📍 {nr_m}. {nazwa_m}</div><div style="font-size: 9pt; font-weight: 800; color: #8C5338; margin-bottom: 6px;">🗺️ Występuje w wycieczkach:</div>', unsafe_allow_html=True)
             if df_przypisane.empty:
-                st.markdown("<div style='font-size: 8.5pt; color: #8C827A; font-style: italic; margin-bottom: 3px;'>Nie jest przypisany</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size: 8.5pt; color: #8C827A; font-style: italic; margin-bottom: 3px;'>Nie jest przypisany do żadnej wycieczki.</div>", unsafe_allow_html=True)
             else:
                 for _, row_trip in df_przypisane.iterrows():
                     w_id, w_tytul = str(row_trip['id']), str(row_trip['tytul_wycieczki'])
                     skrocony = w_tytul.split(':')[0] if ':' in w_tytul else w_tytul
-                    if st.button(f"🧭 {w_id}. {skrocony}", key=f"btn_go_to_trip_{w_id}_{nr_m}", use_container_width=True):
-                        st.session_state["selected_trip_from_click"] = w_id
+                    btn_text = f"🧭 {w_id}. {skrocony}"
+                    if st.button(btn_text, key=f"btn_go_to_trip_{w_id}_{nr_m}", use_container_width=True):
                         ustaw_aktywna_wycieczke_id(w_id)
+                        for opt in opcje_wycieczek_lista:
+                            if opt and opt.startswith(f"{w_id}."):
+                                st.session_state["map_wycieczka_select"] = opt
+                                break
+                        st.session_state.map_tab_selected_place = None
                         st.rerun()
+
+    selected_idx = 0
+    curr_sel = st.session_state.get("map_wycieczka_select")
+    if curr_sel and curr_sel in opcje_wycieczek_lista:
+        selected_idx = opcje_wycieczek_lista.index(curr_sel)
+
+    wybrana_mapa_sb = st.selectbox(
+        "", 
+        options=opcje_wycieczek_lista, 
+        index=selected_idx, 
+        format_func=lambda x: "**Wybierz wycieczkę**" if x is None else x,
+        key="map_wycieczka_select", 
+        label_visibility="collapsed"
+    )
 
     if wybrana_mapa_sb is not None:
         wybrana_id = wybrana_mapa_sb.split(". ")[0]
@@ -2747,15 +2757,13 @@ elif st.session_state.active_tab == "zabytek":
     sb_key = f"place_selectbox_selector_{st.session_state.show_visited_places}"
     miejsca_opcje_lista = [f"{r['numer_miejsca']}. {r['nazwa']}" for _, r in df_miejsca_filtrowane.iterrows()]
 
-    # Obsługa kliknięcia w mapę tylko wtedy, gdy jest to NOWE kliknięcie
     if map_output and map_output.get("last_object_clicked"):
-        raw_click = map_output["last_object_clicked"]
-        c_lat, c_lng = raw_click.get("lat"), raw_click.get("lng")
+        c_lat, c_lng = map_output["last_object_clicked"].get("lat"), map_output["last_object_clicked"].get("lng")
         if c_lat is not None and c_lng is not None:
-            click_tuple = (round(c_lat, 4), round(c_lng, 4))
-            if st.session_state.last_handled_map_click != click_tuple:
-                st.session_state.last_handled_map_click = click_tuple
-                clicked_id = marker_coords_dict.get(click_tuple)
+            click_pt = (round(c_lat, 4), round(c_lng, 4))
+            if st.session_state.last_map_click_place != click_pt:
+                st.session_state.last_map_click_place = click_pt
+                clicked_id = marker_coords_dict.get(click_pt)
                 if not clicked_id:
                     for (mlat, mlon), nid in marker_coords_dict.items():
                         if abs(mlat - c_lat) < 0.005 and abs(mlon - c_lng) < 0.005:
@@ -2764,7 +2772,22 @@ elif st.session_state.active_tab == "zabytek":
                 if clicked_id:
                     st.session_state.active_place_id = str(clicked_id)
                     st.query_params["place"] = str(clicked_id)
+                    for opt_str in miejsca_opcje_lista:
+                        if opt_str.startswith(f"{clicked_id}."):
+                            st.session_state[sb_key] = opt_str
+                            break
                     st.rerun()
+
+    def on_place_select_changed():
+        val = st.session_state.get(sb_key)
+        if val:
+            nowy_id = val.split(".")[0].strip()
+            st.session_state.active_place_id = nowy_id
+            st.query_params["place"] = nowy_id
+        else:
+            st.session_state.active_place_id = None
+            if "place" in st.query_params:
+                del st.query_params["place"]
 
     domyslny_indeks = 0
     if st.session_state.active_place_id:
@@ -2778,21 +2801,12 @@ elif st.session_state.active_tab == "zabytek":
         options=[None] + miejsca_opcje_lista,
         index=domyslny_indeks,
         format_func=lambda x: "🔍 Lub wybierz z listy..." if x is None else x,
+        key=sb_key,
+        on_change=on_place_select_changed,
         label_visibility="collapsed"
     )
-
-    if selected_option:
-        new_sel_id = selected_option.split(".")[0].strip()
-        if st.session_state.active_place_id != new_sel_id:
-            st.session_state.active_place_id = new_sel_id
-            st.query_params["place"] = new_sel_id
-            st.rerun()
-    elif selected_option is None and st.session_state.active_place_id is not None and domyslny_indeks == 0:
-        st.session_state.active_place_id = None
-        if "place" in st.query_params:
-            del st.query_params["place"]
-
-    docelowy_nr = st.session_state.active_place_id
+    
+    docelowy_nr = selected_option.split(".")[0].strip() if selected_option else st.session_state.active_place_id
 
     if docelowy_nr:
         p_row = df_miejsca[df_miejsca['numer_miejsca'] == str(docelowy_nr)]
