@@ -218,7 +218,6 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
         for i in range(len(kroki)):
             s_str, e_str = start_times[i].strftime("%H:%M"), end_times[i].strftime("%H:%M")
             cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (f"{s_str} - {e_str}", kroki[i][0]))
-            cursor.execute('UPDATE posilki_kroku SET sugerowana_godzina = ? WHERE id_kroku = ?', (s_str, kroki[i][0]))
             
             if i < len(kroki) - 1:
                 cursor.execute('''
@@ -368,25 +367,55 @@ def init_db():
             for enc in ['utf-8', 'utf-8-sig', 'cp1250', 'iso-8859-2']:
                 try:
                     df_m = pd.read_csv('miejsca.csv', encoding=enc)
+                    df_m.columns = [str(col).strip() for col in df_m.columns]
+                    
+                    def find_col(possible_names, df):
+                        for name in possible_names:
+                            for col in df.columns:
+                                if col.lower() == name.lower():
+                                    return col
+                        return None
+
+                    col_nr = find_col(['numer miejsca', 'numer_miejsca', 'id', 'nr'], df_m)
+                    col_nazwa = find_col(['nazwa', 'nazwa miejsca', 'name'], df_m)
+                    col_typ = find_col(['typ', 'type', 'kategoria'], df_m)
+                    col_wsp = find_col(['współrzędne', 'wspolrzedne', 'coordinates', 'coords'], df_m)
+                    col_dojazd = find_col(['czas dojazdu ze Stavros', 'czas dojazdu', 'czas_dojazdu'], df_m)
+                    col_orient = find_col(['orientacyjny czas zwiedzania', 'orientacyjny czas', 'orientacyjny_czas'], df_m)
+                    col_koszt = find_col(['koszt zwiedzania dla rodziny 2+2', 'koszt zwiedzania', 'koszt', 'cena'], df_m)
+                    col_godz = find_col(['godziny otwarcia', 'godziny_otwarcia', 'godziny'], df_m)
+                    col_akcja = find_col(['Konieczna akcja', 'konieczna_akcja', 'akcja'], df_m)
+                    col_trud = find_col(['Poziom trudności ADHD', 'trudnosc_adhd', 'trudność adhd'], df_m)
+                    col_slonce = find_col(['Ochrona przed słońcem', 'ochrona_slonce', 'ochrona przed sloncem'], df_m)
+                    col_pot_m = find_col(['Potencjał meltdownu', 'potencjal_meltdownu', 'meltdown'], df_m)
+                    col_strat_m = find_col(['Strategie na meltdown', 'strategie_meltdown', 'strategie meltdown'], df_m)
+                    col_opis = find_col(['Opis', 'opis', 'description'], df_m)
+                    col_zadania = find_col(['Zadania dla dzieci', 'zadania_dla_dzieci', 'zadania'], df_m)
+
                     for _, r in df_m.iterrows():
-                        nr_m = str(r.get('numer_miejsca', '')).strip()
+                        nr_raw = r.get(col_nr) if col_nr else None
+                        nr_m = str(nr_raw).strip() if pd.notna(nr_raw) else ''
                         if not nr_m or nr_m == 'nan':
                             continue
-                        nazwa_m = str(r.get('nazwa', '')).strip()
-                        raw_typ = str(r.get('typ', '')).strip() if pd.notna(r.get('typ')) else ''
+                        
+                        nazwa_raw = r.get(col_nazwa) if col_nazwa else ''
+                        nazwa_m = str(nazwa_raw).strip() if pd.notna(nazwa_raw) else ''
+                        
+                        raw_typ = str(r.get(col_typ, '')).strip() if col_typ and pd.notna(r.get(col_typ)) else ''
                         typ_m = raw_typ if raw_typ in CATEGORIES_CONFIG else kategoryzuj_typ(raw_typ or nazwa_m)
-                        wsp_m = str(r.get('wspolrzedne', '')).strip() if pd.notna(r.get('wspolrzedne')) else ''
-                        czas_d = str(r.get('czas_dojazdu', '')).strip() if pd.notna(r.get('czas_dojazdu')) else '—'
-                        orient_c = str(r.get('orientacyjny_czas', '')).strip() if pd.notna(r.get('orientacyjny_czas')) else '—'
-                        koszt_m = str(r.get('koszt', '')).strip() if pd.notna(r.get('koszt')) else '—'
-                        godz_otw = str(r.get('godziny_otwarcia', '')).strip() if pd.notna(r.get('godziny_otwarcia')) else '—'
-                        koniecz_akc = str(r.get('konieczna_akcja', '')).strip() if pd.notna(r.get('konieczna_akcja')) else ''
-                        trud_adhd = str(r.get('trudnosc_adhd', 'Średni')).strip() if pd.notna(r.get('trudnosc_adhd')) else 'Średni'
-                        ochr_slonce = str(r.get('ochrona_slonce', 'Standardowa')).strip() if pd.notna(r.get('ochrona_slonce')) else 'Standardowa'
-                        potencjal_m = str(r.get('potencjal_meltdownu', 'Średni')).strip() if pd.notna(r.get('potencjal_meltdownu')) else 'Średni'
-                        strat_m = str(r.get('strategie_meltdown', 'Brak')).strip() if pd.notna(r.get('strategie_meltdown')) else 'Brak'
-                        opis_m = str(r.get('opis', '')).strip() if pd.notna(r.get('opis')) else ''
-                        zadania_d = str(r.get('zadania_dla_dzieci', '')).strip() if pd.notna(r.get('zadania_dla_dzieci')) else ''
+                        
+                        wsp_m = str(r.get(col_wsp, '')).strip() if col_wsp and pd.notna(r.get(col_wsp)) else ''
+                        czas_d = str(r.get(col_dojazd, '—')).strip() if col_dojazd and pd.notna(r.get(col_dojazd)) else '—'
+                        orient_c = str(r.get(col_orient, '—')).strip() if col_orient and pd.notna(r.get(col_orient)) else '—'
+                        koszt_m = str(r.get(col_koszt, '—')).strip() if col_koszt and pd.notna(r.get(col_koszt)) else '—'
+                        godz_otw = str(r.get(col_godz, '—')).strip() if col_godz and pd.notna(r.get(col_godz)) else '—'
+                        koniecz_akc = str(r.get(col_akcja, '')).strip() if col_akcja and pd.notna(r.get(col_akcja)) else ''
+                        trud_adhd = str(r.get(col_trud, 'Średni')).strip() if col_trud and pd.notna(r.get(col_trud)) else 'Średni'
+                        ochr_slonce = str(r.get(col_slonce, 'Standardowa')).strip() if col_slonce and pd.notna(r.get(col_slonce)) else 'Standardowa'
+                        potencjal_m = str(r.get(col_pot_m, 'Średni')).strip() if col_pot_m and pd.notna(r.get(col_pot_m)) else 'Średni'
+                        strat_m = str(r.get(col_strat_m, 'Brak')).strip() if col_strat_m and pd.notna(r.get(col_strat_m)) else 'Brak'
+                        opis_m = str(r.get(col_opis, '')).strip() if col_opis and pd.notna(r.get(col_opis)) else ''
+                        zadania_d = str(r.get(col_zadania, '')).strip() if col_zadania and pd.notna(r.get(col_zadania)) else ''
 
                         cursor.execute('''
                             INSERT OR REPLACE INTO miejsca (
@@ -397,7 +426,7 @@ def init_db():
                         ''', (
                             nr_m, nazwa_m, typ_m, wsp_m, czas_d, orient_c,
                             koszt_m, godz_otw, koniecz_akc, trud_adhd, ochr_slonce,
-                            potencjal_m, strat_m, opis_m, zadania_d, 0
+                            potencjal_m, strat_m, opis_m, zadania_d
                         ))
                     conn.commit()
                     break
@@ -429,7 +458,6 @@ def init_db():
                         ) VALUES (?, ?, ?, ?, ?, ?, '0.5h', 0)
                     ''', (str(wid), tytul_val, opis_val, taktyka_val, pobudka_val, dzisiaj_str))
 
-                    # Krok 0: Start w domku
                     cursor.execute('''
                         INSERT INTO krok_wycieczki (
                             id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis
@@ -442,7 +470,6 @@ def init_db():
                         VALUES (?, 'śniadanie', 'w domku', '06:00', 'Śniadanie przed wyruszeniem w trasę')
                     ''', (id_kroku_start,))
 
-                    # Kroki z CSV
                     step_counter = 1
                     for _, r in w_df.iterrows():
                         nazwa_kroku = str(r.get('nazwa', '')).strip()
@@ -452,24 +479,7 @@ def init_db():
                         czerwona_kroku = str(r.get('czerwona_strefa_ostrzezenie', '')).strip() if pd.notna(r.get('czerwona_strefa_ostrzezenie')) else None
                         strefa_kroku = str(r.get('strefa_luzu_i_regeneracji', '')).strip() if pd.notna(r.get('strefa_luzu_i_regeneracji')) else None
                         taktyka_kroku = str(r.get('podsumowanie_taktyki', '')).strip() if pd.notna(r.get('podsumowanie_taktyki')) else None
-                        nr_miejsca_val = str(r.get('numer_miejsca', '')).strip() if pd.notna(r.get('numer_miejsca')) else ''
                         
-                        if nr_miejsca_val and nr_miejsca_val not in ['nan', '-']:
-                            zadania_val = str(r.get('zadania_dla_dzieci', '')).strip() if pd.notna(r.get('zadania_dla_dzieci')) else ''
-                            opis_miejsca = str(r.get('podsumowanie_taktyki', '')).strip() if pd.notna(r.get('podsumowanie_taktyki')) else nazwa_kroku
-                            dynamiczny_typ = kategoryzuj_typ(nazwa_kroku)
-                            
-                            cursor.execute('''
-                                INSERT OR IGNORE INTO miejsca (
-                                    numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
-                                    koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd, ochrona_slonce,
-                                    potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci, odwiedzone
-                                ) VALUES (?, ?, ?, ?, '—', ?, '—', '—', '', 'Średni', 'Standardowa', 'Średni', ?, ?, ?, 0)
-                            ''', (
-                                nr_miejsca_val, nazwa_kroku, dynamiczny_typ, wsp_kroku, okienko_kroku,
-                                taktyka_kroku or '', opis_miejsca, zadania_val
-                            ))
-
                         cursor.execute('''
                             INSERT INTO krok_wycieczki (
                                 id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania,
@@ -485,7 +495,7 @@ def init_db():
                         posilek_val = r.get('posilek')
                         if pd.notna(posilek_val) and str(posilek_val).strip() and str(posilek_val).strip() != '-':
                             p_str = str(posilek_val).strip()
-                            p_rodzaj = 'obiad' if any(w in p_str.lower() for w in ['obiad', 'lunch']) else ('kolacja' if 'kolacja' in p_str.lower() else 'przekąska')
+                            p_rodzaj = 'obiad' if any(w in p_str.lower() for w in ['obiad', 'lunch']) else ('kolacja' if 'kolacja' in p_str.lower() else ('lunchbox' if 'lunchbox' in p_str.lower() else 'przekąska'))
                             cursor.execute('''
                                 INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
                                 VALUES (?, ?, 'w kroku', '13:00', ?)
@@ -493,7 +503,6 @@ def init_db():
 
                         step_counter += 1
 
-                    # Krok końcowy: Powrót do domku
                     cursor.execute('''
                         INSERT INTO krok_wycieczki (
                             id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis
@@ -507,9 +516,6 @@ def init_db():
                     ''', (id_kroku_end,))
 
                 conn.commit()
-
-                for wid in unikalne_wycieczki:
-                    przelicz_i_zsynchronizuj_wycieczke(str(wid))
 
             except Exception as e:
                 print(f"Błąd importu wycieczki.csv podczas init_db: {e}")
@@ -769,8 +775,8 @@ def formatuj_posilki_kroku(df_pos):
         p_rodzaj = str(prow.get('rodzaj_posilku', '')).strip().lower()
         p_godz = str(prow.get('sugerowana_godzina', '')).strip()
         p_miejsce = str(prow.get('miejsce', '')).strip().lower()
-        if p_rodzaj in ['śniadanie', 'obiad', 'kolacja', 'przekąska']:
-            nazwa_p = p_rodzaj.capitalize()
+        if p_rodzaj in ['śniadanie', 'obiad', 'kolacja', 'przekąska', 'lunchbox']:
+            nazwa_p = "🍱 Lunchbox" if p_rodzaj == 'lunchbox' else p_rodzaj.capitalize()
             posiłki_str.append(f"{nazwa_p} ok {p_godz}" if (p_miejsce != 'w domku' and p_godz and p_godz not in ['None', 'Brak']) else nazwa_p)
     return f"<span style='color:#8C5338; font-weight:700;'>🍲 {' / '.join(posiłki_str)}</span>" if posiłki_str else ""
 
@@ -1077,17 +1083,19 @@ def szukaj_miejsca_w_bazie(nazwa_zapytania):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT numer_miejsca, nazwa, wspolrzedne, orientacyjny_czas, godziny_otwarcia, 
-                   konieczna_akcja, ochrona_slonce, potencjal_meltdownu, strategie_meltdown, opis
+            SELECT numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas, 
+                   godziny_otwarcia, konieczna_akcja, ochrona_slonce, potencjal_meltdownu, 
+                   strategie_meltdown, opis
             FROM miejsca 
             WHERE nazwa LIKE ? OR numer_miejsca = ?
         ''', (f"%{nazwa_zapytania}%", str(nazwa_zapytania)))
         row = cursor.fetchone()
         if row:
             return {
-                "numer_miejsca": row[0], "nazwa": row[1], "wspolrzedne": row[2], "orientacyjny_czas": row[3],
-                "godziny_otwarcia": row[4], "konieczna_akcja": row[5], "ochrona_slonce": row[6],
-                "potencjal_meltdownu": row[7], "strategie_meltdown": row[8], "opis": row[9]
+                "numer_miejsca": row[0], "nazwa": row[1], "typ": row[2], "wspolrzedne": row[3], 
+                "czas_dojazdu": row[4], "orientacyjny_czas": row[5], "godziny_otwarcia": row[6], 
+                "konieczna_akcja": row[7], "ochrona_slonce": row[8], "potencjal_meltdownu": row[9], 
+                "strategie_meltdown": row[10], "opis": row[11]
             }
     return None
 
@@ -1116,7 +1124,7 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
                 SELECT p.rodzaj_posilku, p.sugerowana_godzina, k.okienko_zwiedzania, k.nazwa
                 FROM posilki_kroku p
                 JOIN krok_wycieczki k ON p.id_kroku = k.id
-                WHERE k.id_wycieczki = ? AND p.rodzaj_posilku IN ('śniadanie', 'obiad', 'kolacja')
+                WHERE k.id_wycieczki = ? AND p.rodzaj_posilku IN ('śniadanie', 'obiad', 'kolacja', 'lunchbox')
                 ORDER BY CAST(k.krok_wycieczki AS INTEGER) ASC
             ''', (str(id_wycieczki),))
             glowne_posilki = cursor.fetchall()
@@ -1130,14 +1138,108 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
                 if (godz_dec - pos_dec) > 4.0:
                     return False, (
                         f"⛔ ODMOWA: Od ostatniego posiłku głównego ({ostatni_posilek[0]} w punkcie '{ostatni_posilek[3]}', ok. {pos_godz_str}) "
-                        f"do planowanego punktu '{nazwa_nowego_miejsca}' ({planowane_okienko}) mija ponad 4.0 godziny bez posiłku głównego. "
+                        f"do planowanego punktu '{nazwa_nowego_miejsca}' ({planowane_okienko}) mija ponad 4.0 godziny bez posiłku głównego lub lunchboxa. "
                         f"Aplikacja nie traktuje mikroprzekąsek jako zastępstwa. Dzieci z AuDHD wejdą w stan silnego przebodźcowania i głodu (Hangry). "
-                        f"💡 PROPOZYCJA: Zaplanuj powrót do domku w Stavros na domowy obiad lub przerwę na posiłek główny (lub prowiant domowy na wynos) przed '{nazwa_nowego_miejsca}'."
+                        f"💡 PROPOZYCJA: Zaplanuj przerwę na posiłek główny, powrót na obiad do domku w Stavros lub zabierz ze sobą Lunchbox z bezpiecznym prowiantem przed '{nazwa_nowego_miejsca}'."
                     )
 
     return True, ""
 
 # --- OPERACJE NA KROKACH I WYCIECZKACH ---
+def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="45 min", 
+                        koszt="—", godziny_otwarcia="—", konieczna_akcja="", trudnosc_adhd="Średni", 
+                        ochrona_slonce="Standardowa", potencjal_meltdownu="Średni", 
+                        strategie_meltdown="Brak", opis="", zadania_dla_dzieci=""):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT numer_miejsca FROM miejsca WHERE LOWER(nazwa) = ?", (nazwa.strip().lower(),))
+        istniejace = cursor.fetchone()
+        if istniejace:
+            return {"success": False, "error": f"Miejsce o nazwie '{nazwa}' już istnieje w bazie pod numerem #{istniejace[0]}."}
+
+        cursor.execute("SELECT MAX(CAST(numer_miejsca AS INTEGER)) FROM miejsca")
+        max_row = cursor.fetchone()
+        nowy_nr = str((max_row[0] or 0) + 1) if max_row and max_row[0] is not None else "1"
+
+        lat_p, lon_p = sparsuj_wspolrzedne(wspolrzedne)
+        czas_dojazdu_z_domku = "—"
+        if lat_p is not None and lon_p is not None:
+            tekst_dojazdu, _ = oblicz_czas_przejazdu_osrm(DOMEK_LAT, DOMEK_LON, lat_p, lon_p)
+            czas_dojazdu_z_domku = tekst_dojazdu
+
+        kat_norm = kategoryzuj_typ(typ if typ in CATEGORIES_CONFIG else nazwa)
+
+        cursor.execute('''
+            INSERT INTO miejsca (
+                numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
+                koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd, ochrona_slonce,
+                potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci, odwiedzone
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        ''', (
+            nowy_nr, nazwa.strip(), kat_norm, wspolrzedne.strip(), czas_dojazdu_z_domku,
+            orientacyjny_czas, koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd,
+            ochrona_slonce, potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci
+        ))
+        conn.commit()
+
+    return {
+        "success": True, 
+        "action": "utworz_nowe_miejsce", 
+        "numer_miejsca": nowy_nr, 
+        "czas_dojazdu": czas_dojazdu_z_domku,
+        "message": f"Pomyślnie dodano nowe miejsce #{nowy_nr}: '{nazwa}' (Dojazd z domku: {czas_dojazdu_z_domku})."
+    }
+
+def utworz_nowa_wycieczke(tytul_wycieczki, planowana_data=None, pobudka="06:00", 
+                          czas_wyjazdu="06:30", opis="", taktyka_dnia=""):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM wycieczka")
+        wszystkie_id = [int(r[0]) for r in cursor.fetchall() if str(r[0]).isdigit()]
+        nowe_id = str(max(wszystkie_id) + 1 if wszystkie_id else 1)
+        data_val = planowana_data or date.today().strftime("%Y-%m-%d")
+
+        cursor.execute('''
+            INSERT INTO wycieczka (
+                id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia,
+                calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu,
+                planowana_data, czas_powrotu_do_domku, szacowany_czas_ogarniania_rano, odbyta
+            ) VALUES (?, ?, ?, ?, '0', '17:00', ?, ?, ?, NULL, '0.5h', 0)
+        ''', (nowe_id, tytul_wycieczki, opis, taktyka_dnia, pobudka, czas_wyjazdu, data_val))
+
+        cursor.execute('''
+            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis)
+            VALUES (?, 0, 'Nasz Domek (Start)', ?, ?, 'Poranne przygotowanie i leki')
+        ''', (nowe_id, f"{DOMEK_LAT}, {DOMEK_LON}", f"{pobudka} - {czas_wyjazdu}"))
+        id_start = cursor.lastrowid
+        
+        cursor.execute('''
+            INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
+            VALUES (?, 'śniadanie', 'w domku', ?, 'Safe breakfast przed wyjazdem')
+        ''', (id_start, pobudka))
+
+        cursor.execute('''
+            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis)
+            VALUES (?, 1, 'Nasz Domek (Powrót)', ?, '17:00 - 18:00', 'Powrót do bazy, odpoczynek i kolacja')
+        ''', (nowe_id, f"{DOMEK_LAT}, {DOMEK_LON}"))
+        id_end = cursor.lastrowid
+
+        cursor.execute('''
+            INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
+            VALUES (?, 'kolacja', 'w domku', '18:30', 'Regeneracja po podróży i domowa kolacja')
+        ''', (id_end,))
+
+        cursor.execute('UPDATE aktywna_wycieczka SET aktualne_id_wycieczki = ? WHERE id = 1', (nowe_id,))
+        conn.commit()
+
+    przelicz_i_zsynchronizuj_wycieczke(nowe_id)
+    return {
+        "success": True, 
+        "action": "utworz_nowa_wycieczke", 
+        "id_wycieczki": nowe_id, 
+        "message": f"Utworzono nową wycieczkę #{nowe_id}: '{tytul_wycieczki}' i ustawiono ją jako aktywną."
+    }
+
 def dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki, pozycja="koniec"):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -1460,7 +1562,7 @@ def usun_wycieczke(id_wycieczki):
             
         cursor.execute("DELETE FROM zakupy WHERE id_wycieczki = ?", (str(id_wycieczki),))
         cursor.execute("DELETE FROM notatki WHERE id_wycieczki = ?", (str(id_wycieczki),))
-        cursor.execute("DELETE FROM krok_wycieczki WHERE id_wycieczki = ?", (str(id_wycieczki),))
+        cursor.execute("DELETE FROM krok_wycieczki WHERE id = ?", (str(id_wycieczki),))
         cursor.execute("DELETE FROM wycieczka WHERE id = ?", (str(id_wycieczki),))
         
         cursor.execute("SELECT aktualne_id_wycieczki FROM aktywna_wycieczka WHERE id = 1")
@@ -1477,6 +1579,7 @@ def usun_wycieczke(id_wycieczki):
 
 # --- NARZĘDZIA DLA MODELU AI ---
 cretai_tools = [
+    types.Tool(google_search=types.GoogleSearch()),
     types.Tool(
         function_declarations=[
             types.FunctionDeclaration(
@@ -1491,8 +1594,52 @@ cretai_tools = [
                 ),
             ),
             types.FunctionDeclaration(
+                name="utworz_nowe_miejsce",
+                description=(
+                    "Tworzy i zapisuje nowe miejsce/atrakcję w bazie danych CretAi. "
+                    "Przed wywołaniem użyj Google Search, aby znaleźć dokładne współrzędne (lat, lon), "
+                    "godziny otwarcia i bilety. Samodzielnie wygeneruj analizę sensoryczną AuDHD, "
+                    "ryzyko meltdownu, strategię zaradczą oraz zadania dla dzieci."
+                ),
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca"),
+                        "typ": types.Schema(type=types.Type.STRING, description="Plaża, Must have, Nice to have, Activity, Shop, Other"),
+                        "wspolrzedne": types.Schema(type=types.Type.STRING, description="Współrzędne 'lat, lon', np. '35.5138, 24.0180'"),
+                        "orientacyjny_czas": types.Schema(type=types.Type.STRING, description="Rekomendowany czas na miejscu, np. '1.5h', '45 min'"),
+                        "koszt": types.Schema(type=types.Type.STRING, description="Szacowany koszt dla 2+2 (np. 'Bilety 24€', 'Bezpłatne')"),
+                        "godziny_otwarcia": types.Schema(type=types.Type.STRING, description="np. '08:00 - 20:00' lub 'Całodobowo'"),
+                        "konieczna_akcja": types.Schema(type=types.Type.STRING, description="np. 'Rezerwacja online', 'Gotówka na parking'"),
+                        "trudnosc_adhd": types.Schema(type=types.Type.STRING, description="'Niski', 'Średni' lub 'Wysoki'"),
+                        "ochrona_slonce": types.Schema(type=types.Type.STRING, description="np. 'Pełne słońce / Patelnia', 'Częściowy cień', 'Klimatyzacja'"),
+                        "potencjal_meltdownu": types.Schema(type=types.Type.STRING, description="'Niski', 'Średni' lub 'Wysoki'"),
+                        "strategie_meltdown": types.Schema(type=types.Type.STRING, description="Konkretna taktyka: gdzie uciec w cień, wyciszenie, przekąska"),
+                        "opis": types.Schema(type=types.Type.STRING, description="Krótki, praktyczny opis atrakcji"),
+                        "zadania_dla_dzieci": types.Schema(type=types.Type.STRING, description="3-4 angażujące misje dla dzieci oddzielone nową linią"),
+                    },
+                    required=["nazwa", "typ", "wspolrzedne", "ochrona_slonce", "potencjal_meltdownu", "strategie_meltdown", "opis", "zadania_dla_dzieci"]
+                ),
+            ),
+            types.FunctionDeclaration(
+                name="utworz_nowa_wycieczke",
+                description="Tworzy nową wycieczkę ze szkieletem bazy w Stavros i ustawia ją jako aktualną.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Tytuł nowej trasy"),
+                        "planowana_data": types.Schema(type=types.Type.STRING, description="RRRR-MM-DD"),
+                        "pobudka": types.Schema(type=types.Type.STRING, description="Godzina pobudki np. '06:00'"),
+                        "czas_wyjazdu": types.Schema(type=types.Type.STRING, description="Godzina wyjazdu np. '06:30'"),
+                        "opis": types.Schema(type=types.Type.STRING, description="Główny cel wycieczki"),
+                        "taktyka_dnia": types.Schema(type=types.Type.STRING, description="Strategia unikania upału i meltdownu")
+                    },
+                    required=["tytul_wycieczki"]
+                ),
+            ),
+            types.FunctionDeclaration(
                 name="sprawdz_pogode",
-                description="Pobiera prognozę pogody (temperaturę, odczuwalną, wiatr, indeks UV) dla podanych współrzędnych i daty.",
+                description="Pobiera prognozę pogody dla podanych współrzędnych i daty.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1505,19 +1652,19 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="dodaj_sklep_przy_domku",
-                description="Dodaje lokalny sklep/market przy domku w Stavros jako krok wycieczki. Zwraca id_kroku nowo dodanego sklepu.",
+                description="Dodaje lokalny sklep/market przy domku w Stavros jako krok wycieczki.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
                         "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID aktywnej wycieczki"),
-                        "pozycja": types.Schema(type=types.Type.STRING, description="'start' (rano po wyjeździe) lub 'koniec' (po południu / w drodze powrotnej przed domkiem)"),
+                        "pozycja": types.Schema(type=types.Type.STRING, description="'start' lub 'koniec'"),
                     },
                     required=["id_wycieczki"]
                 ),
             ),
             types.FunctionDeclaration(
                 name="usun_sklep_z_wycieczki",
-                description="Usuwa krok sklepu/marketu przy domku z trasy wycieczki. ZAWSZE wywołaj to narzędzie, gdy użytkownik prosi o usunięcie sklepu/marketu.",
+                description="Usuwa krok sklepu z trasy wycieczki.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1540,7 +1687,7 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="usun_rynek_z_wycieczki",
-                description="Usuwa targ miejski (Laiki) w Chanii z trasy wycieczki.",
+                description="Usuwa targ miejski (Laiki) z trasy wycieczki.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1580,7 +1727,7 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="usun_wycieczke",
-                description="Usuwa całą wycieczkę z bazy danych wraz z jej wszystkimi krokami, posiłkami i zakupami. Wywołaj WYŁĄCZNIE po wyraźnej prośbie użytkownika o usunięcie/skasowanie wycieczki.",
+                description="Usuwa całą wycieczkę z bazy danych wraz z krokami.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1630,16 +1777,16 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="zarzadzaj_posilkiem_kroku",
-                description="Dodaje główny posiłek (śniadanie, obiad, kolacja).",
+                description="Dodaje posiłek stabilizujący (śniadanie, obiad, kolacja, lunchbox).",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
                         "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
                         "id_kroku": types.Schema(type=types.Type.STRING, description="ID kroku wycieczki"),
-                        "rodzaj_posilku": types.Schema(type=types.Type.STRING, description="'śniadanie', 'obiad' lub 'kolacja'"),
-                        "miejsce": types.Schema(type=types.Type.STRING, description="'w domku', 'restauracja' lub 'po drodze'"),
+                        "rodzaj_posilku": types.Schema(type=types.Type.STRING, description="'śniadanie', 'obiad', 'kolacja' lub 'lunchbox'"),
+                        "miejsce": types.Schema(type=types.Type.STRING, description="'w domku', 'z domu (lunchbox)', 'restauracja' lub 'po drodze'"),
                         "sugerowana_godzina": types.Schema(type=types.Type.STRING, description="Godzina np. '13:30'"),
-                        "opis": types.Schema(type=types.Type.STRING, description="Opis posiłku")
+                        "opis": types.Schema(type=types.Type.STRING, description="Opis posiłku (dla lunchboxa: safe food prowiant)")
                     },
                     required=["id_wycieczki", "id_kroku", "rodzaj_posilku"]
                 ),
@@ -1671,7 +1818,7 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="dodaj_wiele_produktow_zakupow",
-                description="Dodaje całą listę produktów/składników do listy zakupów. ZAWSZE podawaj id_kroku sklepu, jeśli zakupy są powiązane ze sklepem.",
+                description="Dodaje listę produktów do listy zakupów.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1681,14 +1828,14 @@ cretai_tools = [
                             items=types.Schema(
                                 type=types.Type.OBJECT,
                                 properties={
-                                    "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa produktu, np. 'Bakłażany'"),
-                                    "ilosc": types.Schema(type=types.Type.STRING, description="Ilość np. '2 szt' lub '500g'")
+                                    "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa produktu"),
+                                    "ilosc": types.Schema(type=types.Type.STRING, description="Ilość")
                                 },
                                 required=["nazwa"]
                             ),
                             description="Lista składników do kupienia"
                         ),
-                        "id_kroku": types.Schema(type=types.Type.STRING, description="ID kroku sklepu z dodaj_sklep_przy_domku (lub None)")
+                        "id_kroku": types.Schema(type=types.Type.STRING, description="ID kroku sklepu")
                     },
                     required=["id_wycieczki", "produkty"]
                 ),
@@ -1699,6 +1846,8 @@ cretai_tools = [
 
 NARZEDZIA_DISPATCHER = {
     "szukaj_miejsca_w_bazie": lambda args: szukaj_miejsca_w_bazie(**args) or {"error": "Brak miejsca w bazie."},
+    "utworz_nowe_miejsce": lambda args: utworz_nowe_miejsce(**args),
+    "utworz_nowa_wycieczke": lambda args: utworz_nowa_wycieczke(**args),
     "sprawdz_pogode": lambda args: pobierz_szczegoly_pogody_dla_godziny(**args) or {"error": "Brak danych pogodowych."},
     "dodaj_sklep_przy_domku": lambda args: dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki=args.get("id_wycieczki"), pozycja=args.get("pozycja", "koniec")),
     "usun_sklep_z_wycieczki": lambda args: usun_sklep_z_wycieczki_handler(args.get("id_wycieczki")),
@@ -1728,8 +1877,9 @@ def pobierz_migawke_bazy(id_wycieczki):
     with get_db() as conn:
         kroki = pd.read_sql('SELECT id, nazwa, okienko_zwiedzania FROM krok_wycieczki WHERE id_wycieczki = ?', conn, params=(str(id_wycieczki),)).to_dict('records')
         wycieczki = pd.read_sql('SELECT id, tytul_wycieczki, planowana_data, czas_wyjazdu FROM wycieczka', conn).to_dict('records')
+        miejsca = pd.read_sql('SELECT numer_miejsca, nazwa FROM miejsca', conn).to_dict('records')
         zakupy = pd.read_sql('SELECT id, nazwa_produktu FROM zakupy WHERE id_wycieczki = ?', conn, params=(str(id_wycieczki),)).to_dict('records')
-    return {"kroki": kroki, "wycieczki": wycieczki, "zakupy": zakupy}
+    return {"kroki": kroki, "wycieczki": wycieczki, "miejsca": miejsca, "zakupy": zakupy}
 
 def weryfikuj_zmiany_w_bazie(stan_przed, stan_po):
     zmiany = []
@@ -1737,6 +1887,9 @@ def weryfikuj_zmiany_w_bazie(stan_przed, stan_po):
         zmiany.append("Usunięto wycieczkę z bazy")
     elif len(stan_po["wycieczki"]) > len(stan_przed["wycieczki"]):
         zmiany.append("Dodano nową wycieczkę do bazy")
+
+    if len(stan_po["miejsca"]) > len(stan_przed["miejsca"]):
+        zmiany.append("Dodano nowe miejsce do bazy miejsc")
 
     if len(stan_po["kroki"]) > len(stan_przed["kroki"]):
         zmiany.append("Dodano nowy krok do trasy wycieczki")
@@ -1754,6 +1907,7 @@ def wczytaj_kontekst_zewnetrzny(id_wycieczki):
     with get_db() as conn:
         wyc_df = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(id_wycieczki),))
         kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn, params=(str(id_wycieczki),))
+        miejsca_df = pd.read_sql('SELECT numer_miejsca, nazwa, typ, orientacyjny_czas, ochrona_slonce FROM miejsca ORDER BY CAST(numer_miejsca AS INTEGER) ASC', conn)
     
     opis = ""
     if not wyc_df.empty:
@@ -1761,6 +1915,9 @@ def wczytaj_kontekst_zewnetrzny(id_wycieczki):
         opis += f"\nAktualna wycieczka: #{w['id']} {w.get('tytul_wycieczki')}, data: {w.get('planowana_data')}, wyjazd: {w.get('czas_wyjazdu')}, powrót: {w.get('szacowana_godzina_powrotu')}."
     if not kroki_df.empty:
         opis += "\nKroki trasy:\n" + "\n".join([f"- Krok {r['krok_wycieczki']} (ID:{r['id']}): {r['nazwa']} ({r['okienko_zwiedzania']})" for _, r in kroki_df.iterrows()])
+    
+    if not miejsca_df.empty:
+        opis += "\n\nDOSTĘPNA BAZA MIEJSC DO WYCIECZEK:\n" + "\n".join([f"#{r['numer_miejsca']}. {r['nazwa']} [{r['typ']}, czas: {r['orientacyjny_czas']}, słońce: {r['ochrona_slonce']}]" for _, r in miejsca_df.iterrows()])
     
     return f"{reguly}\n{opis}"
 
@@ -1819,7 +1976,7 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"] if isinstance(message["content"], str) else "")
 
-        prompt = st.chat_input(f"Napisz np. 'wyjazd o 7:30', 'usuń tę wycieczkę'...", key=f"chat_input_{uzytkownik}_{akt_wyc_id}_{'inline' if inline else 'float'}")
+        prompt = st.chat_input(f"Napisz np. 'zaplanuj nową wycieczkę', 'dodaj Marathi do bazy'...", key=f"chat_input_{uzytkownik}_{akt_wyc_id}_{'inline' if inline else 'float'}")
         if prompt:
             zapisz_wiadomosc_w_db(uzytkownik, "user", prompt)
 
@@ -1847,20 +2004,26 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                     system_prompt = f"""Jesteś inteligentnym planerem i strażnikiem AuDHD/ADHD na Krecie (CretAi).
 Rozmawiasz z użytkownikiem, który ma na imię: {uzytkownik}.
 Dzisiejsza data: {dzisiaj_str}.
-ID aktywnej wycieczki, którą użytkownik aktualnie przegląda: {akt_wyc_id}.
+ID aktywnej wycieczki: {akt_wyc_id}.
 {zewnetrzny_kontekst}
 
-ZASADY KRYTYCZNE DOTYCZĄCE BAZY DANYCH I NARZĘDZI (FUNCTION CALLING):
-1. ZAWSZE FIZYCZNIE WYWOŁUJ DEDYKOWANE NARZĘDZIA:
-   - Dodanie sklepu przy domku: `dodaj_sklep_przy_domku(id_wycieczki, pozycja='start' lub 'koniec')`.
-   - Usunięcie sklepu: `usun_sklep_z_wycieczki(id_wycieczki)` (lub `usun_krok_wycieczki`).
-   - Usunięcie rynku/targu: `usun_rynek_z_wycieczki(id_wycieczki)`.
-   - Usunięcie CAŁEJ wycieczki (gdy użytkownik wyraźnie żąda skasowania wycieczki): `usun_wycieczke(id_wycieczki)`.
-   - Zakupy na danie: `dodaj_wiele_produktow_zakupow(id_wycieczki, produkty=[...], id_kroku=...)`.
-   - Jeśli użytkownik prosi o sklep ORAZ zakupy, wstaw produkty do ID nowo utworzonego sklepu!
-2. NIGDY nie twierdz w tekście, że coś dodałeś, usunąłeś lub zmieniłeś, dopóki narzędzie nie zwróci success=True.
-3. Jeśli narzędzie zwróci błąd lub odmowę (np. strażnik sjesty 11:30–15:30), poinformuj użytkownika wprost o odrzuceniu operacji i podaj powód.
-4. Zawsze przekazuj właściwe id_wycieczki (obecnie: "{akt_wyc_id}").
+ZASADY TWORZENIA I EDYCJI WYCIECZEK:
+1. Trasy budujesz TYLKO I WYŁĄCZNIE z miejsc istniejących w BAZIE MIEJSC (lub stałych punktów: Domek, Sklep przy domku, Targ Laiki).
+2. NIGDY nie używaj wyszukiwania Google do bezpośredniego wstawiania miejsc do wycieczki.
+3. Jeśli użytkownik prosi o dodanie do wycieczki miejsca, którego NIE MA w bazie:
+   - KROK 1: Użyj Google Search, aby znaleźć koordynaty, godziny i ceny, wygeneruj taktykę AuDHD i wywołaj `utworz_nowe_miejsce(...)`.
+   - KROK 2: Dopiero po dodaniu do bazy, wywołaj `dodaj_krok_wycieczki` z dokładną nazwą tego miejsca.
+4. ZAWSZE respektuj regułę sjesty (11:30–15:30: zakaz patelni/pełnego słońca) oraz przerwę na posiłek główny co max 4 godziny!
+
+ZASADY POSIŁKÓW I ENERGII (AuDHD):
+- Obiad: Dokładnie 1 obiad dziennie (w restauracji lub powrót do domku).
+- Kolacja: Zawsze w domku w Stavros po powrocie.
+- Lunchbox (max 2 na wycieczkę): Prowiant zabierany z domku, zeruje licznik 4h głodu.
+
+ZASADY TWORZENIA NOWEGO MIEJSCA (`utworz_nowe_miejsce`):
+- Tylko tutaj wolno Ci korzystać z Google Search do ustalenia koordynatów i detali logistycznych.
+- Samodzielnie wygeneruj parametry sensoryczne (`ochrona_slonce`, `potencjal_meltdownu`, `strategie_meltdown`) oraz 3-4 mikrozadania dla dzieci (`zadania_dla_dzieci`).
+- Czas dojazdu ze Stavros zostanie wyliczony automatycznie przez backend aplikacji.
 
 ZASADA OSOBOWEGO I DIREKTYWNEGO TONU:
 Zwracaj się do użytkownika po imieniu w sposób bardzo personalny:
@@ -1955,12 +2118,22 @@ Zwracaj się do użytkownika po imieniu w sposób bardzo personalny:
                                     oczekiwal_usuniecia_wycieczki = ("usuń" in prompt_low or "usun" in prompt_low or "skasuj" in prompt_low) and any(w in prompt_low for w in ["wycieczk", "tras", "plan"])
                                     oczekiwal_usuniecia_sklepu = ("usuń" in prompt_low or "usun" in prompt_low or "skasuj" in prompt_low) and any(w in prompt_low for w in ["sklep", "market", "targ", "rynek"])
                                     oczekiwal_dodania_sklepu = any(w in prompt_low for w in ["dodaj", "wstaw", "zaplanuj"]) and any(w in prompt_low for w in ["sklep", "market", "rynek", "targ"])
+                                    oczekiwal_nowej_wycieczki = ("nowa" in prompt_low or "nową" in prompt_low or "stwórz" in prompt_low or "utwórz" in prompt_low) and "wycieczk" in prompt_low
+                                    oczekiwal_nowego_miejsca = ("dodaj" in prompt_low or "nowe" in prompt_low) and ("miejsc" in prompt_low or "baz" in prompt_low or "plaż" in prompt_low or "zabytek" in prompt_low)
                                     
                                     liczba_krokow_przed = len(stan_przed["kroki"])
                                     liczba_krokow_po = len(stan_po["kroki"])
                                     
                                     brak_wymaganych_akcji = False
                                     braki_opis = []
+
+                                    if oczekiwal_nowej_wycieczki and len(stan_po["wycieczki"]) <= len(stan_przed["wycieczki"]):
+                                        brak_wymaganych_akcji = True
+                                        braki_opis.append("Nie wywołałeś narzędzia `utworz_nowa_wycieczke`")
+
+                                    if oczekiwal_nowego_miejsca and len(stan_po["miejsca"]) <= len(stan_przed["miejsca"]):
+                                        brak_wymaganych_akcji = True
+                                        braki_opis.append("Nie wywołałeś narzędzia `utworz_nowe_miejsce`")
 
                                     if oczekiwal_usuniecia_wycieczki and len(stan_po["wycieczki"]) >= len(stan_przed["wycieczki"]):
                                         brak_wymaganych_akcji = True
@@ -1985,7 +2158,7 @@ Zwracaj się do użytkownika po imieniu w sposób bardzo personalny:
                                         feedback_prompt = (
                                             f"SYSTEM AUDIT ERROR: Operacja niekompletna! "
                                             f"{'; '.join(braki_opis)}. "
-                                            f"Wywołaj teraz właściwe narzędzie (np. `usun_wycieczke`, `usun_sklep_z_wycieczki`, `usun_krok_wycieczki` lub `dodaj_sklep_przy_domku`). Nie odpowiadaj samym tekstem!"
+                                            f"Wywołaj teraz właściwe narzędzie (np. `utworz_nowa_wycieczke`, `utworz_nowe_miejsce`, `dodaj_krok_wycieczki`, `usun_wycieczke`, `usun_sklep_z_wycieczki`). Nie odpowiadaj samym tekstem!"
                                         )
                                         contents.append(types.Content(role="user", parts=[types.Part.from_text(text=feedback_prompt)]))
                                         continue
@@ -2101,7 +2274,6 @@ def pobierz_skrocone_opcje_wycieczek(pokaz_ukonczone=False):
 def pobierz_wycieczki_dla_miejsca(numer_miejsca, nazwa_miejsca):
     with get_db() as conn:
         cursor = conn.cursor()
-        # Precyzyjne dopasowanie miejsca do trasy wycieczki po nazwie
         nazwa_czysta = nazwa_miejsca.split('(')[0].strip().lower()
         cursor.execute('''
             SELECT DISTINCT w.id, w.tytul_wycieczki
