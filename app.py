@@ -158,21 +158,18 @@ def dopasuj_krok_do_bazy_miejsc(nazwa_kroku, wspolrzedne_kroku, df_miejsca_ref):
 
     czysta_krok = _wyczysc_nazwe_miejsca(nazwa_l)
 
-    # 1. Dokładne dopasowanie po nazwie oczyszczonej
     for _, m in df_miejsca_ref.iterrows():
         m_nazwa_l = str(m['nazwa']).strip().lower()
         m_czysta = _wyczysc_nazwe_miejsca(m_nazwa_l)
         if czysta_krok == m_czysta or nazwa_l == m_nazwa_l:
             return m
 
-    # 2. Dopasowanie zawierania (min. 4 znaki)
     for _, m in df_miejsca_ref.iterrows():
         m_nazwa_l = str(m['nazwa']).strip().lower()
         m_czysta = _wyczysc_nazwe_miejsca(m_nazwa_l)
         if len(m_czysta) >= 4 and (m_czysta in czysta_krok or czysta_krok in m_czysta):
             return m
 
-    # 3. Precyzyjne dopasowanie geodezyjne (współrzędne w promieniu ~300m)
     lat_k, lon_k = sparsuj_wspolrzedne(wspolrzedne_kroku)
     if lat_k is not None and lon_k is not None:
         for _, m in df_miejsca_ref.iterrows():
@@ -190,7 +187,7 @@ def _reindex_kroki(cursor, id_wycieczki):
     for idx, (k_id,) in enumerate(kroki):
         cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k_id))
 
-def _wstaw_krok_do_wycieczki(cursor, id_wycieczki, nazwa, wspolrzedne, okienko, opis, podsumowanie_taktyki=None, pozycja="koniec"):
+def _wstaw_krok_do_wycieczki(cursor, id_wycieczki, nazwa, wspolrzedne, okienko, opis, numer_miejsca=None, podsumowanie_taktyki=None, pozycja="koniec"):
     cursor.execute('SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
     rows = cursor.fetchall()
     
@@ -203,9 +200,9 @@ def _wstaw_krok_do_wycieczki(cursor, id_wycieczki, nazwa, wspolrzedne, okienko, 
             insert_idx = len(rows)
 
     cursor.execute('''
-        INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, podsumowanie_taktyki, opis)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (str(id_wycieczki), insert_idx, nazwa, wspolrzedne, okienko, podsumowanie_taktyki, opis))
+        INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, numer_miejsca, nazwa, wspolrzedne, okienko_zwiedzania, podsumowanie_taktyki, opis)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (str(id_wycieczki), insert_idx, numer_miejsca, nazwa, wspolrzedne, okienko, podsumowanie_taktyki, opis))
     nowy_id = cursor.lastrowid
 
     _reindex_kroki(cursor, id_wycieczki)
@@ -360,24 +357,6 @@ def init_db():
         ''')
 
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS krok_wycieczki (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                id_wycieczki TEXT,
-                krok_wycieczki INTEGER,
-                nazwa TEXT,
-                wspolrzedne TEXT,
-                okienko_zwiedzania TEXT,
-                godzina_ewakuacji TEXT,
-                czerwona_strefa_ostrzezenie TEXT,
-                strefa_luzu_i_regeneracji TEXT,
-                podsumowanie_taktyki TEXT,
-                potencjal_meltdownu TEXT,
-                strategie_meltdown TEXT,
-                opis TEXT
-            )
-        ''')
-
-        cursor.execute('''
             CREATE TABLE IF NOT EXISTS miejsca (
                 numer_miejsca TEXT PRIMARY KEY,
                 nazwa TEXT,
@@ -395,6 +374,27 @@ def init_db():
                 opis TEXT,
                 zadania_dla_dzieci TEXT,
                 odwiedzone INTEGER DEFAULT 0
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS krok_wycieczki (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_wycieczki TEXT,
+                krok_wycieczki INTEGER,
+                numer_miejsca TEXT,
+                nazwa TEXT,
+                wspolrzedne TEXT,
+                okienko_zwiedzania TEXT,
+                godzina_ewakuacji TEXT,
+                czerwona_strefa_ostrzezenie TEXT,
+                strefa_luzu_i_regeneracji TEXT,
+                podsumowanie_taktyki TEXT,
+                potencjal_meltdownu TEXT,
+                strategie_meltdown TEXT,
+                opis TEXT,
+                FOREIGN KEY (numer_miejsca) REFERENCES miejsca(numer_miejsca) ON DELETE SET NULL,
+                FOREIGN KEY (id_wycieczki) REFERENCES wycieczka(id) ON DELETE CASCADE
             )
         ''')
 
@@ -467,6 +467,7 @@ def init_db():
         cursor.execute('INSERT OR IGNORE INTO aktywna_wycieczka (id, aktualne_id_wycieczki) VALUES (1, "1")')
 
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_krok_wyc ON krok_wycieczki(id_wycieczki)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_krok_miejsce ON krok_wycieczki(numer_miejsca)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_posilki_krok ON posilki_kroku(id_kroku)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_zakupy_wyc ON zakupy(id_wycieczki)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_czasy_dojazd ON czasy_dojazdu(id_kroku_z, id_kroku_do)')
@@ -550,6 +551,8 @@ def init_db():
                     dzisiaj_str = date.today().strftime("%Y-%m-%d")
                     unikalne_wycieczki = df_csv['id_wycieczki'].unique()
 
+                    col_nr_miejsca_csv = find_col(['numer_miejsca', 'numer miejsca', 'id_miejsca', 'nr_miejsca'], df_csv)
+
                     for wid in unikalne_wycieczki:
                         w_df = df_csv[df_csv['id_wycieczki'] == wid]
                         first_row = w_df.iloc[0]
@@ -578,14 +581,20 @@ def init_db():
                             strefa_kroku = str(r.get('strefa_luzu_i_regeneracji', '')).strip() if pd.notna(r.get('strefa_luzu_i_regeneracji')) else None
                             taktyka_kroku = str(r.get('podsumowanie_taktyki', '')).strip() if pd.notna(r.get('podsumowanie_taktyki')) else None
                             
+                            numer_m_val = str(r.get(col_nr_miejsca_csv)).strip() if (col_nr_miejsca_csv and pd.notna(r.get(col_nr_miejsca_csv))) else None
+                            if not numer_m_val or numer_m_val in ['nan', '-', 'None']:
+                                cursor.execute("SELECT numer_miejsca FROM miejsca WHERE LOWER(nazwa) = LOWER(?)", (nazwa_kroku,))
+                                res_m = cursor.fetchone()
+                                numer_m_val = res_m[0] if res_m else None
+
                             cursor.execute('''
                                 INSERT INTO krok_wycieczki (
-                                    id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania,
+                                    id_wycieczki, krok_wycieczki, numer_miejsca, nazwa, wspolrzedne, okienko_zwiedzania,
                                     godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji,
                                     podsumowanie_taktyki, opis
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ''', (
-                                str(wid), step_counter, nazwa_kroku, wsp_kroku, okienko_kroku,
+                                str(wid), step_counter, numer_m_val, nazwa_kroku, wsp_kroku, okienko_kroku,
                                 ewak_kroku, czerwona_kroku, strefa_kroku, taktyka_kroku, nazwa_kroku
                             ))
                             nowy_krok_id = cursor.lastrowid
@@ -661,23 +670,30 @@ def zmien_status_odwiedzenia_miejsca(nr_miejsca, nowy_status):
     st.cache_data.clear()
 
 def ustaw_status_odwiedzenia_dla_wycieczki(wycieczka_id, nowy_status):
+    status_int = 1 if nowy_status else 0
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("UPDATE wycieczka SET odbyta = ? WHERE id = ?", (1 if nowy_status else 0, str(wycieczka_id)))
+        cursor.execute("UPDATE wycieczka SET odbyta = ? WHERE id = ?", (status_int, str(wycieczka_id)))
         
-        cursor.execute("SELECT nazwa, wspolrzedne FROM krok_wycieczki WHERE id_wycieczki = ?", (str(wycieczka_id),))
-        kroki = cursor.fetchall()
+        cursor.execute('''
+            UPDATE miejsca 
+            SET odwiedzone = ? 
+            WHERE numer_miejsca IN (
+                SELECT numer_miejsca 
+                FROM krok_wycieczki 
+                WHERE id_wycieczki = ? AND numer_miejsca IS NOT NULL AND numer_miejsca != ''
+            )
+        ''', (status_int, str(wycieczka_id)))
         
-        df_all = pd.read_sql("SELECT numer_miejsca, nazwa, wspolrzedne FROM miejsca", conn)
-        
-        matched_nums = set()
-        for k_nazwa, k_wsp in kroki:
-            m = dopasuj_krok_do_bazy_miejsc(k_nazwa, k_wsp, df_all)
-            if m is not None:
-                matched_nums.add(str(m['numer_miejsca']).strip())
-                
-        for nr in matched_nums:
-            cursor.execute("UPDATE miejsca SET odwiedzone = ? WHERE TRIM(numer_miejsca) = ?", (1 if nowy_status else 0, nr))
+        cursor.execute("SELECT nazwa, wspolrzedne FROM krok_wycieczki WHERE id_wycieczki = ? AND (numer_miejsca IS NULL OR numer_miejsca = '')", (str(wycieczka_id),))
+        kroki_bez_fk = cursor.fetchall()
+        if kroki_bez_fk:
+            df_all = pd.read_sql("SELECT numer_miejsca, nazwa, wspolrzedne FROM miejsca", conn)
+            for k_nazwa, k_wsp in kroki_bez_fk:
+                m = dopasuj_krok_do_bazy_miejsc(k_nazwa, k_wsp, df_all)
+                if m is not None:
+                    cursor.execute("UPDATE miejsca SET odwiedzone = ? WHERE TRIM(numer_miejsca) = ?", (status_int, str(m['numer_miejsca']).strip()))
+
         conn.commit()
     st.cache_data.clear()
 
@@ -1294,8 +1310,17 @@ def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df, df_wszystkie_miejs
         nazwa_kroku = str(krok.get('nazwa', '')).strip()
         wsp_kroku = str(krok.get('wspolrzedne', '')).strip()
         krok_id = krok.get('id')
+        nr_fk = krok.get('numer_miejsca')
 
-        m_row = dopasuj_krok_do_bazy_miejsc(nazwa_kroku, wsp_kroku, df_wszystkie_miejsca_ref)
+        m_row = None
+        if pd.notna(nr_fk) and str(nr_fk).strip() and str(nr_fk).strip() not in ['None', 'nan', '']:
+            match_df = df_wszystkie_miejsca_ref[df_wszystkie_miejsca_ref['numer_miejsca'].astype(str) == str(nr_fk).strip()]
+            if not match_df.empty:
+                m_row = match_df.iloc[0]
+
+        if m_row is None:
+            m_row = dopasuj_krok_do_bazy_miejsc(nazwa_kroku, wsp_kroku, df_wszystkie_miejsca_ref)
+
         if m_row is not None:
             zadania_raw = m_row.get('zadania_dla_dzieci', '')
             zadania = sparsuj_liste_zadan(zadania_raw)
@@ -1311,12 +1336,10 @@ def znajdz_id_kroku_w_db(cursor, id_wycieczki, identyfikator):
     cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
     rows = cursor.fetchall()
     
-    # 1. Dokładne dopasowanie po ID bazy lub numerze kroku
     for r_id, r_num, r_nazwa in rows:
         if str(r_id) == str(identyfikator) or str(r_num) == str(identyfikator):
             return r_id, r_nazwa
 
-    # 2. Dopasowanie po nazwie miejsca
     for r_id, r_num, r_nazwa in rows:
         nazwa_l = r_nazwa.lower()
         if ident_str in nazwa_l or nazwa_l in ident_str:
@@ -1456,10 +1479,6 @@ def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="4
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ''', (
             nowy_nr, nazwa.strip(), kat_norm, wspolrzedne.strip(), czas_dojazdu_z_domku,
-            orientacyjny_czas, koszt, godziny_otwarcia, koniecz_akc, trud_adhd,
-            ochr_slonce, potencjal_m, strat_m, opis, zadania_d
-        ) if 'strat_m' in locals() else (
-            nowy_nr, nazwa.strip(), kat_norm, wspolrzedne.strip(), czas_dojazdu_z_domku,
             orientacyjny_czas, koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd,
             ochrona_slonce, potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci
         ))
@@ -1492,8 +1511,8 @@ def utworz_nowa_wycieczke(tytul_wycieczki, planowana_data=None, pobudka="06:00",
         ''', (nowe_id, tytul_wycieczki, opis, taktyka_dnia, pobudka, czas_wyjazdu, data_val))
 
         cursor.execute('''
-            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis)
-            VALUES (?, 0, 'Nasz Domek (Start)', ?, ?, 'Poranne przygotowanie i bezpieczne śniadanie')
+            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, numer_miejsca, nazwa, wspolrzedne, okienko_zwiedzania, opis)
+            VALUES (?, 0, NULL, 'Nasz Domek (Start)', ?, ?, 'Poranne przygotowanie i bezpieczne śniadanie')
         ''', (nowe_id, f"{DOMEK_LAT}, {DOMEK_LON}", f"{pobudka} - {czas_wyjazdu}"))
         id_start = cursor.lastrowid
         
@@ -1523,6 +1542,7 @@ def dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki, pozycja="koniec"):
             wspolrzedne=f"{SKLEP_LAT}, {SKLEP_LON}",
             okienko='16:00 - 16:30',
             opis='',
+            numer_miejsca=None,
             pozycja=pozycja
         )
         conn.commit()
@@ -1565,6 +1585,7 @@ def dodaj_rynek_w_chanii_do_wycieczki(id_wycieczki, pozycja="start"):
             wspolrzedne=wsp,
             okienko='08:30 - 09:30',
             opis=opis,
+            numer_miejsca=None,
             pozycja=pozycja
         )
         conn.commit()
@@ -1612,6 +1633,7 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 -
     miejsce = szukaj_miejsca_w_bazie(nazwa_z_bazy)
     wsp = miejsce.get("wspolrzedne", f"{SKLEP_LAT}, {SKLEP_LON}") if miejsce else f"{SKLEP_LAT}, {SKLEP_LON}"
     opis = miejsce.get("opis", "") if miejsce else ""
+    nr_miejsca = miejsce.get("numer_miejsca") if miejsce else None
 
     with get_db() as conn:
         cursor = conn.cursor()
@@ -1622,13 +1644,14 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 -
             wspolrzedne=wsp,
             okienko=okienko_zwiedzania,
             opis=opis,
+            numer_miejsca=nr_miejsca,
             podsumowanie_taktyki=podsumowanie_taktyki,
             pozycja="koniec"
         )
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
-    return {"success": True, "action": "dodaj_krok_wycieczki", "id_kroku": nowy_id, "message": f"Dodano punkt {nazwa_z_bazy}."}
+    return {"success": True, "action": "dodaj_krok_wycieczki", "id_kroku": nowy_id, "message": f"Dodano punkt {nazwa_z_bazy} (#{nr_miejsca})."}
 
 def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, okienko_zwiedzania):
     with get_db() as conn:
@@ -1726,12 +1749,12 @@ def duplikuj_wycieczke(id_zrodlowe):
             
             cursor.execute('''
                 INSERT INTO krok_wycieczki (
-                    id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania,
+                    id_wycieczki, krok_wycieczki, numer_miejsca, nazwa, wspolrzedne, okienko_zwiedzania,
                     godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji,
                     podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                nowe_id, k_dict.get('krok_wycieczki'), k_dict.get('nazwa'), k_dict.get('wspolrzedne'),
+                nowe_id, k_dict.get('krok_wycieczki'), k_dict.get('numer_miejsca'), k_dict.get('nazwa'), k_dict.get('wspolrzedne'),
                 k_dict.get('okienko_zwiedzania'), k_dict.get('godzina_ewakuacji'), k_dict.get('czerwona_strefa_ostrzezenie'),
                 k_dict.get('strefa_luzu_i_regeneracji'), k_dict.get('podsumowanie_taktyki'),
                 k_dict.get('potencjal_meltdownu'), k_dict.get('strategie_meltdown'), k_dict.get('opis')
@@ -2509,9 +2532,9 @@ def pobierz_wycieczki_dla_miejsca(numer_miejsca, nazwa_miejsca):
             SELECT DISTINCT w.id, w.tytul_wycieczki
             FROM wycieczka w
             JOIN krok_wycieczki k ON w.id = k.id_wycieczki
-            WHERE LOWER(k.nazwa) LIKE ? OR ? LIKE ('%' || LOWER(k.nazwa) || '%')
+            WHERE k.numer_miejsca = ? OR LOWER(k.nazwa) LIKE ? OR ? LIKE ('%' || LOWER(k.nazwa) || '%')
             ORDER BY CAST(w.id AS INTEGER) ASC
-        ''', (f"%{nazwa_czysta}%", nazwa_czysta))
+        ''', (str(numer_miejsca).strip(), f"%{nazwa_czysta}%", nazwa_czysta))
         rows = cursor.fetchall()
     return pd.DataFrame(rows, columns=['id', 'tytul_wycieczki'])
 
@@ -2679,9 +2702,18 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         lat_parsed, lon_parsed = sparsuj_wspolrzedne(wspolrzedne)
         nav_btn_html = f'<a href="https://www.google.com/maps/search/?api=1&query={coords_clean}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>' if (lat_parsed is not None and lon_parsed is not None) else ""
 
-        # Precyzyjne dopasowanie miejsca do bazy
-        m_dopasowane_krok = dopasuj_krok_do_bazy_miejsc(nazwa, wspolrzedne, df_wszystkie_miejsca_ref)
-        matched_place_id = str(m_dopasowane_krok['numer_miejsca']) if m_dopasowane_krok is not None else None
+        # Precyzyjne dopasowanie miejsca do bazy: najpierw FK, potem fallback
+        matched_place_id = str(k['numer_miejsca']).strip() if (pd.notna(k.get('numer_miejsca')) and str(k.get('numer_miejsca')).strip() not in ['', 'None', 'nan']) else None
+        m_dopasowane_krok = None
+        if matched_place_id:
+            m_match = df_wszystkie_miejsca_ref[df_wszystkie_miejsca_ref['numer_miejsca'].astype(str) == matched_place_id]
+            if not m_match.empty:
+                m_dopasowane_krok = m_match.iloc[0]
+
+        if m_dopasowane_krok is None:
+            m_dopasowane_krok = dopasuj_krok_do_bazy_miejsc(nazwa, wspolrzedne, df_wszystkie_miejsca_ref)
+            if m_dopasowane_krok is not None:
+                matched_place_id = str(m_dopasowane_krok['numer_miejsca'])
 
         if any(w in nazwa_lower for w in ["sklep", "market", "zakup", "rynek", "targ", "laiki"]):
             detected_icon = "🛒"
@@ -2781,8 +2813,8 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 place_url = f"?tab=zabytek&place={matched_place_id}&return_tab={cur_tab}&return_trip={wycieczka_id}"
                 place_link_html = (
                     f'<a href="{place_url}" target="_self" class="step-action-vertical-btn" '
-                    f'style="background-color: #FAF8F2 !important; border: 2px solid #8C5338 !important; color: #8C5338 !important; margin-bottom: 8px; font-weight: 900;">'
-                    f'<span>🏛️</span><span>Zobacz pełną kartę miejsca #{matched_place_id}</span></a>'
+                    f'style="background-color: #FAF8F2 !important; border: 2px solid #8C5338 !important; color: #8C5338 !important; margin-bottom: 8px; font-weight: 900; text-decoration: none;">'
+                    f'<span>🏛️</span><span>Pokaż kartę miejsca #{matched_place_id}</span></a>'
                 )
 
             details_inner_html = (
@@ -3340,7 +3372,6 @@ elif st.session_state.active_tab == "zabytek":
     docelowy_nr = selected_option.split(".")[0].strip() if selected_option else (str(st.session_state.active_place_id).strip() if st.session_state.active_place_id else None)
 
     if docelowy_nr:
-        # Zawsze świeże odpytanie bazy o rekord miejsca
         with get_db() as conn:
             p_df_fresh = pd.read_sql("SELECT * FROM miejsca WHERE TRIM(numer_miejsca) = ?", conn, params=(str(docelowy_nr).strip(),))
 
