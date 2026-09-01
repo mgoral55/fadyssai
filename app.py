@@ -624,7 +624,7 @@ div[data-testid="stPopover"] > button, div[data-testid="stPopover"] > button:dis
 div[data-testid="stPopover"] > button * { color: #2B2118 !important; font-weight: 900 !important; font-size: 1.05rem !important; }
 div[data-testid="stPopover"] > button:hover { border-color: #8C5338 !important; background-color: #EFE8D1 !important; }
 
-/* SPÓJNE STYLIZOWANIE WSZYSTKICH AKORDEONÓW (TAKŻE ZAGNIEŻDŻONYCH) */
+/* SPÓJNE STYLIZOWANIE WSZYSTKICH AKORDEONÓW */
 [data-testid="stExpander"], div[data-testid="stExpander"] { 
     border: 1.5px solid #E2DEC8 !important; 
     border-radius: 18px !important; 
@@ -1411,42 +1411,57 @@ def utworz_nowa_wycieczke(tytul_wycieczki, planowana_data=None, pobudka="06:00",
 def dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki, pozycja="koniec"):
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT id, krok_wycieczki FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
+        cursor.execute('SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
         rows = cursor.fetchall()
         
-        pos_num = 1 if pozycja == "start" else max(len(rows) - 1, 1)
-        
+        if pozycja == "start":
+            insert_idx = 1
+        else:
+            if len(rows) > 0 and any(w in str(rows[-1][1]).lower() for w in ["domek", "powrót", "powrot"]):
+                insert_idx = len(rows) - 1
+            else:
+                insert_idx = len(rows)
+
         cursor.execute('''
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis)
-            VALUES (?, ?, 'Sklep przy domku w Stavros', ?, '16:00 - 16:30', 'Lokalny market przy trasie powrotnej')
-        ''', (str(id_wycieczki), pos_num, f"{SKLEP_LAT}, {SKLEP_LON}"))
+            VALUES (?, ?, 'Sklep przy domku w Stavros', ?, '16:00 - 16:30', '')
+        ''', (str(id_wycieczki), insert_idx, f"{SKLEP_LAT}, {SKLEP_LON}"))
         nowy_id = cursor.lastrowid
-        
-        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY id ASC', (str(id_wycieczki),))
-        all_k = cursor.fetchall()
-        for idx, k in enumerate(all_k):
-            cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k[0]))
+
+        ordered_ids = [r[0] for r in rows]
+        ordered_ids.insert(insert_idx, nowy_id)
+
+        for idx, k_id in enumerate(ordered_ids):
+            cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k_id))
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
     return {"success": True, "action": "dodaj_sklep_przy_domku", "id_kroku": nowy_id, "message": "Pomyślnie dodano sklep."}
 
-def usun_sklep_z_wycieczki_handler(id_wycieczki):
+def usun_sklep_z_wycieczki_handler(id_wycieczki, pozycja=None):
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? AND (LOWER(nazwa) LIKE '%sklep%' OR LOWER(nazwa) LIKE '%market%')", (str(id_wycieczki),))
+        cursor.execute("SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC", (str(id_wycieczki),))
         rows = cursor.fetchall()
-        if not rows:
+        
+        shop_rows = [r for r in rows if any(w in str(r[2]).lower() for w in ['sklep', 'market'])]
+        if not shop_rows:
             return {"success": False, "message": "Nie znaleziono sklepu w tej wycieczce."}
         
-        for r in rows:
-            k_id = r[0]
-            cursor.execute("DELETE FROM zakupy WHERE id_kroku = ?", (k_id,))
-            cursor.execute("DELETE FROM posilki_kroku WHERE id_kroku = ?", (k_id,))
-            cursor.execute("DELETE FROM czasy_dojazdu WHERE id_kroku_z = ? OR id_kroku_do = ?", (k_id, k_id))
-            cursor.execute("DELETE FROM krok_wycieczki WHERE id = ?", (k_id,))
+        if pozycja == "start":
+            target = shop_rows[0]
+        elif pozycja == "koniec":
+            target = shop_rows[-1]
+        else:
+            target = shop_rows[0]
             
-        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY id ASC', (str(id_wycieczki),))
+        k_id = target[0]
+        cursor.execute("DELETE FROM zakupy WHERE id_kroku = ?", (k_id,))
+        cursor.execute("DELETE FROM posilki_kroku WHERE id_kroku = ?", (k_id,))
+        cursor.execute("DELETE FROM czasy_dojazdu WHERE id_kroku_z = ? OR id_kroku_do = ?", (k_id, k_id))
+        cursor.execute("DELETE FROM krok_wycieczki WHERE id = ?", (k_id,))
+
+        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
         all_k = cursor.fetchall()
         for idx, k in enumerate(all_k):
             cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k[0]))
@@ -1466,41 +1481,63 @@ def dodaj_rynek_w_chanii_do_wycieczki(id_wycieczki, pozycja="start"):
         wsp = rynek_info["coords"] if rynek_info else "35.5118, 24.0239"
         opis = f"Targ miejski: {rynek_info['opis_miejsca']}" if rynek_info else "Targ miejski Chania"
         
-        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
+        cursor.execute('SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
         rows = cursor.fetchall()
-        pos_num = 1 if pozycja == "start" else max(len(rows) - 1, 1)
+        
+        if pozycja == "start":
+            if len(rows) > 1 and any(w in str(rows[1][1]).lower() for w in ["sklep", "market"]):
+                insert_idx = 2
+            else:
+                insert_idx = 1
+        else:
+            if len(rows) > 0 and any(w in str(rows[-1][1]).lower() for w in ["domek", "powrót", "powrot"]):
+                if len(rows) > 1 and any(w in str(rows[-2][1]).lower() for w in ["sklep", "market"]):
+                    insert_idx = len(rows) - 2
+                else:
+                    insert_idx = len(rows) - 1
+            else:
+                insert_idx = len(rows)
 
         cursor.execute('''
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis)
             VALUES (?, ?, 'Rynek w Chanii (Laiki)', ?, '08:30 - 09:30', ?)
-        ''', (str(id_wycieczki), pos_num, wsp, opis))
+        ''', (str(id_wycieczki), insert_idx, wsp, opis))
         nowy_id = cursor.lastrowid
 
-        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY id ASC', (str(id_wycieczki),))
-        all_k = cursor.fetchall()
-        for idx, k in enumerate(all_k):
-            cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k[0]))
+        ordered_ids = [r[0] for r in rows]
+        ordered_ids.insert(insert_idx, nowy_id)
+
+        for idx, k_id in enumerate(ordered_ids):
+            cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k_id))
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
     return {"success": True, "action": "dodaj_rynek_w_chanii", "id_kroku": nowy_id, "message": "Pomyślnie dodano rynek w Chanii."}
 
-def usun_rynek_z_wycieczki_handler(id_wycieczki):
+def usun_rynek_z_wycieczki_handler(id_wycieczki, pozycja=None):
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? AND (LOWER(nazwa) LIKE '%rynek%' OR LOWER(nazwa) LIKE '%targ%' OR LOWER(nazwa) LIKE '%laiki%')", (str(id_wycieczki),))
+        cursor.execute("SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC", (str(id_wycieczki),))
         rows = cursor.fetchall()
-        if not rows:
+        
+        market_rows = [r for r in rows if any(w in str(r[2]).lower() for w in ['rynek', 'targ', 'laiki'])]
+        if not market_rows:
             return {"success": False, "message": "Nie znaleziono rynku w tej wycieczce."}
         
-        for r in rows:
-            k_id = r[0]
-            cursor.execute("DELETE FROM zakupy WHERE id_kroku = ?", (k_id,))
-            cursor.execute("DELETE FROM posilki_kroku WHERE id_kroku = ?", (k_id,))
-            cursor.execute("DELETE FROM czasy_dojazdu WHERE id_kroku_z = ? OR id_kroku_do = ?", (k_id, k_id))
-            cursor.execute("DELETE FROM krok_wycieczki WHERE id = ?", (k_id,))
+        if pozycja == "start":
+            target = market_rows[0]
+        elif pozycja == "koniec":
+            target = market_rows[-1]
+        else:
+            target = market_rows[0]
             
-        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY id ASC', (str(id_wycieczki),))
+        k_id = target[0]
+        cursor.execute("DELETE FROM zakupy WHERE id_kroku = ?", (k_id,))
+        cursor.execute("DELETE FROM posilki_kroku WHERE id_kroku = ?", (k_id,))
+        cursor.execute("DELETE FROM czasy_dojazdu WHERE id_kroku_z = ? OR id_kroku_do = ?", (k_id, k_id))
+        cursor.execute("DELETE FROM krok_wycieczki WHERE id = ?", (k_id,))
+
+        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
         all_k = cursor.fetchall()
         for idx, k in enumerate(all_k):
             cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k[0]))
@@ -1535,20 +1572,24 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 -
 
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
+        cursor.execute('SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
         rows = cursor.fetchall()
-        pos_num = max(len(rows) - 1, 1)
+        
+        insert_idx = len(rows)
+        if len(rows) > 0 and any(w in str(rows[-1][1]).lower() for w in ["domek", "powrót", "powrot"]):
+            insert_idx = len(rows) - 1
 
         cursor.execute('''
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, podsumowanie_taktyki, opis)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (str(id_wycieczki), pos_num, nazwa_z_bazy, wsp, okienko_zwiedzania, podsumowanie_taktyki, opis))
+        ''', (str(id_wycieczki), insert_idx, nazwa_z_bazy, wsp, okienko_zwiedzania, podsumowanie_taktyki, opis))
         nowy_id = cursor.lastrowid
 
-        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY id ASC', (str(id_wycieczki),))
-        all_k = cursor.fetchall()
-        for idx, k in enumerate(all_k):
-            cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k[0]))
+        ordered_ids = [r[0] for r in rows]
+        ordered_ids.insert(insert_idx, nowy_id)
+
+        for idx, k_id in enumerate(ordered_ids):
+            cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k_id))
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
@@ -1580,7 +1621,7 @@ def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
         cursor.execute("DELETE FROM czasy_dojazdu WHERE id_kroku_z = ? OR id_kroku_do = ?", (k_id, k_id))
         cursor.execute("DELETE FROM krok_wycieczki WHERE id = ?", (k_id,))
 
-        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY id ASC', (str(id_wycieczki),))
+        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
         all_k = cursor.fetchall()
         for idx, k in enumerate(all_k):
             cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k[0]))
@@ -1837,6 +1878,7 @@ cretai_tools = [
                     type=types.Type.OBJECT,
                     properties={
                         "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID aktywnej wycieczki"),
+                        "pozycja": types.Schema(type=types.Type.STRING, description="'start' lub 'koniec'"),
                     },
                     required=["id_wycieczki"]
                 ),
@@ -1860,6 +1902,7 @@ cretai_tools = [
                     type=types.Type.OBJECT,
                     properties={
                         "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID aktywnej wycieczki"),
+                        "pozycja": types.Schema(type=types.Type.STRING, description="'start' lub 'koniec'"),
                     },
                     required=["id_wycieczki"]
                 ),
@@ -2018,9 +2061,9 @@ NARZEDZIA_DISPATCHER = {
     "utworz_nowa_wycieczke": lambda args: utworz_nowa_wycieczke(**args),
     "sprawdz_pogode": lambda args: pobierz_szczegoly_pogody_dla_godziny(**args) or {"error": "Brak danych pogodowych."},
     "dodaj_sklep_przy_domku": lambda args: dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki=args.get("id_wycieczki"), pozycja=args.get("pozycja", "koniec")),
-    "usun_sklep_z_wycieczki": lambda args: usun_sklep_z_wycieczki_handler(args.get("id_wycieczki")),
+    "usun_sklep_z_wycieczki": lambda args: usun_sklep_z_wycieczki_handler(args.get("id_wycieczki"), pozycja=args.get("pozycja")),
     "dodaj_rynek_w_chanii": lambda args: dodaj_rynek_w_chanii_do_wycieczki(id_wycieczki=args.get("id_wycieczki"), pozycja=args.get("pozycja", "start")),
-    "usun_rynek_z_wycieczki": lambda args: usun_rynek_z_wycieczki_handler(args.get("id_wycieczki")),
+    "usun_rynek_z_wycieczki": lambda args: usun_rynek_z_wycieczki_handler(args.get("id_wycieczki"), pozycja=args.get("pozycja")),
     "dodaj_notatke": lambda args: dodaj_notatke(**args),
     "edytuj_wycieczke": lambda args: edytuj_wycieczke(**args),
     "usun_wycieczke": lambda args: usun_wycieczke(args.get("id_wycieczki")),
@@ -2403,14 +2446,29 @@ def potwierdz_zakonczenie_wycieczki_dialog(wycieczka_id, tytul, czy_odbyta):
                 cursor = conn.cursor()
                 cursor.execute("UPDATE wycieczka SET odbyta = ? WHERE id = ?", (nowy_status, str(wycieczka_id)))
                 
-                # Kaskadowa aktualizacja statusu odwiedzenia miejsc powiązanych z krokami wycieczki
+                # Pobranie kroków wycieczki oraz wszystkich miejsc do precyzyjnego dopasowania
                 cursor.execute("SELECT krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?", (str(wycieczka_id),))
                 kroki = cursor.fetchall()
+                
+                cursor.execute("SELECT numer_miejsca, nazwa FROM miejsca")
+                wszystkie_miejsca_db = cursor.fetchall()
+                
                 for k_num, k_nazwa in kroki:
-                    k_nazwa_clean = k_nazwa.strip()
+                    k_nazwa_clean = str(k_nazwa).strip().lower()
+                    
+                    # 1. Dopasowanie bezpośrednio po numerze kroku
                     if k_num and str(k_num).isdigit() and str(k_num) != "0":
                         cursor.execute("UPDATE miejsca SET odwiedzone = ? WHERE numer_miejsca = ?", (nowy_status, str(k_num)))
-                    cursor.execute("UPDATE miejsca SET odwiedzone = ? WHERE LOWER(nazwa) = LOWER(?)", (nowy_status, k_nazwa_clean))
+                    
+                    # 2. Dopasowanie po nazwie miejsca w bazie
+                    for m_num, m_nazwa in wszystkie_miejsca_db:
+                        m_nazwa_clean = str(m_nazwa).strip().lower()
+                        m_nazwa_bazowa = m_nazwa_clean.split('(')[0].strip()
+                        
+                        if m_nazwa_clean == k_nazwa_clean or \
+                           (len(m_nazwa_bazowa) > 3 and m_nazwa_bazowa in k_nazwa_clean) or \
+                           (len(m_nazwa_bazowa) > 3 and k_nazwa_clean in m_nazwa_bazowa):
+                            cursor.execute("UPDATE miejsca SET odwiedzone = ? WHERE numer_miejsca = ?", (nowy_status, str(m_num)))
                 
                 conn.commit()
             st.session_state["flash_toast"] = "🏁 Zaktualizowano status wycieczki oraz powiązanych miejsc!"
@@ -2599,7 +2657,6 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
     total_steps = len(kroki_df)
     timeline_full_html = ['<div class="timeline-master-container">', '<div class="timeline-master-continuous-line"></div>']
 
-    # Stały krok Pobudka ze śniadaniem
     df_pos_sniadanie = posilki_wszystkie_df[
         (posilki_wszystkie_df['id_kroku'].isin(kroki_df['id'].tolist())) & 
         (posilki_wszystkie_df['rodzaj_posilku'].str.lower().str.contains('śniadan|sniadan', na=False))
@@ -2630,7 +2687,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         godzina_start = okienko.split("-")[0].strip() if "-" in okienko else (okienko if okienko else "08:00")
         godzina_koniec = okienko.split("-")[1].strip() if "-" in okienko else str(k.get('godzina_ewakuacji', '')).strip()
         
-        is_cottage_step = any(w in nazwa_lower for w in ["domek", "powrót", "powrot", "start", "wyjazd"]) or (idx == 0) or (idx == total_steps - 1)
+        is_cottage_step = any(w in nazwa_lower for w in ["domek", "powrót", "powrot", "start", "wyjazd"])
 
         lat_parsed, lon_parsed = sparsuj_wspolrzedne(wspolrzedne)
         nav_btn_html = f'<a href="https://www.google.com/maps/search/?api=1&query={coords_clean}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>' if (lat_parsed is not None and lon_parsed is not None) else ""
@@ -2849,10 +2906,15 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
     with st.expander("🛒 Zaopatrzenie", expanded=False):
         st.markdown("<div style='font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 6px;'>⚡ Szybkie przystanki na trasie</div>", unsafe_allow_html=True)
-        has_shop_start = any("sklep" in str(r['nazwa']).lower() and int(r['krok_wycieczki']) == 1 for _, r in kroki_df.iterrows())
-        has_shop_end = any("sklep" in str(r['nazwa']).lower() and int(r['krok_wycieczki']) == max(len(kroki_df)-2, 1) for _, r in kroki_df.iterrows())
-        has_market_start = any(("rynek" in str(r['nazwa']).lower() or "targ" in str(r['nazwa']).lower()) and int(r['krok_wycieczki']) <= 2 for _, r in kroki_df.iterrows())
-        has_market_end = any(("rynek" in str(r['nazwa']).lower() or "targ" in str(r['nazwa']).lower()) and int(r['krok_wycieczki']) >= max(len(kroki_df)-3, 1) for _, r in kroki_df.iterrows())
+        
+        all_k_list = [r for _, r in kroki_df.iterrows()]
+        total_k_count = len(all_k_list)
+
+        has_shop_start = (total_k_count > 1 and "sklep" in str(all_k_list[1]['nazwa']).lower())
+        has_shop_end = (total_k_count > 2 and "sklep" in str(all_k_list[-2]['nazwa']).lower())
+
+        has_market_start = any(("rynek" in str(r['nazwa']).lower() or "targ" in str(r['nazwa']).lower()) and int(r['krok_wycieczki']) <= 2 for r in all_k_list)
+        has_market_end = any(("rynek" in str(r['nazwa']).lower() or "targ" in str(r['nazwa']).lower()) and int(r['krok_wycieczki']) >= max(total_k_count-3, 1) for r in all_k_list)
 
         rynek_dla_daty, _ = pobierz_dane_rynku_dla_daty(planowana_data_val)
         rynek_czynny = (rynek_dla_daty is not None)
@@ -2860,29 +2922,53 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         col_qs_am, col_qs_pm = st.columns(2)
         with col_qs_am:
             st.markdown("<div style='font-size: 7.5pt; font-weight: 800; color: #5D7A60; text-transform: uppercase; margin-bottom: 4px;'>🌅 Po wyjeździe</div>", unsafe_allow_html=True)
-            if st.button("✓ Sklep dodany" if has_shop_start else "🛒 Sklep rano", key=f"btn_add_shop_am_{wycieczka_id}", use_container_width=True, disabled=has_shop_start):
-                dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="start")
-                st.session_state["flash_toast"] = "🌅 Dodano Sklep po wyjeździe!"
-                st.rerun()
+            if has_shop_start:
+                if st.button("🗑️ Usuń sklep rano", key=f"btn_del_shop_am_{wycieczka_id}", use_container_width=True):
+                    usun_sklep_z_wycieczki_handler(wycieczka_id, pozycja="start")
+                    st.session_state["flash_toast"] = "🗑️ Usunięto Sklep po wyjeździe!"
+                    st.rerun()
+            else:
+                if st.button("🛒 Sklep rano", key=f"btn_add_shop_am_{wycieczka_id}", use_container_width=True):
+                    dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="start")
+                    st.session_state["flash_toast"] = "🌅 Dodano Sklep po wyjeździe!"
+                    st.rerun()
             
-            btn_market_am_label = "✓ Rynek dodany" if has_market_start else ("🛒 Rynek rano" if rynek_czynny else "🛒 Rynek (nieczynny)")
-            if st.button(btn_market_am_label, key=f"btn_add_market_am_{wycieczka_id}", use_container_width=True, disabled=(has_market_start or not rynek_czynny), help=f"Lokalizacja: {rynek_dla_daty['opis_miejsca']}" if rynek_czynny else "Dziś brak targu w Chanii"):
-                dodaj_rynek_w_chanii_do_wycieczki(wycieczka_id, pozycja="start")
-                st.session_state["flash_toast"] = f"🌅 Dodano Rynek w Chanii ({rynek_dla_daty['dzien_pl']})!"
-                st.rerun()
+            if has_market_start:
+                if st.button("🗑️ Usuń rynek rano", key=f"btn_del_market_am_{wycieczka_id}", use_container_width=True):
+                    usun_rynek_z_wycieczki_handler(wycieczka_id, pozycja="start")
+                    st.session_state["flash_toast"] = "🗑️ Usunięto Rynek rano!"
+                    st.rerun()
+            else:
+                btn_market_am_label = "🛒 Rynek rano" if rynek_czynny else "🛒 Rynek (nieczynny)"
+                if st.button(btn_market_am_label, key=f"btn_add_market_am_{wycieczka_id}", use_container_width=True, disabled=(not rynek_czynny), help=f"Lokalizacja: {rynek_dla_daty['opis_miejsca']}" if rynek_czynny else "Dziś brak targu w Chanii"):
+                    dodaj_rynek_w_chanii_do_wycieczki(wycieczka_id, pozycja="start")
+                    st.session_state["flash_toast"] = f"🌅 Dodano Rynek w Chanii ({rynek_dla_daty['dzien_pl']})!"
+                    st.rerun()
 
         with col_qs_pm:
             st.markdown("<div style='font-size: 7.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;'>🌇 Przed powrotem</div>", unsafe_allow_html=True)
-            if st.button("✓ Sklep dodany" if has_shop_end else "🛒 Sklep powrót", key=f"btn_add_shop_pm_{wycieczka_id}", use_container_width=True, disabled=has_shop_end):
-                dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="koniec")
-                st.session_state["flash_toast"] = "🌇 Dodano Sklep przed powrotem!"
-                st.rerun()
+            if has_shop_end:
+                if st.button("🗑️ Usuń sklep powrót", key=f"btn_del_shop_pm_{wycieczka_id}", use_container_width=True):
+                    usun_sklep_z_wycieczki_handler(wycieczka_id, pozycja="koniec")
+                    st.session_state["flash_toast"] = "🗑️ Usunięto Sklep przed powrotem!"
+                    st.rerun()
+            else:
+                if st.button("🛒 Sklep powrót", key=f"btn_add_shop_pm_{wycieczka_id}", use_container_width=True):
+                    dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="koniec")
+                    st.session_state["flash_toast"] = "🌇 Dodano Sklep przed powrotem!"
+                    st.rerun()
             
-            btn_market_pm_label = "✓ Rynek dodany" if has_market_end else ("🛒 Rynek powrót" if rynek_czynny else "🛒 Rynek (nieczynny)")
-            if st.button(btn_market_pm_label, key=f"btn_add_market_pm_{wycieczka_id}", use_container_width=True, disabled=(has_market_end or not rynek_czynny), help=f"Lokalizacja: {rynek_dla_daty['opis_miejsca']}" if rynek_czynny else "Dziś brak targu w Chanii"):
-                dodaj_rynek_w_chanii_do_wycieczki(wycieczka_id, pozycja="koniec")
-                st.session_state["flash_toast"] = f"🌇 Dodano Rynek w Chanii ({rynek_dla_daty['dzien_pl']})!"
-                st.rerun()
+            if has_market_end:
+                if st.button("🗑️ Usuń rynek powrót", key=f"btn_del_market_pm_{wycieczka_id}", use_container_width=True):
+                    usun_rynek_z_wycieczki_handler(wycieczka_id, pozycja="koniec")
+                    st.session_state["flash_toast"] = "🗑️ Usunięto Rynek powrót!"
+                    st.rerun()
+            else:
+                btn_market_pm_label = "🛒 Rynek powrót" if rynek_czynny else "🛒 Rynek (nieczynny)"
+                if st.button(btn_market_pm_label, key=f"btn_add_market_pm_{wycieczka_id}", use_container_width=True, disabled=(not rynek_czynny), help=f"Lokalizacja: {rynek_dla_daty['opis_miejsca']}" if rynek_czynny else "Dziś brak targu w Chanii"):
+                    dodaj_rynek_w_chanii_do_wycieczki(wycieczka_id, pozycja="koniec")
+                    st.session_state["flash_toast"] = f"🌇 Dodano Rynek w Chanii ({rynek_dla_daty['dzien_pl']})!"
+                    st.rerun()
 
         st.markdown("<div style='border-top: 1px solid #D6CEBC; margin: 10px 0 8px 0;'></div>", unsafe_allow_html=True)
 
@@ -2981,7 +3067,6 @@ if "place" in st.query_params:
     st.session_state.active_place_id = str(st.query_params["place"])
     st.session_state.active_tab = "zabytek"
 
-# Przechwytywanie informacji o powrocie do konkretnej wycieczki i widoku
 if "return_tab" in st.query_params:
     st.session_state.return_tab = st.query_params["return_tab"]
 if "return_trip" in st.query_params:
