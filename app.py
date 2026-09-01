@@ -55,6 +55,21 @@ def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
     except:
         return "~25 min", 25
 
+
+@st.cache_data(ttl=86400)
+def pobierz_geometrie_trasy_osrm(lat1, lon1, lat2, lon2):
+    url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=full&geometries=geojson"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
+        with urllib.request.urlopen(req, timeout=1.5) as response:
+            data = json.loads(response.read().decode())
+            if 'routes' in data and len(data['routes']) > 0:
+                coords = data['routes'][0]['geometry']['coordinates']
+                return [[c[1], c[0]] for c in coords]
+    except Exception:
+        pass
+    return [[lat1, lon1], [lat2, lon2]]
+
 def sparsuj_wspolrzedne(wsp_str):
     if not wsp_str or pd.isna(wsp_str):
         return None, None
@@ -157,7 +172,7 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
     czasy_pobytu = []
     for idx, k in enumerate(kroki):
         nazwa_l = str(k[4]).lower()
-        dur_def = 25 if any(w in nazwa_l for w in ["sklep", "market", "zakup", "apteka", "rynek", "targ"]) else (90 if ("plaż" in nazwa_l or "beach" in nazwa_l) else (30 if (idx == 0 or idx == len(kroki) - 1) else 60))
+        dur_def = 25 if any(w in nazwa_l for w in ["sklep", "market", "zakup", "apteka", "rynek", "targ"]) else (90 if ("plaż" in nazwa_l or "beach" in nazwa_l) else (30 if (idx == 0 or idx == len(kroki) - 1 or any(w in nazwa_l for w in ["powrót", "powrot", "domek"])) else 60))
         czasy_pobytu.append(oblicz_czas_trwania_okienka(k[3], domyslny_czas=dur_def))
 
     start_times, end_times = [None] * len(kroki), [None] * len(kroki)
@@ -435,90 +450,123 @@ def init_db():
 
         cursor.execute('SELECT COUNT(*) FROM wycieczka')
         if cursor.fetchone()[0] == 0 and os.path.exists('wycieczki.csv'):
-            try:
-                df_csv = pd.read_csv('wycieczki.csv')
-                dzisiaj_str = date.today().strftime("%Y-%m-%d")
-                unikalne_wycieczki = df_csv['id_wycieczki'].unique()
+            for enc in ['utf-8', 'utf-8-sig', 'cp1250', 'iso-8859-2']:
+                try:
+                    df_csv = pd.read_csv('wycieczki.csv', encoding=enc)
+                    df_csv.columns = [str(col).strip() for col in df_csv.columns]
+                    dzisiaj_str = date.today().strftime("%Y-%m-%d")
+                    unikalne_wycieczki = df_csv['id_wycieczki'].unique()
 
-                for wid in unikalne_wycieczki:
-                    w_df = df_csv[df_csv['id_wycieczki'] == wid]
-                    first_row = w_df.iloc[0]
+                    for wid in unikalne_wycieczki:
+                        w_df = df_csv[df_csv['id_wycieczki'] == wid]
+                        first_row = w_df.iloc[0]
 
-                    pobudka_raw = str(first_row.get('godzina_pobudki', '06:00')).strip()
-                    pobudka_val = pobudka_raw if (pobudka_raw and pobudka_raw != '-') else '06:00'
-                    
-                    tytul_val = str(first_row.get('tytul_wycieczki', f'Wycieczka {wid}'))
-                    opis_val = str(first_row.get('calosciowy_opis_wycieczki', ''))
-                    taktyka_val = str(first_row.get('calosciowa_taktyka_dnia', ''))
-
-                    cursor.execute('''
-                        INSERT INTO wycieczka (
-                            id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia,
-                            pobudka, planowana_data, szacowany_czas_ogarniania_rano, odbyta
-                        ) VALUES (?, ?, ?, ?, ?, ?, '0.5h', 0)
-                    ''', (str(wid), tytul_val, opis_val, taktyka_val, pobudka_val, dzisiaj_str))
-
-                    cursor.execute('''
-                        INSERT INTO krok_wycieczki (
-                            id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis
-                        ) VALUES (?, 0, 'Nasz Domek (Start)', ?, '06:00 - 06:30', 'Poranne przygotowanie i wyjazd z domku')
-                    ''', (str(wid), f"{DOMEK_LAT}, {DOMEK_LON}"))
-                    id_kroku_start = cursor.lastrowid
-
-                    cursor.execute('''
-                        INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
-                        VALUES (?, 'śniadanie', 'w domku', '06:00', 'Śniadanie przed wyruszeniem w trasę')
-                    ''', (id_kroku_start,))
-
-                    step_counter = 1
-                    for _, r in w_df.iterrows():
-                        nazwa_kroku = str(r.get('nazwa', '')).strip()
-                        wsp_kroku = str(r.get('wspolrzedne', '')).strip()
-                        okienko_kroku = str(r.get('okienko_zwiedzania', '')).strip()
-                        ewak_kroku = str(r.get('godzina_ewakuacji', '')).strip() if pd.notna(r.get('godzina_ewakuacji')) else None
-                        czerwona_kroku = str(r.get('czerwona_strefa_ostrzezenie', '')).strip() if pd.notna(r.get('czerwona_strefa_ostrzezenie')) else None
-                        strefa_kroku = str(r.get('strefa_luzu_i_regeneracji', '')).strip() if pd.notna(r.get('strefa_luzu_i_regeneracji')) else None
-                        taktyka_kroku = str(r.get('podsumowanie_taktyki', '')).strip() if pd.notna(r.get('podsumowanie_taktyki')) else None
+                        pobudka_raw = str(first_row.get('godzina_pobudki', '06:00')).strip()
+                        pobudka_val = pobudka_raw if (pobudka_raw and pobudka_raw != '-') else '06:00'
                         
+                        tytul_val = str(first_row.get('tytul_wycieczki', f'Wycieczka {wid}'))
+                        opis_val = str(first_row.get('calosciowy_opis_wycieczki', ''))
+                        taktyka_val = str(first_row.get('calosciowa_taktyka_dnia', ''))
+
+                        cursor.execute('''
+                            INSERT INTO wycieczka (
+                                id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia,
+                                pobudka, planowana_data, szacowany_czas_ogarniania_rano, odbyta
+                            ) VALUES (?, ?, ?, ?, ?, ?, '0.5h', 0)
+                        ''', (str(wid), tytul_val, opis_val, taktyka_val, pobudka_val, dzisiaj_str))
+
                         cursor.execute('''
                             INSERT INTO krok_wycieczki (
-                                id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania,
-                                godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji,
-                                podsumowanie_taktyki, opis
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (
-                            str(wid), step_counter, nazwa_kroku, wsp_kroku, okienko_kroku,
-                            ewak_kroku, czerwona_kroku, strefa_kroku, taktyka_kroku, nazwa_kroku
-                        ))
-                        nowy_krok_id = cursor.lastrowid
+                                id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis
+                            ) VALUES (?, 0, 'Nasz Domek (Start)', ?, '06:00 - 06:30', 'Poranne przygotowanie i wyjazd z domku')
+                        ''', (str(wid), f"{DOMEK_LAT}, {DOMEK_LON}"))
+                        id_kroku_start = cursor.lastrowid
 
-                        posilek_val = r.get('posilek')
-                        if pd.notna(posilek_val) and str(posilek_val).strip() and str(posilek_val).strip() != '-':
-                            p_str = str(posilek_val).strip()
-                            p_rodzaj = 'obiad' if any(w in p_str.lower() for w in ['obiad', 'lunch']) else ('kolacja' if 'kolacja' in p_str.lower() else ('lunchbox' if 'lunchbox' in p_str.lower() else 'przekąska'))
+                        cursor.execute('''
+                            INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
+                            VALUES (?, 'śniadanie', 'w domku', ?, 'Śniadanie')
+                        ''', (id_kroku_start, pobudka_val))
+
+                        step_counter = 1
+                        for _, r in w_df.iterrows():
+                            nazwa_kroku = str(r.get('nazwa', '')).strip()
+                            wsp_kroku = str(r.get('wspolrzedne', '')).strip()
+                            okienko_kroku = str(r.get('okienko_zwiedzania', '')).strip()
+                            ewak_kroku = str(r.get('godzina_ewakuacji', '')).strip() if pd.notna(r.get('godzina_ewakuacji')) else None
+                            czerwona_kroku = str(r.get('czerwona_strefa_ostrzezenie', '')).strip() if pd.notna(r.get('czerwona_strefa_ostrzezenie')) else None
+                            strefa_kroku = str(r.get('strefa_luzu_i_regeneracji', '')).strip() if pd.notna(r.get('strefa_luzu_i_regeneracji')) else None
+                            taktyka_kroku = str(r.get('podsumowanie_taktyki', '')).strip() if pd.notna(r.get('podsumowanie_taktyki')) else None
+                            
                             cursor.execute('''
-                                INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
-                                VALUES (?, ?, 'w kroku', '13:00', ?)
-                            ''', (nowy_krok_id, p_rodzaj, p_str))
+                                INSERT INTO krok_wycieczki (
+                                    id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania,
+                                    godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji,
+                                    podsumowanie_taktyki, opis
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ''', (
+                                str(wid), step_counter, nazwa_kroku, wsp_kroku, okienko_kroku,
+                                ewak_kroku, czerwona_kroku, strefa_kroku, taktyka_kroku, nazwa_kroku
+                            ))
+                            nowy_krok_id = cursor.lastrowid
 
-                        step_counter += 1
+                            nazwa_p_raw = r.get('nazwa_posilku')
+                            godz_p_raw = r.get('godzina_posilku')
+                            pos_raw = r.get('posilek')
 
-                    cursor.execute('''
-                        INSERT INTO krok_wycieczki (
-                            id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis
-                        ) VALUES (?, ?, 'Nasz Domek (Powrót)', ?, '17:00 - 18:00', 'Powrót do bazy, odpoczynek i kolacja')
-                    ''', (str(wid), step_counter, f"{DOMEK_LAT}, {DOMEK_LON}"))
-                    id_kroku_end = cursor.lastrowid
+                            nazwa_posilku_val = str(nazwa_p_raw).strip() if (pd.notna(nazwa_p_raw) and str(nazwa_p_raw).strip() and str(nazwa_p_raw).strip() not in ['-', 'nan']) else (
+                                str(pos_raw).strip() if (pd.notna(pos_raw) and str(pos_raw).strip() and str(pos_raw).strip() not in ['-', 'nan']) else None
+                            )
+                            godzina_posilku_val = str(godz_p_raw).strip() if (pd.notna(godz_p_raw) and str(godz_p_raw).strip() and str(godz_p_raw).strip() not in ['-', 'nan']) else None
 
-                    cursor.execute('''
-                        INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
-                        VALUES (?, 'kolacja', 'w domku', '19:00', 'Kolacja i regeneracja po wycieczce')
-                    ''', (id_kroku_end,))
+                            if nazwa_posilku_val:
+                                p_str = nazwa_posilku_val
+                                p_str_l = p_str.lower()
+                                
+                                if 'śniadanie' in p_str_l or 'sniadanie' in p_str_l:
+                                    p_rodzaj = 'śniadanie'
+                                    p_miejsce = 'w domku'
+                                elif 'kolacja' in p_str_l:
+                                    p_rodzaj = 'kolacja'
+                                    p_miejsce = 'w domku'
+                                elif any(w in p_str_l for w in ['obiad', 'lunch', 'tawerna', 'restauracja']) and 'lunchbox' not in p_str_l:
+                                    p_rodzaj = 'obiad'
+                                    p_miejsce = 'restauracja'
+                                elif 'lunchbox duży' in p_str_l or 'duży lunchbox' in p_str_l or 'obiad z domku' in p_str_l:
+                                    p_rodzaj = 'lunchbox_duzy'
+                                    p_miejsce = 'z domu (lunchbox)'
+                                elif 'lunchbox' in p_str_l or 'drugie śniadanie' in p_str_l or 'podwieczorek' in p_str_l:
+                                    p_rodzaj = 'lunchbox_maly'
+                                    p_miejsce = 'z domu (lunchbox)'
+                                else:
+                                    p_rodzaj = None
+                                    
+                                if p_rodzaj:
+                                    sugerowana_godz = godzina_posilku_val if godzina_posilku_val else (
+                                        '18:30' if p_rodzaj == 'kolacja' else (
+                                            '12:30' if p_rodzaj in ['obiad', 'lunchbox_duzy'] else (
+                                                '10:30' if p_rodzaj == 'lunchbox_maly' else (
+                                                    okienko_kroku.split('-')[0].strip() if '-' in okienko_kroku else '11:00'
+                                                )
+                                            )
+                                        )
+                                    )
+                                    
+                                    cursor.execute('''
+                                        INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
+                                        VALUES (?, ?, ?, ?, ?)
+                                    ''', (nowy_krok_id, p_rodzaj, p_miejsce, sugerowana_godz, p_str))
 
-                conn.commit()
+                            step_counter += 1
 
-            except Exception as e:
-                print(f"Błąd importu wycieczki.csv podczas init_db: {e}")
+                    conn.commit()
+                    
+                    # Fizyczne przeliczenie czasów przejazdu i okienek dla każdej wczytanej trasy
+                    for wid in unikalne_wycieczki:
+                        przelicz_i_zsynchronizuj_wycieczke(wid)
+                        
+                    break
+                except Exception as e:
+                    print(f"Błąd importu wycieczki.csv podczas init_db: {e}")
 
         conn.commit()
 
@@ -603,6 +651,14 @@ div.st-key-btn_date_picker { margin-bottom: 10px !important; }
 .timeline-step-row-wrapper { position: relative; width: 100%; z-index: 2; }
 .timeline-row-frameless { position: relative; display: flex; align-items: center; min-height: 52px; background-color: transparent !important; border: none !important; padding: 4px 8px; box-sizing: border-box; }
 
+.timeline-row-green-box {
+    background-color: #94A77E !important;
+    border: 1.5px solid #82956C !important;
+    border-radius: 18px !important;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.04);
+    padding: 6px 10px !important;
+}
+
 .timeline-step-expander { position: relative; background-color: #F6F0DD; border: 1.5px solid #E2DEC8; border-radius: 18px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); overflow: hidden; box-sizing: border-box; }
 .timeline-step-expander summary { list-style: none !important; cursor: pointer; padding: 8px 10px; background-color: #F6F0DD; border-radius: 18px; display: block; }
 .timeline-step-expander summary::-webkit-details-marker, .timeline-step-expander summary::marker { display: none !important; }
@@ -616,7 +672,7 @@ div.st-key-btn_date_picker { margin-bottom: 10px !important; }
 .timeline-center-col { position: relative; width: 44px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; margin-right: 6px; }
 .timeline-icon-badge-static { position: relative; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12pt; font-weight: 900; color: #FFFFFF !important; border: 2px solid #FFFFFF !important; box-shadow: 0 2px 5px rgba(0,0,0,0.15); z-index: 5 !important; }
 
-.badge-pobudka, .badge-wyjazd, .badge-powrot { background-color: #94A77E !important; }
+.badge-pobudka, .badge-wyjazd, .badge-powrot { background-color: #7E9169 !important; }
 .badge-miejsce { background-color: #C06C4E !important; }
 .badge-obiad { background-color: #B56749 !important; }
 
@@ -774,11 +830,23 @@ def formatuj_posilki_kroku(df_pos):
     for _, prow in df_pos.iterrows():
         p_rodzaj = str(prow.get('rodzaj_posilku', '')).strip().lower()
         p_godz = str(prow.get('sugerowana_godzina', '')).strip()
-        p_miejsce = str(prow.get('miejsce', '')).strip().lower()
-        if p_rodzaj in ['śniadanie', 'obiad', 'kolacja', 'przekąska', 'lunchbox']:
-            nazwa_p = "🍱 Lunchbox" if p_rodzaj == 'lunchbox' else p_rodzaj.capitalize()
-            posiłki_str.append(f"{nazwa_p} ok {p_godz}" if (p_miejsce != 'w domku' and p_godz and p_godz not in ['None', 'Brak']) else nazwa_p)
-    return f"<span style='color:#8C5338; font-weight:700;'>🍲 {' / '.join(posiłki_str)}</span>" if posiłki_str else ""
+        
+        if p_rodzaj == 'śniadanie':
+            posiłki_str.append("Śniadanie")
+        elif p_rodzaj == 'kolacja':
+            posiłki_str.append("Kolacja")
+        elif p_rodzaj == 'lunchbox_maly':
+            posiłki_str.append("🥪 Lunchbox mały")
+        elif p_rodzaj == 'lunchbox_duzy':
+            posiłki_str.append("🍱 Lunchbox duży")
+        elif p_rodzaj == 'obiad':
+            posiłki_str.append("Obiad")
+        elif p_rodzaj == 'lunchbox':
+            posiłki_str.append("🍱 Lunchbox")
+        else:
+            posiłki_str.append(p_rodzaj.capitalize())
+            
+    return f"<span style='color:#8C5338; font-weight:700;'>{' / '.join(posiłki_str)}</span>" if posiłki_str else ""
 
 def render_action_bar(coords_clean, search_name=""):
     google_search_btn = f'<a href="https://www.google.com/search?q={search_name} Kreta" target="_blank" class="step-action-vertical-btn"><span>🔍</span><span>Szukaj w Google</span></a>' if search_name else ""
@@ -859,7 +927,11 @@ def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
     if not planowana_data or not str(planowana_data).strip() or kroki_df.empty:
         return
 
-    ostrzezenia, max_temp, min_temp, opis_pogody_zbiorczy = [], -99, 99, set()
+    ostrzezenia, max_temp, min_temp = [], -99, 99
+    opisy_pogody = []
+    max_wind = 0
+    deszcz_prognozowany = False
+
     for _, k in kroki_df.iterrows():
         lat, lon = sparsuj_wspolrzedne(k['wspolrzedne'])
         if lat is not None and lon is not None:
@@ -869,20 +941,49 @@ def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
                     t = int(h.get('tempC', 20))
                     max_temp = max(max_temp, t)
                     min_temp = min(min_temp, t)
-                    opis_pogody_zbiorczy.add(h.get('weatherDesc', [{}])[0].get('value', '').lower())
+                    w_spd = int(h.get('windspeedKmph', 0))
+                    max_wind = max(max_wind, w_spd)
+                    
+                    desc = h.get('weatherDesc', [{}])[0].get('value', '').strip()
+                    if desc:
+                        opisy_pogody.append(desc)
 
-    for desc in opis_pogody_zbiorczy:
-        if any(w in desc for w in ['rain', 'deszcz', 'shower']):
-            ostrzezenia.append("🌧️ Prognozowane opady deszczu na trasie!")
-        if any(w in desc for w in ['storm', 'thunder', 'burza']):
-            ostrzezenia.append("⚡ Ryzyko burz na trasie wycieczki!")
-
+    desc_lower_all = " ".join(opisy_pogody).lower()
+    if any(w in desc_lower_all for w in ['rain', 'deszcz', 'shower', 'drizzle']):
+        deszcz_prognozowany = True
+        ostrzezenia.append("🌧️ Możliwe przelotne opady deszczu na trasie!")
+    if any(w in desc_lower_all for w in ['storm', 'thunder', 'burza']):
+        ostrzezenia.append("⚡ Ryzyko burz i wyładowań!")
     if max_temp >= 32:
-        ostrzezenia.append(f"🔥 Ekstremalny upał! Maksymalna temperatura sięgnie {max_temp}°C.")
+        ostrzezenia.append(f"🔥 Wysoka temperatura (do {max_temp}°C) – bezwzględnie unikaj słońca w południe.")
 
-    st.markdown(f'<div class="section-unified-header">🌤️ Pogoda na trasie</div><div style="font-size: 10pt; color: #2B2118; font-weight: 700; margin-bottom: 10px;">Temperatura: <b>{min_temp}°C do {max_temp}°C</b></div>', unsafe_allow_html=True)
-    for ost in ostrzezenia:
-        st.markdown(f'<div style="color: #DC5050; font-weight: 800; font-size: 9pt; margin-top: 2px;">{ost}</div>', unsafe_allow_html=True)
+    # Tłumaczenie i estetyczne podsumowanie
+    if any(w in desc_lower_all for w in ['sunny', 'clear']):
+        glowny_stan = "☀️ Słonecznie i bezchmurnie"
+    elif any(w in desc_lower_all for w in ['partly cloudy']):
+        glowny_stan = "⛅ Częściowo słonecznie z lekkim zachmurzeniem"
+    elif any(w in desc_lower_all for w in ['cloudy', 'overcast']):
+        glowny_stan = "☁️ Umiarkowane / duże zachmurzenie"
+    else:
+        glowny_stan = "🌤️ Przeważnie pogodnie"
+
+    opady_tekst = "🌧️ Możliwy deszcz" if deszcz_prognozowany else "💧 Brak opadów"
+    wiatr_tekst = f"💨 Wiatr do {max_wind} km/h" if max_wind > 0 else ""
+
+    ostrzezenia_html = "".join([f'<div style="color: #DC5050; font-weight: 800; font-size: 8.5pt; margin-top: 3px;">{ost}</div>' for ost in ostrzezenia])
+
+    st.markdown(f"""
+    <div class="overview-card" style="margin-top: 4px; margin-bottom: 12px; background-color: #FAF8F2; border: 1.5px solid #D6D2C4;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <div style="font-size: 10pt; font-weight: 900; color: #2B2118;">🌤️ Podsumowanie pogody</div>
+            <div style="font-size: 9.5pt; font-weight: 900; color: #8C5338;">{min_temp}°C – {max_temp}°C</div>
+        </div>
+        <div style="font-size: 9pt; color: #4A3E36; font-weight: 700; margin-bottom: 2px;">
+            {glowny_stan} • {opady_tekst} {('• ' + wiatr_tekst) if wiatr_tekst else ''}
+        </div>
+        {ostrzezenia_html}
+    </div>
+    """, unsafe_allow_html=True)
 
 # --- FUNKCJE CZATU I NOTATEK ---
 def pobierz_historie_czatu_z_db(uzytkownik):
@@ -1114,7 +1215,7 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
                 return False, (
                     f"⛔ ODMOWA: Planowanie '{nazwa_nowego_miejsca}' w oknie {planowane_okienko} narusza regułę sjesty i ochrony przed słońcem (11:30–15:30). "
                     f"Jest to otwarty teren w pełnym słońcu – gwarantowane przebodźcowanie sensoryczne i ryzyko udaru termicznego. "
-                    f"💡 PROPOZYCJA: Zaplanuj tę atrakcję z samego rana (np. 08:00–10:00) lub w tych godzinach wybierz klimatyzowane Cretaquarium, jaskinię lub obiad w tawernie w cieniu."
+                    f"💡 PROPOZYCJA: Zaplanuj tę atrakcję z samego rana (np. 08:00–10:00) lub w tych godzinach wybierz klimatyzowane Cretaquarium, jaskinię lub obiad w tawernie w głębokim cieniu."
                 )
 
     if g_start:
@@ -1124,7 +1225,7 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
                 SELECT p.rodzaj_posilku, p.sugerowana_godzina, k.okienko_zwiedzania, k.nazwa
                 FROM posilki_kroku p
                 JOIN krok_wycieczki k ON p.id_kroku = k.id
-                WHERE k.id_wycieczki = ? AND p.rodzaj_posilku IN ('śniadanie', 'obiad', 'kolacja', 'lunchbox')
+                WHERE k.id_wycieczki = ? AND p.rodzaj_posilku IN ('śniadanie', 'obiad', 'kolacja', 'lunchbox', 'lunchbox_maly', 'lunchbox_duzy')
                 ORDER BY CAST(k.krok_wycieczki AS INTEGER) ASC
             ''', (str(id_wycieczki),))
             glowne_posilki = cursor.fetchall()
@@ -1137,10 +1238,10 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
                 pos_dec = g_pos[0] + g_pos[1] / 60.0
                 if (godz_dec - pos_dec) > 4.0:
                     return False, (
-                        f"⛔ ODMOWA: Od ostatniego posiłku głównego ({ostatni_posilek[0]} w punkcie '{ostatni_posilek[3]}', ok. {pos_godz_str}) "
-                        f"do planowanego punktu '{nazwa_nowego_miejsca}' ({planowane_okienko}) mija ponad 4.0 godziny bez posiłku głównego lub lunchboxa. "
-                        f"Aplikacja nie traktuje mikroprzekąsek jako zastępstwa. Dzieci z AuDHD wejdą w stan silnego przebodźcowania i głodu (Hangry). "
-                        f"💡 PROPOZYCJA: Zaplanuj przerwę na posiłek główny, powrót na obiad do domku w Stavros lub zabierz ze sobą Lunchbox z bezpiecznym prowiantem przed '{nazwa_nowego_miejsca}'."
+                        f"⛔ ODMOWA: Od ostatniego posiłku stabilizującego ({ostatni_posilek[0]} w punkcie '{ostatni_posilek[3]}', ok. {pos_godz_str}) "
+                        f"do planowanego punktu '{nazwa_nowego_miejsca}' ({planowane_okienko}) mija ponad 4.0 godziny. "
+                        f"Podgryzajki (chrupki/musy) nie zastępują posiłku. Dzieci z AuDHD wejdą w stan silnego przebodźcowania i głodu (Hangry). "
+                        f"💡 PROPOZYCJA: Zaplanuj Lunchbox mały (10:15–11:15), ciepły obiad na mieście w cieniu (12:00–13:45) lub Lunchbox duży przed '{nazwa_nowego_miejsca}'."
                     )
 
     return True, ""
@@ -1209,25 +1310,14 @@ def utworz_nowa_wycieczke(tytul_wycieczki, planowana_data=None, pobudka="06:00",
 
         cursor.execute('''
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis)
-            VALUES (?, 0, 'Nasz Domek (Start)', ?, ?, 'Poranne przygotowanie i leki')
+            VALUES (?, 0, 'Nasz Domek (Start)', ?, ?, 'Poranne przygotowanie i bezpieczne śniadanie')
         ''', (nowe_id, f"{DOMEK_LAT}, {DOMEK_LON}", f"{pobudka} - {czas_wyjazdu}"))
         id_start = cursor.lastrowid
         
         cursor.execute('''
             INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
-            VALUES (?, 'śniadanie', 'w domku', ?, 'Safe breakfast przed wyjazdem')
+            VALUES (?, 'śniadanie', 'w domku', ?, 'Śniadanie')
         ''', (id_start, pobudka))
-
-        cursor.execute('''
-            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis)
-            VALUES (?, 1, 'Nasz Domek (Powrót)', ?, '17:00 - 18:00', 'Powrót do bazy, odpoczynek i kolacja')
-        ''', (nowe_id, f"{DOMEK_LAT}, {DOMEK_LON}"))
-        id_end = cursor.lastrowid
-
-        cursor.execute('''
-            INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
-            VALUES (?, 'kolacja', 'w domku', '18:30', 'Regeneracja po podróży i domowa kolacja')
-        ''', (id_end,))
 
         cursor.execute('UPDATE aktywna_wycieczka SET aktualne_id_wycieczki = ? WHERE id = 1', (nowe_id,))
         conn.commit()
@@ -1421,7 +1511,7 @@ def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
     return {"success": True, "action": "usun_krok_wycieczki", "message": f"Pomyślnie usunięto krok: {k_nazwa}."}
 
-def zarzadzaj_posilkiem_kroku(id_wycieczki, id_kroku, rodzaj_posilku, miejsce="restauracja", sugerowana_godzina="13:00", opis=""):
+def zarzadzaj_posilkiem_kroku(id_wycieczki, id_kroku, rodzaj_posilku, miejsce="restauracja", sugerowana_godzina="12:30", opis=""):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('''
@@ -1614,7 +1704,7 @@ cretai_tools = [
                         "trudnosc_adhd": types.Schema(type=types.Type.STRING, description="'Niski', 'Średni' lub 'Wysoki'"),
                         "ochrona_slonce": types.Schema(type=types.Type.STRING, description="np. 'Pełne słońce / Patelnia', 'Częściowy cień', 'Klimatyzacja'"),
                         "potencjal_meltdownu": types.Schema(type=types.Type.STRING, description="'Niski', 'Średni' lub 'Wysoki'"),
-                        "strategie_meltdown": types.Schema(type=types.Type.STRING, description="Konkretna taktyka: gdzie uciec w cień, wyciszenie, przekąska"),
+                        "strategie_meltdown": types.Schema(type=types.Type.STRING, description="Konkretna taktyka: gdzie uciec w cień, wyciszenie, posiłek stabilizujący"),
                         "opis": types.Schema(type=types.Type.STRING, description="Krótki, praktyczny opis atrakcji"),
                         "zadania_dla_dzieci": types.Schema(type=types.Type.STRING, description="3-4 angażujące misje dla dzieci oddzielone nową linią"),
                     },
@@ -1777,16 +1867,16 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="zarzadzaj_posilkiem_kroku",
-                description="Dodaje posiłek stabilizujący (śniadanie, obiad, kolacja, lunchbox).",
+                description="Dodaje posiłek stabilizujący (śniadanie, obiad, kolacja, lunchbox_maly, lunchbox_duzy).",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
                         "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
                         "id_kroku": types.Schema(type=types.Type.STRING, description="ID kroku wycieczki"),
-                        "rodzaj_posilku": types.Schema(type=types.Type.STRING, description="'śniadanie', 'obiad', 'kolacja' lub 'lunchbox'"),
-                        "miejsce": types.Schema(type=types.Type.STRING, description="'w domku', 'z domu (lunchbox)', 'restauracja' lub 'po drodze'"),
-                        "sugerowana_godzina": types.Schema(type=types.Type.STRING, description="Godzina np. '13:30'"),
-                        "opis": types.Schema(type=types.Type.STRING, description="Opis posiłku (dla lunchboxa: safe food prowiant)")
+                        "rodzaj_posilku": types.Schema(type=types.Type.STRING, description="'śniadanie', 'obiad', 'kolacja', 'lunchbox_maly' (II śniadanie) lub 'lunchbox_duzy' (obiad z domku)"),
+                        "miejsce": types.Schema(type=types.Type.STRING, description="'w domku', 'z domu (lunchbox)' lub 'restauracja'"),
+                        "sugerowana_godzina": types.Schema(type=types.Type.STRING, description="Godzina np. '10:30', '12:30', '18:30'"),
+                        "opis": types.Schema(type=types.Type.STRING, description="Opis posiłku (Safe Foods: tosty, pita, souvlaki z kurczaka)")
                     },
                     required=["id_wycieczki", "id_kroku", "rodzaj_posilku"]
                 ),
@@ -2013,23 +2103,20 @@ ZASADY TWORZENIA I EDYCJI WYCIECZEK:
 3. Jeśli użytkownik prosi o dodanie do wycieczki miejsca, którego NIE MA w bazie:
    - KROK 1: Użyj Google Search, aby znaleźć koordynaty, godziny i ceny, wygeneruj taktykę AuDHD i wywołaj `utworz_nowe_miejsce(...)`.
    - KROK 2: Dopiero po dodaniu do bazy, wywołaj `dodaj_krok_wycieczki` z dokładną nazwą tego miejsca.
-4. ZAWSZE respektuj regułę sjesty (11:30–15:30: zakaz patelni/pełnego słońca) oraz przerwę na posiłek główny co max 4 godziny!
+4. ZAWSZE respektuj regułę sjesty (11:30–15:30: zakaz patelni/pełnego słońca) oraz przerwę na posiłek stabilizujący co max 4 godziny!
 
-ZASADY POSIŁKÓW I ENERGII (AuDHD):
-- Obiad: Dokładnie 1 obiad dziennie (w restauracji lub powrót do domku).
-- Kolacja: Zawsze w domku w Stavros po powrocie.
-- Lunchbox (max 2 na wycieczkę): Prowiant zabierany z domku, zeruje licznik 4h głodu.
-
-ZASADY TWORZENIA NOWEGO MIEJSCA (`utworz_nowe_miejsce`):
-- Tylko tutaj wolno Ci korzystać z Google Search do ustalenia koordynatów i detali logistycznych.
-- Samodzielnie wygeneruj parametry sensoryczne (`ochrona_slonce`, `potencjal_meltdownu`, `strategie_meltdown`) oraz 3-4 mikrozadania dla dzieci (`zadania_dla_dzieci`).
-- Czas dojazdu ze Stavros zostanie wyliczony automatycznie przez backend aplikacji.
+NOWE SZTYWNE ZASADY ŻYWIENIOWE (AuDHD):
+- Śniadania i Kolacje: ZAWSZE w domku w Stavros ze sprawdzonych produktów (Safe Foods).
+- Dokładnie 1 Obiad na mieście dziennie (12:00 – 13:45): Ciepły, spokojny posiłek w głębokim cieniu (drób, ryby, frytki, suchy makaron — BEZWZGLĘDNY BRAK WIEPRZOWINY).
+- Lunchbox mały (10:15 – 11:15): Pożywne II śniadanie / mostek po rannych aktywnościach (tosty, kanapki, pita).
+- Lunchbox duży (Obiad z domku): Pełny zimny obiad zrobiony w domku, zastępujący obiad na mieście 1:1.
+- Wycofanie podgryzajek: Musy owocowe i chrupki NIE są traktowane jako posiłki (to wyłącznie zapas awaryjny w samochodzie).
 
 ZASADA OSOBOWEGO I DIREKTYWNEGO TONU:
 Zwracaj się do użytkownika po imieniu w sposób bardzo personalny:
 - Na powitanie lub w normalnych wiadomościach: "Witaj {uzytkownik}", "Cześć {uzytkownik}".
 - Gdy propozycja rodzica jest zła: "To zły pomysł, {uzytkownik}".
-- Gdy propozycja jest katastrofalna dla AuDHD (upał 11:30-15:30, brak cienia, głód >4h): "To bardzo zły pomysł, {uzytkownik}"."""
+- Gdy propozycja jest katastrofalna dla AuDHD (upał 11:30-15:30, brak cienia, głód >4h, wieprzowina): "To bardzo zły pomysł, {uzytkownik}"."""
 
                     try:
                         with st.status("🧭 Analizuję bezpieczeństwo i trasę AuDHD...", expanded=False) as status:
@@ -2290,11 +2377,12 @@ def dodaj_marker_domku(m):
     folium.Marker([DOMEK_LAT, DOMEK_LON], icon=folium.DivIcon(html=icon_domek, icon_size=(26, 26), icon_anchor=(13, 13)), tooltip="Nasz domek w Stavros").add_to(m)
 
 # --- RENDEROWANIE KARTY WYCIECZKI ---
-def render_timeline_row_simple(time_start, badge_icon, badge_class, title, desc, nav_btn_html="", time_end=""):
+def render_timeline_row_simple(time_start, badge_icon, badge_class, title, desc, nav_btn_html="", time_end="", extra_box_class=""):
     time_end_markup = f'<span class="timeline-time-end">{time_end}</span>' if time_end else ''
+    box_classes = f"timeline-row-frameless {extra_box_class}".strip()
     return (
         f'<div class="timeline-step-row-wrapper">'
-        f'<div class="timeline-row-frameless">'
+        f'<div class="{box_classes}">'
         f'<div class="timeline-row-inner">'
         f'<div class="timeline-time"><span class="timeline-time-start">{time_start}</span>{time_end_markup}</div>'
         f'<div class="timeline-center-col"><div class="timeline-icon-badge-static {badge_class}">{badge_icon}</div></div>'
@@ -2308,7 +2396,7 @@ def render_timeline_row_simple(time_start, badge_icon, badge_class, title, desc,
         f'</div>'
     )
 
-def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=False, pokaz_pogode=False):
+def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=True, pokaz_pogode=False):
     with get_db() as conn:
         wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
         kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn, params=(str(wycieczka_id),))
@@ -2382,16 +2470,45 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 st.session_state["flash_toast"] = "⏱️ Zaktualizowano godzinę powrotu!"
                 st.rerun()
 
-    if pd.notna(w_gen.get('calosciowa_taktyka_dnia')) and str(w_gen['calosciowa_taktyka_dnia']).strip():
-        st.markdown('<div class="section-unified-header">🧠 Taktyka</div>', unsafe_allow_html=True)
-        st.markdown(f"""
-        <details class="overview-details-card" style="margin-top: 4px;">
-            <summary style="font-weight: normal !important;">🧠 Taktyka dnia</summary>
-            <div style="margin-top: 8px; border-top: 1px solid #D1C7AE; padding-top: 6px;">
-                <div class="section-body-text" style="margin-bottom: 0;">{w_gen['calosciowa_taktyka_dnia']}</div>
-            </div>
-        </details>
-        """, unsafe_allow_html=True)
+
+
+    # --- MAPA TRASY WYCIECZKI ---
+    if pokaz_mape and not kroki_df.empty:
+        st.markdown('<div class="section-unified-header">🗺️ Trasa wycieczki na mapie</div>', unsafe_allow_html=True)
+        coords_list = []
+        for _, k_row in kroki_df.iterrows():
+            lat_k, lon_k = sparsuj_wspolrzedne(k_row.get('wspolrzedne'))
+            if lat_k is not None and lon_k is not None:
+                coords_list.append((lat_k, lon_k, str(k_row.get('nazwa', '')), str(k_row.get('krok_wycieczki', ''))))
+
+        if coords_list:
+            avg_lat = sum(c[0] for c in coords_list) / len(coords_list)
+            avg_lon = sum(c[1] for c in coords_list) / len(coords_list)
+            m_trip = folium.Map(location=[avg_lat, avg_lon], zoom_start=9, tiles="CartoDB positron")
+            dodaj_marker_domku(m_trip)
+
+            detailed_route_points = []
+            for i in range(len(coords_list) - 1):
+                lat_start, lon_start = coords_list[i][0], coords_list[i][1]
+                lat_end, lon_end = coords_list[i + 1][0], coords_list[i + 1][1]
+                segment_pts = pobierz_geometrie_trasy_osrm(lat_start, lon_start, lat_end, lon_end)
+                detailed_route_points.extend(segment_pts)
+
+            if detailed_route_points:
+                folium.PolyLine(
+                    detailed_route_points, 
+                    color="#8C5338", 
+                    weight=4, 
+                    opacity=0.85
+                ).add_to(m_trip)
+
+            for lat_c, lon_c, nazwa_c, krok_c in coords_list:
+                if "domek" in nazwa_c.lower():
+                    continue
+                icon_html = f'<div style="background-color:#C06C4E;color:white;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.2);">{krok_c}</div>'
+                folium.Marker([lat_c, lon_c], icon=folium.DivIcon(html=icon_html, icon_size=(22, 22), icon_anchor=(11, 11)), tooltip=nazwa_c).add_to(m_trip)
+
+            st_folium(m_trip, width=None, height=260, returned_objects=[], key=f"trip_map_view_{wycieczka_id}")
 
     st.markdown('<div class="section-unified-header">🗺️ Plan na dzień</div>', unsafe_allow_html=True)
 
@@ -2416,7 +2533,9 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         godzina_start = okienko.split("-")[0].strip() if "-" in okienko else (okienko if okienko else "08:00")
         godzina_koniec = okienko.split("-")[1].strip() if "-" in okienko else str(k.get('godzina_ewakuacji', '')).strip()
         
-        is_first, is_last = (idx == 0), (idx == total_steps - 1)
+        is_first = (idx == 0)
+        is_return_step = (idx == total_steps - 1) or any(w in nazwa_lower for w in ["powrót", "powrot", "domek (powrót)"])
+
         lat_parsed, lon_parsed = sparsuj_wspolrzedne(wspolrzedne)
         nav_btn_html = f'<a href="https://www.google.com/maps/search/?api=1&query={coords_clean}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>' if (lat_parsed is not None and lon_parsed is not None) else ""
 
@@ -2432,10 +2551,12 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             detected_icon = "🅿️"
         elif "toaleta" in nazwa_lower or "wc" in nazwa_lower:
             detected_icon = "🚻"
-        elif any(w in nazwa_lower for w in ["obiad", "lunch", "jedzenie", "przekąska"]):
+        elif any(w in nazwa_lower for w in ["obiad", "lunch", "jedzenie", "lunchbox"]):
             detected_icon = "🍴"
         elif "plaż" in nazwa_lower or "beach" in nazwa_lower:
             detected_icon = "🏖️"
+        elif any(w in nazwa_lower for w in ["powrót", "powrot", "domek"]):
+            detected_icon = "🏠"
         else:
             matched_typ = baza_miejsc_dict.get(krok_num)
             if not matched_typ:
@@ -2448,7 +2569,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
         badge_symbol = detected_icon if detected_icon is not None else (krok_num if (krok_num and krok_num != "0") else str(idx))
         is_in_places_db = ("numer_miejsca" in k and pd.notna(k.get("numer_miejsca"))) or (krok_num in baza_miejsc_dict)
-        is_custom_flat = not is_first and not is_last and (
+        is_custom_flat = not is_first and not is_return_step and (
             not is_in_places_db or 
             any(w in nazwa_lower for w in ["sklep", "market", "zakup", "apteka", "postój", "parking", "kawa", "cafe", "toaleta", "punkt widokowy", "widok", "rynek", "targ"])
         )
@@ -2461,9 +2582,10 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             godzina_wyjazdu_wyswietl = godzina_koniec if godzina_koniec else wyjazd_val
             timeline_full_html.append(render_timeline_row_simple(godzina_wyjazdu_wyswietl, "🚗", "badge-wyjazd", "Wyjazd", ""))
 
-        elif is_last:
+        elif is_return_step:
             nav_domek = f'<a href="https://www.google.com/maps/search/?api=1&query={DOMEK_LAT},{DOMEK_LON}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>'
-            timeline_full_html.append(render_timeline_row_simple(godzina_start, "🏠", "badge-powrot", "Powrót do domku", posilki_tekst if posilki_tekst else "Wypoczynek i relaks", nav_btn_html=nav_domek))
+            opis_powrotu = posilki_tekst if posilki_tekst else "Wypoczynek i relaks"
+            timeline_full_html.append(render_timeline_row_simple(godzina_start, "🏠", "badge-powrot", nazwa, opis_powrotu, nav_btn_html=nav_domek, extra_box_class="timeline-row-green-box"))
         
         elif is_custom_flat:
             opis_kroku_cust = str(k.get('opis', '')).strip()
@@ -2567,6 +2689,12 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 postoj_val = match_row.iloc[0]['szacowany_czas_postoju']
                 if pd.notna(czas_dojazdu_dalej) and str(czas_dojazdu_dalej).strip() != "":
                     transit_html = f'<div class="timeline-transit-text">🚗 {czas_dojazdu_dalej} | + {postoj_val}m</div>' if (postoj_val is not None and int(postoj_val) > 0) else f'<div class="timeline-transit-text">🚗 {czas_dojazdu_dalej}</div>'
+            else:
+                lat1_c, lon1_c = sparsuj_wspolrzedne(k['wspolrzedne'])
+                lat2_c, lon2_c = sparsuj_wspolrzedne(kroki_df.iloc[idx + 1]['wspolrzedne'])
+                if lat1_c and lon1_c and lat2_c and lon2_c:
+                    t_osrm, _ = oblicz_czas_przejazdu_osrm(lat1_c, lon1_c, lat2_c, lon2_c)
+                    transit_html = f'<div class="timeline-transit-text">🚗 {t_osrm}</div>'
 
             timeline_full_html.append(f'<div class="timeline-transit-spacer">{transit_html}</div>')
 
@@ -2762,7 +2890,7 @@ st.markdown(f"""
 
 if st.session_state.active_tab == "route":
     render_adventure_header("CretAi • Aktualna Wycieczka")
-    renderuj_karte_wycieczki(pobierz_aktywna_wycieczke_id(), df_miejsca, pokaz_mape=False, pokaz_pogode=True)
+    renderuj_karte_wycieczki(pobierz_aktywna_wycieczke_id(), df_miejsca, pokaz_mape=True, pokaz_pogode=True)
 
 elif st.session_state.active_tab == "map":
     render_adventure_header("CretAi • Nasze wycieczki")
@@ -2817,7 +2945,6 @@ elif st.session_state.active_tab == "map":
                     skrocony = w_tytul.split(':')[0] if ':' in w_tytul else w_tytul
                     btn_text = f"🧭 {w_id}. {skrocony}"
                     if st.button(btn_text, key=f"btn_go_to_trip_{w_id}_{nr_m}", use_container_width=True):
-                        ustaw_aktywna_wycieczke_id(w_id)
                         for opt in opcje_wycieczek_lista:
                             if opt and opt.startswith(f"{w_id}."):
                                 st.session_state["map_wycieczka_select"] = opt
@@ -2841,7 +2968,18 @@ elif st.session_state.active_tab == "map":
 
     if wybrana_mapa_sb is not None:
         wybrana_id = wybrana_mapa_sb.split(". ")[0]
-        ustaw_aktywna_wycieczke_id(wybrana_id)
+        akt_id = pobierz_aktywna_wycieczke_id()
+
+        col_act1, col_act2 = st.columns([3, 2])
+        with col_act1:
+            if str(wybrana_id) == str(akt_id):
+                st.info("⭐ To jest obecnie ustawiona **Trasa Dnia**")
+            else:
+                if st.button("⭐ Ustaw jako Trasę Dnia", key=f"btn_make_active_{wybrana_id}", use_container_width=True):
+                    ustaw_aktywna_wycieczke_id(wybrana_id)
+                    st.session_state["flash_toast"] = f"⭐ Ustawiono wycieczkę #{wybrana_id} jako Trasę Dnia!"
+                    st.rerun()
+
         renderuj_karte_wycieczki(wybrana_id, df_miejsca, pokaz_mape=True, pokaz_pogode=False)
     else:
         renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=pobierz_aktywna_wycieczke_id(), inline=False)
