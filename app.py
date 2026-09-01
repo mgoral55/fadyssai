@@ -140,6 +140,49 @@ def pobierz_kolor_kategorii(kategoria):
 def pobierz_ikonke_kategorii(kategoria):
     return CATEGORIES_CONFIG.get(kategoria, CATEGORIES_CONFIG["Other"]).get("icon")
 
+# --- UNIWERSALNA FUNKCJA DOPASOWYWANIA KROKU DO BAZY MIEJSC (DRY) ---
+def _wyczysc_nazwe_miejsca(nazwa):
+    if not nazwa: return ""
+    s = str(nazwa).strip().lower()
+    s = re.sub(r'^\d+[\.\)]\s*', '', s)
+    s = s.split('(')[0].strip()
+    return s
+
+def dopasuj_krok_do_bazy_miejsc(nazwa_kroku, wspolrzedne_kroku, df_miejsca_ref):
+    if df_miejsca_ref is None or df_miejsca_ref.empty or not nazwa_kroku:
+        return None
+
+    nazwa_l = str(nazwa_kroku).strip().lower()
+    if any(w in nazwa_l for w in ["domek", "start", "powrót", "powrot", "sklep przy domku"]):
+        return None
+
+    czysta_krok = _wyczysc_nazwe_miejsca(nazwa_l)
+
+    # 1. Dokładne dopasowanie po nazwie oczyszczonej
+    for _, m in df_miejsca_ref.iterrows():
+        m_nazwa_l = str(m['nazwa']).strip().lower()
+        m_czysta = _wyczysc_nazwe_miejsca(m_nazwa_l)
+        if czysta_krok == m_czysta or nazwa_l == m_nazwa_l:
+            return m
+
+    # 2. Dopasowanie zawierania (min. 4 znaki)
+    for _, m in df_miejsca_ref.iterrows():
+        m_nazwa_l = str(m['nazwa']).strip().lower()
+        m_czysta = _wyczysc_nazwe_miejsca(m_nazwa_l)
+        if len(m_czysta) >= 4 and (m_czysta in czysta_krok or czysta_krok in m_czysta):
+            return m
+
+    # 3. Precyzyjne dopasowanie geodezyjne (współrzędne w promieniu ~300m)
+    lat_k, lon_k = sparsuj_wspolrzedne(wspolrzedne_kroku)
+    if lat_k is not None and lon_k is not None:
+        for _, m in df_miejsca_ref.iterrows():
+            m_lat, m_lon = sparsuj_wspolrzedne(m.get('wspolrzedne'))
+            if m_lat is not None and m_lon is not None:
+                if abs(m_lat - lat_k) < 0.003 and abs(m_lon - lon_k) < 0.003:
+                    return m
+
+    return None
+
 # --- POMOCNICZE FUNKCJE STRUKTURY KROKÓW (DRY) ---
 def _reindex_kroki(cursor, id_wycieczki):
     cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC, id ASC', (str(id_wycieczki),))
@@ -423,7 +466,6 @@ def init_db():
         ''')
         cursor.execute('INSERT OR IGNORE INTO aktywna_wycieczka (id, aktualne_id_wycieczki) VALUES (1, "1")')
 
-        # Indeksy poprawiające wydajność zapytań
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_krok_wyc ON krok_wycieczki(id_wycieczki)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_posilki_krok ON posilki_kroku(id_kroku)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_zakupy_wyc ON zakupy(id_wycieczki)')
@@ -609,6 +651,35 @@ def init_db():
         conn.commit()
 
 init_db()
+
+# --- BEZPOŚREDNIE MUTACJE STATUSÓW ODWIDZENIA MIEJSC ---
+def zmien_status_odwiedzenia_miejsca(nr_miejsca, nowy_status):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE miejsca SET odwiedzone = ? WHERE TRIM(numer_miejsca) = ?", (1 if nowy_status else 0, str(nr_miejsca).strip()))
+        conn.commit()
+    st.cache_data.clear()
+
+def ustaw_status_odwiedzenia_dla_wycieczki(wycieczka_id, nowy_status):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE wycieczka SET odbyta = ? WHERE id = ?", (1 if nowy_status else 0, str(wycieczka_id)))
+        
+        cursor.execute("SELECT nazwa, wspolrzedne FROM krok_wycieczki WHERE id_wycieczki = ?", (str(wycieczka_id),))
+        kroki = cursor.fetchall()
+        
+        df_all = pd.read_sql("SELECT numer_miejsca, nazwa, wspolrzedne FROM miejsca", conn)
+        
+        matched_nums = set()
+        for k_nazwa, k_wsp in kroki:
+            m = dopasuj_krok_do_bazy_miejsc(k_nazwa, k_wsp, df_all)
+            if m is not None:
+                matched_nums.add(str(m['numer_miejsca']).strip())
+                
+        for nr in matched_nums:
+            cursor.execute("UPDATE miejsca SET odwiedzone = ? WHERE TRIM(numer_miejsca) = ?", (1 if nowy_status else 0, nr))
+        conn.commit()
+    st.cache_data.clear()
 
 # --- 1. DESIGN SYSTEM I KONFIGURACJA STRONY ---
 st.set_page_config(page_title="CretAi - Kreta", layout="centered", page_icon="🧭")
@@ -1221,18 +1292,10 @@ def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df, df_wszystkie_miejs
 
     for _, krok in kroki_df.iterrows():
         nazwa_kroku = str(krok.get('nazwa', '')).strip()
+        wsp_kroku = str(krok.get('wspolrzedne', '')).strip()
         krok_id = krok.get('id')
 
-        # Dopasowanie precyzyjne po nazwie miejsca w bazie
-        m_row = None
-        for _, m_cand in df_wszystkie_miejsca_ref.iterrows():
-            m_cand_name = str(m_cand['nazwa']).lower()
-            m_cand_base = m_cand_name.split('(')[0].strip()
-            nazwa_kroku_l = nazwa_kroku.lower()
-            if m_cand_name == nazwa_kroku_l or (len(m_cand_base) > 3 and (m_cand_base in nazwa_kroku_l or nazwa_kroku_l in m_cand_base)):
-                m_row = m_cand
-                break
-
+        m_row = dopasuj_krok_do_bazy_miejsc(nazwa_kroku, wsp_kroku, df_wszystkie_miejsca_ref)
         if m_row is not None:
             zadania_raw = m_row.get('zadania_dla_dzieci', '')
             zadania = sparsuj_liste_zadan(zadania_raw)
@@ -1398,6 +1461,7 @@ def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="4
         ))
         conn.commit()
 
+    st.cache_data.clear()
     return {
         "success": True, 
         "action": "utworz_nowe_miejsce", 
@@ -2396,37 +2460,7 @@ def potwierdz_zakonczenie_wycieczki_dialog(wycieczka_id, tytul, czy_odbyta):
     with col_ok:
         if st.button("Tak, zmień", use_container_width=True):
             nowy_status = 0 if czy_odbyta else 1
-            with get_db() as conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE wycieczka SET odbyta = ? WHERE id = ?", (nowy_status, str(wycieczka_id)))
-                
-                cursor.execute("SELECT krok_wycieczki, nazwa, wspolrzedne FROM krok_wycieczki WHERE id_wycieczki = ?", (str(wycieczka_id),))
-                kroki = cursor.fetchall()
-                
-                cursor.execute("SELECT numer_miejsca, nazwa, wspolrzedne FROM miejsca")
-                wszystkie_miejsca_db = cursor.fetchall()
-                
-                for k_num, k_nazwa, k_wsp in kroki:
-                    k_nazwa_clean = str(k_nazwa).strip().lower()
-                    k_lat, k_lon = sparsuj_wspolrzedne(k_wsp)
-                    
-                    for m_num, m_nazwa, m_wsp in wszystkie_miejsca_db:
-                        m_nazwa_clean = str(m_nazwa).strip().lower()
-                        m_nazwa_bazowa = m_nazwa_clean.split('(')[0].strip()
-                        m_lat, m_lon = sparsuj_wspolrzedne(m_wsp)
-                        
-                        matched = False
-                        if m_nazwa_clean == k_nazwa_clean or \
-                           (len(m_nazwa_bazowa) > 3 and m_nazwa_bazowa in k_nazwa_clean) or \
-                           (len(m_nazwa_bazowa) > 3 and k_nazwa_clean in m_nazwa_bazowa):
-                            matched = True
-                        elif k_lat is not None and m_lat is not None and abs(k_lat - m_lat) < 0.002 and abs(k_lon - m_lon) < 0.002:
-                            matched = True
-                            
-                        if matched:
-                            cursor.execute("UPDATE miejsca SET odwiedzone = ? WHERE numer_miejsca = ?", (nowy_status, str(m_num)))
-                
-                conn.commit()
+            ustaw_status_odwiedzenia_dla_wycieczki(wycieczka_id, nowy_status)
             st.session_state["flash_toast"] = "🏁 Zaktualizowano status wycieczki oraz powiązanych miejsc!"
             st.rerun()
     with col_no:
@@ -2439,9 +2473,8 @@ def potwierdz_odwiedzenie_dialog(nr_miejsca, nazwa_miejsca, czy_odwiedzone):
     col_ok, col_no = st.columns(2)
     with col_ok:
         if st.button("Tak, zmień", use_container_width=True):
-            with get_db() as conn:
-                conn.cursor().execute("UPDATE miejsca SET odwiedzone = ? WHERE numer_miejsca = ?", (0 if czy_odwiedzone else 1, str(nr_miejsca)))
-                conn.commit()
+            nowy_status = 0 if czy_odwiedzone else 1
+            zmien_status_odwiedzenia_miejsca(nr_miejsca, nowy_status)
             st.session_state["flash_toast"] = "🎯 Zaktualizowano status miejsca!"
             st.rerun()
     with col_no:
@@ -2467,7 +2500,7 @@ def pobierz_skrocone_opcje_wycieczek(pokaz_ukonczone=False):
 def pobierz_wycieczki_dla_miejsca(numer_miejsca, nazwa_miejsca):
     with get_db() as conn:
         cursor = conn.cursor()
-        nazwa_czysta = nazwa_miejsca.split('(')[0].strip().lower()
+        nazwa_czysta = _wyczysc_nazwe_miejsca(nazwa_miejsca)
         cursor.execute('''
             SELECT DISTINCT w.id, w.tytul_wycieczki
             FROM wycieczka w
@@ -2625,12 +2658,6 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
     timeline_full_html.append(render_timeline_row_simple(pobudka_val, "⏰", "badge-pobudka", "Pobudka", pobudka_posilki_tekst))
 
-    baza_miejsc_dict = {}
-    if not df_wszystkie_miejsca_ref.empty:
-        for _, mrow in df_wszystkie_miejsca_ref.iterrows():
-            baza_miejsc_dict[str(mrow['numer_miejsca'])] = str(mrow['typ'])
-            baza_miejsc_dict[str(mrow['nazwa']).lower()] = str(mrow['typ'])
-
     for idx, (_, k) in enumerate(kroki_df.iterrows()):
         krok_row_id = int(k['id'])
         nazwa = str(k['nazwa'])
@@ -2647,6 +2674,10 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
         lat_parsed, lon_parsed = sparsuj_wspolrzedne(wspolrzedne)
         nav_btn_html = f'<a href="https://www.google.com/maps/search/?api=1&query={coords_clean}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>' if (lat_parsed is not None and lon_parsed is not None) else ""
+
+        # Precyzyjne dopasowanie miejsca do bazy
+        m_dopasowane_krok = dopasuj_krok_do_bazy_miejsc(nazwa, wspolrzedne, df_wszystkie_miejsca_ref)
+        matched_place_id = str(m_dopasowane_krok['numer_miejsca']) if m_dopasowane_krok is not None else None
 
         if any(w in nazwa_lower for w in ["sklep", "market", "zakup", "rynek", "targ", "laiki"]):
             detected_icon = "🛒"
@@ -2667,39 +2698,11 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         elif any(w in nazwa_lower for w in ["powrót", "powrot", "domek", "wyjazd"]):
             detected_icon = "🏠"
         else:
-            matched_typ = None
-            for k_name_db, k_typ_db in baza_miejsc_dict.items():
-                if len(k_name_db) > 3 and k_name_db in nazwa_lower:
-                    matched_typ = k_typ_db
-                    break
-            kat = kategoryzuj_typ(matched_typ) if matched_typ else kategoryzuj_typ(nazwa_lower)
+            kat = kategoryzuj_typ(m_dopasowane_krok['typ']) if m_dopasowane_krok is not None else kategoryzuj_typ(nazwa_lower)
             detected_icon = pobierz_ikonke_kategorii(kat)
 
         badge_symbol = detected_icon if detected_icon is not None else (krok_num if (krok_num and krok_num != "0") else str(idx))
         
-        # --- PRECYZYJNE DOPASOWANIE KARTY MIEJSCA WG RZECZYWISTYCH DANYCH KROKU ---
-        matched_place_id = None
-        if not df_wszystkie_miejsca_ref.empty:
-            k_nazwa_clean = nazwa_lower.split('(')[0].strip()
-            # 1. Po dokładnej lub bazowej nazwie
-            for _, m_cand in df_wszystkie_miejsca_ref.iterrows():
-                m_cand_name = str(m_cand['nazwa']).lower()
-                m_cand_base = m_cand_name.split('(')[0].strip()
-                if m_cand_name == nazwa_lower or m_cand_base == k_nazwa_clean or \
-                   (len(m_cand_base) > 3 and m_cand_base in nazwa_lower) or \
-                   (len(k_nazwa_clean) > 3 and k_nazwa_clean in m_cand_name):
-                    matched_place_id = str(m_cand['numer_miejsca'])
-                    break
-
-            # 2. Fallback po współrzędnych geograficznych
-            if not matched_place_id and lat_parsed is not None and lon_parsed is not None:
-                for _, m_cand in df_wszystkie_miejsca_ref.iterrows():
-                    m_lat, m_lon = sparsuj_wspolrzedne(m_cand.get('wspolrzedne'))
-                    if m_lat is not None and m_lon is not None:
-                        if abs(m_lat - lat_parsed) < 0.002 and abs(m_lon - lon_parsed) < 0.002:
-                            matched_place_id = str(m_cand['numer_miejsca'])
-                            break
-
         is_in_places_db = bool(matched_place_id)
         is_custom_flat = not is_cottage_step and (
             not is_in_places_db or 
@@ -3028,7 +3031,7 @@ elif "active_tab" not in st.session_state:
     st.session_state.active_tab = "route"
 
 if "place" in st.query_params:
-    st.session_state.active_place_id = str(st.query_params["place"])
+    st.session_state.active_place_id = str(st.query_params["place"]).strip()
     st.session_state.active_tab = "zabytek"
 
 if "return_tab" in st.query_params:
@@ -3055,6 +3058,7 @@ if "last_map_click_place" not in st.session_state:
 if "last_map_click_trips" not in st.session_state:
     st.session_state.last_map_click_trips = None
 
+# ZAWSZE świeże dane miejsc przy każdym renderze
 df_miejsca = pobierz_wszystkie_miejsca()
 
 active_zabytek = "active" if st.session_state.active_tab == "zabytek" else ""
@@ -3078,7 +3082,7 @@ if st.session_state.active_tab == "route":
 elif st.session_state.active_tab == "map":
     render_adventure_header("CretAi • Nasze wycieczki")
     
-    st.session_state.show_completed_trips = st.checkbox("Pokaż ukończone wycieczki", value=st.session_state.show_completed_trips)
+    st.checkbox("Pokaż ukończone wycieczki", key="show_completed_trips")
     wycieczki_options_filtrowane = pobierz_skrocone_opcje_wycieczek(pokaz_ukonczone=st.session_state.show_completed_trips)
     opcje_wycieczek_lista = [None] + wycieczki_options_filtrowane
 
@@ -3089,8 +3093,8 @@ elif st.session_state.active_tab == "map":
     for _, row in df_miejsca.iterrows():
         lat, lon = sparsuj_wspolrzedne(row.get('wspolrzedne'))
         if lat is not None and lon is not None:
-            num = str(row.get('numer_miejsca', ''))
-            nazwa = str(row.get('nazwa', ''))
+            num = str(row.get('numer_miejsca', '')).strip()
+            nazwa = str(row.get('nazwa', '')).strip()
             kolor = "#A8A29E" if bool(row.get('odwiedzone', 0)) else pobierz_kolor_kategorii(kategoryzuj_typ(row.get('typ')))
             map_coords_lookup[(round(lat, 4), round(lon, 4))] = (num, nazwa)
             
@@ -3247,12 +3251,7 @@ elif st.session_state.active_tab == "zabytek":
                 st.rerun()
 
     st.markdown("<div style='margin-top: 4px;'></div>", unsafe_allow_html=True)
-    st.checkbox(
-        "Pokaż odwiedzone miejsca", 
-        value=st.session_state.get("show_visited_places", False), 
-        key="show_visited_places",
-        on_change=lambda: st.session_state.update(show_visited_places=st.session_state.show_visited_places)
-    )
+    st.checkbox("Pokaż odwiedzone miejsca", key="show_visited_places")
 
     df_miejsca_filtrowane = df_miejsca.copy()
     if not df_miejsca_filtrowane.empty:
@@ -3273,7 +3272,7 @@ elif st.session_state.active_tab == "zabytek":
         for _, row in df_miejsca_filtrowane.iterrows():
             lat, lon = sparsuj_wspolrzedne(row.get('wspolrzedne'))
             if lat is not None and lon is not None:
-                num = str(row.get('numer_miejsca', ''))
+                num = str(row.get('numer_miejsca', '')).strip()
                 kolor = "#A8A29E" if bool(row.get('odwiedzone', 0)) else pobierz_kolor_kategorii(row.get('kategoria_normalizowana', 'Other'))
                 marker_coords_dict[(round(lat, 4), round(lon, 4))] = num
                 icon_html = f'<div style="background-color:{kolor};color:#FFFFFF;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;border:2px solid #FFFFFF;box-shadow:0 2px 5px rgba(0,0,0,0.25);">{num}</div>'
@@ -3282,7 +3281,7 @@ elif st.session_state.active_tab == "zabytek":
     map_output = st_folium(m_miejsca, width=None, height=290, returned_objects=["last_object_clicked"], key="map_places_view")
 
     sb_key = f"place_selectbox_selector_{st.session_state.show_visited_places}"
-    miejsca_opcje_lista = [f"{r['numer_miejsca']}. {r['nazwa']}" for _, r in df_miejsca_filtrowane.iterrows()]
+    miejsca_opcje_lista = [f"{str(r['numer_miejsca']).strip()}. {r['nazwa']}" for _, r in df_miejsca_filtrowane.iterrows()]
 
     if map_output and map_output.get("last_object_clicked"):
         c_lat, c_lng = map_output["last_object_clicked"].get("lat"), map_output["last_object_clicked"].get("lng")
@@ -3297,8 +3296,8 @@ elif st.session_state.active_tab == "zabytek":
                             clicked_id = nid
                             break
                 if clicked_id:
-                    st.session_state.active_place_id = str(clicked_id)
-                    st.query_params["place"] = str(clicked_id)
+                    st.session_state.active_place_id = str(clicked_id).strip()
+                    st.query_params["place"] = str(clicked_id).strip()
                     for opt_str in miejsca_opcje_lista:
                         if opt_str.startswith(f"{clicked_id}."):
                             st.session_state[sb_key] = opt_str
@@ -3308,7 +3307,7 @@ elif st.session_state.active_tab == "zabytek":
     def on_place_select_changed():
         val = st.session_state.get(sb_key)
         if val:
-            nowy_id = val.split(".")[0].strip()
+            nowy_id = str(val).split(".")[0].strip()
             st.session_state.active_place_id = nowy_id
             st.query_params["place"] = nowy_id
         else:
@@ -3318,8 +3317,9 @@ elif st.session_state.active_tab == "zabytek":
 
     domyslny_indeks = 0
     if st.session_state.active_place_id:
+        target_prefix = f"{str(st.session_state.active_place_id).strip()}."
         for idx, opt in enumerate(miejsca_opcje_lista):
-            if opt.startswith(f"{st.session_state.active_place_id}."):
+            if opt.startswith(target_prefix):
                 domyslny_indeks = idx + 1
                 break
 
@@ -3333,12 +3333,15 @@ elif st.session_state.active_tab == "zabytek":
         label_visibility="collapsed"
     )
     
-    docelowy_nr = selected_option.split(".")[0].strip() if selected_option else st.session_state.active_place_id
+    docelowy_nr = selected_option.split(".")[0].strip() if selected_option else (str(st.session_state.active_place_id).strip() if st.session_state.active_place_id else None)
 
     if docelowy_nr:
-        p_row = df_miejsca[df_miejsca['numer_miejsca'] == str(docelowy_nr)]
-        if not p_row.empty:
-            p = p_row.iloc[0]
+        # Zawsze świeże odpytanie bazy o rekord miejsca
+        with get_db() as conn:
+            p_df_fresh = pd.read_sql("SELECT * FROM miejsca WHERE TRIM(numer_miejsca) = ?", conn, params=(str(docelowy_nr).strip(),))
+
+        if not p_df_fresh.empty:
+            p = p_df_fresh.iloc[0]
             kat_p = kategoryzuj_typ(p.get('typ'))
             kolor_p = pobierz_kolor_kategorii(kat_p)
             coords_p = str(p.get('wspolrzedne', '')).replace(" ", "")
@@ -3416,7 +3419,8 @@ elif st.session_state.active_tab == "zabytek":
             if coords_p and ',' in coords_p:
                 st.markdown(render_action_bar(coords_p, p.get('nazwa', '')), unsafe_allow_html=True)
 
-            if st.button("✓ Miejsce odwiedzone" if czy_odwiedzone else "🎯 Oznacz jako odwiedzone", key=f"btn_toggle_vis_{docelowy_nr}", use_container_width=True):
+            btn_vis_label = "✓ Miejsce odwiedzone (przywróć)" if czy_odwiedzone else "🎯 Oznacz jako odwiedzone"
+            if st.button(btn_vis_label, key=f"btn_toggle_vis_{docelowy_nr}", use_container_width=True):
                 potwierdz_odwiedzenie_dialog(docelowy_nr, p.get('nazwa'), czy_odwiedzone)
 
             renderuj_sekcje_notatek(id_miejsca=str(docelowy_nr))
