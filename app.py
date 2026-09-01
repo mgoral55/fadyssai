@@ -55,7 +55,6 @@ def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
     except:
         return "~25 min", 25
 
-
 @st.cache_data(ttl=86400)
 def pobierz_geometrie_trasy_osrm(lat1, lon1, lat2, lon2):
     url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=full&geometries=geojson"
@@ -235,7 +234,6 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
             krok_id_val = kroki[i][0]
             cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (f"{s_str} - {e_str}", krok_id_val))
             
-            # Dynamiczne przeliczanie godzin posiłków przypisanych do kroku
             cursor.execute('SELECT id, rodzaj_posilku FROM posilki_kroku WHERE id_kroku = ?', (krok_id_val,))
             pos_rows = cursor.fetchall()
             for p_id, p_rodzaj in pos_rows:
@@ -564,7 +562,6 @@ def init_db():
 
                     conn.commit()
                     
-                    # Fizyczne przeliczenie czasów przejazdu i okienek dla każdej wczytanej trasy
                     for wid in unikalne_wycieczki:
                         przelicz_i_zsynchronizuj_wycieczke(wid)
                         
@@ -627,11 +624,47 @@ div[data-testid="stPopover"] > button, div[data-testid="stPopover"] > button:dis
 div[data-testid="stPopover"] > button * { color: #2B2118 !important; font-weight: 900 !important; font-size: 1.05rem !important; }
 div[data-testid="stPopover"] > button:hover { border-color: #8C5338 !important; background-color: #EFE8D1 !important; }
 
-[data-testid="stExpander"] { border: 1.5px solid #E2DEC8 !important; border-radius: 20px !important; background-color: #F6F0DD !important; margin-bottom: 6px !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; overflow: hidden !important; }
-[data-testid="stExpander"] summary { font-size: 9.5pt !important; font-weight: 800 !important; color: #2B2118 !important; padding: 10px 14px !important; }
+/* SPÓJNE STYLIZOWANIE WSZYSTKICH AKORDEONÓW (TAKŻE ZAGNIEŻDŻONYCH) */
+[data-testid="stExpander"], div[data-testid="stExpander"] { 
+    border: 1.5px solid #E2DEC8 !important; 
+    border-radius: 18px !important; 
+    background-color: #F6F0DD !important; 
+    margin-bottom: 8px !important; 
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; 
+    overflow: hidden !important; 
+}
+[data-testid="stExpander"] summary { 
+    font-size: 9.5pt !important; 
+    font-weight: 800 !important; 
+    color: #2B2118 !important; 
+    padding: 10px 14px !important; 
+    background-color: #F6F0DD !important;
+}
 [data-testid="stExpander"] summary:hover { color: #8C5338 !important; }
 [data-testid="stExpander"] summary svg { fill: #8C5338 !important; color: #8C5338 !important; }
-[data-testid="stExpander"] [data-testid="stExpanderDetails"] { background-color: #F6F0DD !important; border-top: 1px solid #D1C7AE !important; padding: 10px 12px !important; }
+[data-testid="stExpander"] [data-testid="stExpanderDetails"] { 
+    background-color: #F6F0DD !important; 
+    border-top: 1px solid #D1C7AE !important; 
+    padding: 10px 12px !important; 
+}
+
+/* KARTY ZAGNIEŻDŻONE DLA ZADAŃ (POD-AKORDEONY) */
+[data-testid="stExpanderDetails"] [data-testid="stExpander"] {
+    background-color: #EDE8D6 !important;
+    border: 1.5px solid #D6CEBA !important;
+    border-radius: 14px !important;
+    margin-bottom: 6px !important;
+}
+[data-testid="stExpanderDetails"] [data-testid="stExpander"] summary {
+    background-color: #EDE8D6 !important;
+    font-size: 9pt !important;
+    font-weight: 800 !important;
+    color: #2B2118 !important;
+}
+[data-testid="stExpanderDetails"] [data-testid="stExpander"] [data-testid="stExpanderDetails"] {
+    background-color: #EDE8D6 !important;
+    border-top: 1px solid #C8C0AA !important;
+}
 
 .top-sticky-nav-container { position: sticky; top: 0; z-index: 999; background-color: #B4C29D; padding: 6px 0 10px 0; margin-bottom: 6px; border-bottom: 1.5px solid rgba(255, 255, 255, 0.2); }
 .custom-top-nav-bar { display: flex; justify-content: space-between; gap: 8px; width: 100%; }
@@ -726,8 +759,21 @@ div.st-key-btn_date_picker { margin-bottom: 10px !important; }
 .timeline-transit-spacer { position: relative; width: 100%; min-height: 24px; display: flex; align-items: center; margin: 3px 0; z-index: 2; }
 .timeline-transit-text { margin-left: 110px; font-size: 8.5pt; font-weight: 800; color: #2B2118; display: flex; align-items: center; gap: 5px; z-index: 2; background: transparent; border: none; padding: 0; }
 
-div[data-testid="stCheckbox"] { margin-bottom: 4px !important; background-color: #B4C29D !important; border: none !important; border-radius: 0px !important; padding: 0px !important; box-shadow: none !important; accent-color: #8C5338 !important; }
-div[data-testid="stCheckbox"] label { font-size: 9pt !important; font-weight: 700 !important; color: #2B2118 !important; }
+div[data-testid="stCheckbox"] { 
+    margin-bottom: 6px !important; 
+    background-color: transparent !important; 
+    border: none !important; 
+    border-radius: 0px !important; 
+    padding: 0px !important; 
+    box-shadow: none !important; 
+    accent-color: #8C5338 !important; 
+}
+div[data-testid="stCheckbox"] label, div[data-testid="stCheckbox"] p, div[data-testid="stCheckbox"] span { 
+    font-size: 9.5pt !important; 
+    font-weight: 700 !important; 
+    color: #2B2118 !important; 
+    line-height: 1.35 !important;
+}
 
 .floating-ai-container { position: fixed; bottom: 10px; left: 6px; right: 6px; max-width: 520px; margin: 0 auto; z-index: 999998; }
 .custom-nav-bar { display: flex; justify-content: space-between; gap: 6px; width: 100%; }
@@ -1105,8 +1151,20 @@ def sparsuj_liste_zadan(zadania_raw):
     except:
         pass
 
-    linie = [re.sub(r'^[\s*\-•\d\.\)]+', '', line).strip() for line in zadania_str.split('\n')]
-    return [l for l in linie if l]
+    linie = []
+    for line in zadania_str.split('\n'):
+        line_clean = line.strip()
+        if not line_clean:
+            continue
+        czesci = re.split(r'(?:^|\s+)(?:\d+[\.\)]\s*|[-•*]\s*)', line_clean)
+        for czesc in czesci:
+            czesc_clean = czesc.strip()
+            if czesc_clean and len(czesc_clean) > 2:
+                linie.append(czesc_clean)
+                
+    if not linie:
+        linie = [zadania_str]
+    return linie
 
 def pobierz_status_zadania(klucz_zadania):
     with get_db() as conn:
@@ -2334,14 +2392,28 @@ def edit_date_dialog(wycieczka_id, aktualna_data):
 
 @st.dialog("Status wycieczki")
 def potwierdz_zakonczenie_wycieczki_dialog(wycieczka_id, tytul, czy_odbyta):
-    st.markdown(f"Czy chcesz zmienić status wycieczki **{tytul}** na: **{'Nieodbyta' if czy_odbyta else 'Ukończona'}**?")
+    st.markdown(f"Czy chcesz zmienić status wycieczki **{tytul}** na: **{'Nieukończona (przywróć)' if czy_odbyta else 'Ukończona'}**?")
+    if not czy_odbyta:
+        st.info("ℹ️ Wszystkie miejsca wchodzące w skład tej wycieczki zostaną automatycznie oznaczone jako **odwiedzone**.")
     col_ok, col_no = st.columns(2)
     with col_ok:
         if st.button("Tak, zmień", use_container_width=True):
+            nowy_status = 0 if czy_odbyta else 1
             with get_db() as conn:
-                conn.cursor().execute("UPDATE wycieczka SET odbyta = ? WHERE id = ?", (0 if czy_odbyta else 1, str(wycieczka_id)))
+                cursor = conn.cursor()
+                cursor.execute("UPDATE wycieczka SET odbyta = ? WHERE id = ?", (nowy_status, str(wycieczka_id)))
+                
+                # Kaskadowa aktualizacja statusu odwiedzenia miejsc powiązanych z krokami wycieczki
+                cursor.execute("SELECT krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?", (str(wycieczka_id),))
+                kroki = cursor.fetchall()
+                for k_num, k_nazwa in kroki:
+                    k_nazwa_clean = k_nazwa.strip()
+                    if k_num and str(k_num).isdigit() and str(k_num) != "0":
+                        cursor.execute("UPDATE miejsca SET odwiedzone = ? WHERE numer_miejsca = ?", (nowy_status, str(k_num)))
+                    cursor.execute("UPDATE miejsca SET odwiedzone = ? WHERE LOWER(nazwa) = LOWER(?)", (nowy_status, k_nazwa_clean))
+                
                 conn.commit()
-            st.session_state["flash_toast"] = "🏁 Zaktualizowano status wycieczki!"
+            st.session_state["flash_toast"] = "🏁 Zaktualizowano status wycieczki oraz powiązanych miejsc!"
             st.rerun()
     with col_no:
         if st.button("Anuluj", use_container_width=True):
@@ -2593,7 +2665,6 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
         badge_symbol = detected_icon if detected_icon is not None else (krok_num if (krok_num and krok_num != "0") else str(idx))
         
-        # Sprawdzanie czy krok powiązany jest z bazą miejsc
         matched_place_id = None
         if not df_wszystkie_miejsca_ref.empty:
             if krok_num and str(krok_num).isdigit() and str(krok_num) != "0":
@@ -2676,7 +2747,6 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             ostrzezenie_val = str(k.get('czerwona_strefa_ostrzezenie', '')).strip()
             warn_html = f'<div class="step-warn-box"><div class="step-warn-title">⚠️ Ostrzeżenie (Czerwona strefa)</div><div class="step-warn-text">{ostrzezenie_val}</div></div>' if (ostrzezenie_val and ostrzezenie_val not in ["None", "Brak"]) else ""
 
-            # Szybki link do karty miejsca
             place_link_html = ""
             if matched_place_id:
                 cur_tab = "route" if st.session_state.active_tab == "route" else "map"
@@ -2860,6 +2930,8 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                     render_shopping_checkbox_list(zakupy_kroku, "zakup_krok_view")
 
     renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
+    
+    # --- ZADANIA DLA DZIECI (DWUPOZIOMOWY AKORDEON) ---
     st.markdown('<div class="section-unified-header">🎯 Zadania dla dzieci</div>', unsafe_allow_html=True)
     grupy_zadan = pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df, df_wszystkie_miejsca_ref)
     
@@ -2877,14 +2949,15 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                             zapisz_status_zadania(klucz, nowy_stan)
                             st.rerun()
         else:
-            st.markdown("<div style='font-size: 8.5pt; color: #8C827A; font-style: italic;'>Brak zadań dla tej wycieczki.</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 8.5pt; color: #8C827A; font-style: italic; margin: 4px 0;'>Brak zadań dla tej wycieczki.</div>", unsafe_allow_html=True)
 
     czy_odbyta = bool(w_gen.get('odbyta', 0))
     st.markdown('<div class="section-unified-header">⚙️ Zarządzanie Wycieczką</div>', unsafe_allow_html=True)
     
     col_stat, col_dup = st.columns(2)
     with col_stat:
-        if st.button("✓ Ukończona (cofnij)" if czy_odbyta else "🏁 Oznacz jako odbytą", key=f"btn_finish_trip_{wycieczka_id}", use_container_width=True):
+        btn_finish_label = "✓ Ukończona (przywróć)" if czy_odbyta else "🏁 Oznacz jako ukończoną"
+        if st.button(btn_finish_label, key=f"btn_finish_trip_{wycieczka_id}", use_container_width=True):
             potwierdz_zakonczenie_wycieczki_dialog(wycieczka_id, tytul_wycieczki, czy_odbyta)
     with col_dup:
         if st.button("📋 Klonuj wycieczkę", key=f"btn_dup_trip_{wycieczka_id}", use_container_width=True):
@@ -3013,7 +3086,6 @@ elif st.session_state.active_tab == "map":
                         st.session_state.map_tab_selected_place = None
                         st.rerun()
 
-    # Jeśli wracamy z widoku miejsca do wycieczki w zakładce mapy
     if st.session_state.return_trip and not st.session_state.get("map_wycieczka_select"):
         for opt in opcje_wycieczek_lista:
             if opt and opt.startswith(f"{st.session_state.return_trip}."):
@@ -3055,7 +3127,6 @@ elif st.session_state.active_tab == "map":
 elif st.session_state.active_tab == "zabytek":
     render_adventure_header("CretAi • Baza Miejsc")
     
-    # Przycisk powrotu do wycieczki (jeśli użytkownik przeszedł z konkretnego kroku)
     ret_tab = st.session_state.get("return_tab")
     ret_trip = st.session_state.get("return_trip")
 
