@@ -667,6 +667,26 @@ def init_db():
 
 init_db()
 
+# --- MODUŁ PRZYWRACANIA BAZY Z PLIKÓW CSV ---
+def resetuj_i_przywroc_baze_z_csv():
+    with get_db() as conn:
+        cursor = conn.cursor()
+        tabele = [
+            "czasy_dojazdu", "posilki_kroku", "zakupy", "notatki", 
+            "statusy_zadan", "czat_historia", "krok_wycieczki", 
+            "wycieczka", "miejsca", "aktywna_wycieczka"
+        ]
+        for t in tabele:
+            cursor.execute(f"DELETE FROM {t}")
+        try:
+            cursor.execute('DELETE FROM sqlite_sequence')
+        except Exception:
+            pass
+        conn.commit()
+    
+    st.cache_data.clear()
+    init_db()
+
 # --- BEZPOŚREDNIE MUTACJE STATUSÓW ODWIDZENIA MIEJSC ---
 def zmien_status_odwiedzenia_miejsca(nr_miejsca, nowy_status):
     with get_db() as conn:
@@ -925,13 +945,23 @@ with st.sidebar:
     env_gemini_key = os.environ.get("GEMINI_API_KEY", "")
     api_key_input = st.text_input("Gemini API Key", value=env_gemini_key, type="password")
 
+    # --- DYSKRETNY RESET (TYLKO W PROFILU MAGDY) ---
+    if aktualny_uzytkownik == "Magda":
+        st.markdown("<div style='margin-top: 50px;'></div>", unsafe_allow_html=True)
+        with st.expander("🔒 Konsola deweloperska", expanded=False):
+            potwierdzenie_kod = st.text_input("Hasło", type="password", key="input_reset_db_auth")
+            if st.button("🔥 Przywróć bazę z CSV", disabled=(potwierdzenie_kod != "RESET"), use_container_width=True):
+                resetuj_i_przywroc_baze_z_csv()
+                st.session_state["flash_toast"] = "♻️ Baza danych została całkowicie zresetowana i odtworzona z CSV!"
+                st.rerun()
+
 # --- OBSŁUGA LOGO ---
 @st.cache_data
 def pobierz_logo_b64(sciezka_pliku="logo.png"):
     if os.path.exists(sciezka_pliku):
         try:
             with open(sciezka_pliku, "rb") as f:
-                return f"data:image/png;base64,{base64.b64encode(f.read()).decode()}"
+                return f"data:imagepng;base64,{base64.b64encode(f.read()).decode()}"
         except Exception:
             return None
     return None
@@ -3159,9 +3189,9 @@ elif st.session_state.active_tab == "zabytek":
                 st.session_state.last_map_click_place = click_pt
                 clicked_id = marker_coords_dict.get(click_pt)
                 if not clicked_id:
-                    for (mlat, mlon), nid in marker_coords_dict.items():
+                    for (mlat, mlon), data_tuple in marker_coords_dict.items():
                         if abs(mlat - c_lat) < 0.005 and abs(mlon - c_lng) < 0.005:
-                            clicked_id = nid
+                            clicked_id = data_tuple
                             break
                 if clicked_id:
                     st.session_state.active_place_id = str(clicked_id).strip()
