@@ -14,12 +14,7 @@ import base64
 import time as py_time
 from datetime import datetime, date, time, timedelta
 
-try:
-    import anthropic
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    ANTHROPIC_AVAILABLE = False
-
+# Stałe koordynatów
 DOMEK_LAT, DOMEK_LON = 35.5914, 24.0918
 SKLEP_LAT, SKLEP_LON = 35.586222, 24.091861
 
@@ -42,17 +37,18 @@ def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
             data = json.loads(response.read().decode())
             if 'routes' in data and len(data['routes']) > 0:
                 minuty = zaokraglij_do_5_minut(int(round(data['routes'][0]['duration'] / 60)))
-                if minuty < 60: return f"~{minuty} min", minuty
+                if minuty < 60:
+                    return f"~{minuty} min", minuty
                 godziny, reszta = minuty // 60, minuty % 60
                 return (f"~{godziny}h", minuty) if reszta == 0 else (f"~{godziny}h {reszta}m", minuty)
-    except:
+    except Exception:
         pass
     
     try:
         dist_km = math.sqrt(((lat2 - lat1) * 111.0)**2 + ((lon2 - lon1) * 85.0)**2) * 1.3
         est_min = zaokraglij_do_5_minut(max(int(round((dist_km / 45.0) * 60)), 10))
         return (f"~{est_min} min", est_min) if est_min < 60 else (f"~{est_min // 60}h {est_min % 60}m", est_min)
-    except:
+    except Exception:
         return "~25 min", 25
 
 @st.cache_data(ttl=86400)
@@ -78,7 +74,7 @@ def sparsuj_wspolrzedne(wsp_str):
     try:
         parts = s.split(',')
         return float(parts[0].strip()), float(parts[1].strip())
-    except:
+    except Exception:
         return None, None
 
 def sparsuj_godzine_minuty(czas_str):
@@ -99,7 +95,7 @@ def oblicz_czas_trwania_okienka(okienko_str, domyslny_czas=45):
         g1, g2 = sparsuj_godzine_minuty(czesci[0]), sparsuj_godzine_minuty(czesci[1])
         if g1 and g2:
             return max((g2[0] * 60 + g2[1]) - (g1[0] * 60 + g1[1]), 15)
-    except:
+    except Exception:
         pass
     return domyslny_czas
 
@@ -114,7 +110,7 @@ def sparsuj_czas_ogarniania_na_minuty(czas_str):
     if total == 0:
         try:
             total = int(float(s) * 60) if '.' in s else int(s)
-        except:
+        except Exception:
             total = 30
     return max(total, 15)
 
@@ -143,6 +139,41 @@ def pobierz_kolor_kategorii(kategoria):
 
 def pobierz_ikonke_kategorii(kategoria):
     return CATEGORIES_CONFIG.get(kategoria, CATEGORIES_CONFIG["Other"]).get("icon")
+
+# --- POMOCNICZE FUNKCJE STRUKTURY KROKÓW (DRY) ---
+def _reindex_kroki(cursor, id_wycieczki):
+    cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC, id ASC', (str(id_wycieczki),))
+    kroki = cursor.fetchall()
+    for idx, (k_id,) in enumerate(kroki):
+        cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k_id))
+
+def _wstaw_krok_do_wycieczki(cursor, id_wycieczki, nazwa, wspolrzedne, okienko, opis, podsumowanie_taktyki=None, pozycja="koniec"):
+    cursor.execute('SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
+    rows = cursor.fetchall()
+    
+    if pozycja == "start":
+        insert_idx = 1 if (len(rows) <= 1 or not any(w in str(rows[1][1]).lower() for w in ["sklep", "market"])) else 2
+    else:
+        if len(rows) > 0 and any(w in str(rows[-1][1]).lower() for w in ["domek", "powrót", "powrot"]):
+            insert_idx = max(len(rows) - 1, 0)
+        else:
+            insert_idx = len(rows)
+
+    cursor.execute('''
+        INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, podsumowanie_taktyki, opis)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (str(id_wycieczki), insert_idx, nazwa, wspolrzedne, okienko, podsumowanie_taktyki, opis))
+    nowy_id = cursor.lastrowid
+
+    _reindex_kroki(cursor, id_wycieczki)
+    return nowy_id
+
+def _usun_krok_z_wycieczki(cursor, id_kroku, id_wycieczki):
+    cursor.execute("DELETE FROM zakupy WHERE id_kroku = ?", (id_kroku,))
+    cursor.execute("DELETE FROM posilki_kroku WHERE id_kroku = ?", (id_kroku,))
+    cursor.execute("DELETE FROM czasy_dojazdu WHERE id_kroku_z = ? OR id_kroku_do = ?", (id_kroku, id_kroku))
+    cursor.execute("DELETE FROM krok_wycieczki WHERE id = ?", (id_kroku,))
+    _reindex_kroki(cursor, id_wycieczki)
 
 def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, force_wyjazd_str=None, force_powrot_str=None):
     with get_db() as conn:
@@ -391,6 +422,12 @@ def init_db():
             )
         ''')
         cursor.execute('INSERT OR IGNORE INTO aktywna_wycieczka (id, aktualne_id_wycieczki) VALUES (1, "1")')
+
+        # Indeksy poprawiające wydajność zapytań
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_krok_wyc ON krok_wycieczki(id_wycieczki)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_posilki_krok ON posilki_kroku(id_kroku)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_zakupy_wyc ON zakupy(id_wycieczki)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_czasy_dojazd ON czasy_dojazdu(id_kroku_z, id_kroku_do)')
 
         if os.path.exists('miejsca.csv'):
             for enc in ['utf-8', 'utf-8-sig', 'cp1250', 'iso-8859-2']:
@@ -797,28 +834,22 @@ if "flash_toast" in st.session_state and st.session_state["flash_toast"]:
 with st.sidebar:
     st.markdown("### ⚙️ Konfiguracja CretAi")
     aktualny_uzytkownik = st.selectbox("Profil użytkownika", options=["Tata", "Mama", "Dzieci"], index=0)
-    wybrany_dostawca = st.selectbox("Dostawca AI", options=["Google Gemini", "Anthropic Claude"] if ANTHROPIC_AVAILABLE else ["Google Gemini"])
-    
-    if wybrany_dostawca == "Google Gemini":
-        wybrany_model = st.selectbox(
-            "Model", 
-            options=["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"], 
-            index=0
-        )
-        env_gemini_key = os.environ.get("GEMINI_API_KEY", "")
-        api_key_input = st.text_input("Gemini API Key", value=env_gemini_key, type="password")
-    else:
-        wybrany_model = st.selectbox("Model", options=["claude-3-5-sonnet-20241022", "claude-3-haiku-20240307"], index=0)
-        env_anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        api_key_input = st.text_input("Anthropic API Key", value=env_anthropic_key, type="password")
+    wybrany_model = st.selectbox(
+        "Model Gemini", 
+        options=["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"], 
+        index=0
+    )
+    env_gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    api_key_input = st.text_input("Gemini API Key", value=env_gemini_key, type="password")
 
 # --- OBSŁUGA LOGO ---
+@st.cache_data
 def pobierz_logo_b64(sciezka_pliku="logo.png"):
     if os.path.exists(sciezka_pliku):
         try:
             with open(sciezka_pliku, "rb") as f:
                 return f"data:image/png;base64,{base64.b64encode(f.read()).decode()}"
-        except:
+        except Exception:
             return None
     return None
 
@@ -850,7 +881,7 @@ def pobierz_dane_rynku_dla_daty(data_str):
     try:
         dt = datetime.strptime(str(data_str), "%Y-%m-%d").date()
         weekday = dt.weekday()
-    except:
+    except Exception:
         weekday = date.today().weekday()
     return LAIKI_SCHEDULE.get(weekday), weekday
 
@@ -860,16 +891,17 @@ MIESIACE_PL = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "li
 def sformatuj_date_pl(data_str):
     try:
         dt = datetime.strptime(str(data_str), "%Y-%m-%d").date() if data_str else date.today()
-    except:
+    except Exception:
         dt = date.today()
     return dt, dt.day, MIESIACE_PL[dt.month - 1], DNI_TYGODNIA_PL[dt.weekday()]
 
+@st.cache_data
 def wczytaj_pliki_regul(katalog="rule", plik_glowny="SYSTEM_RULES_KRETA_ADHD.md"):
     if os.path.exists(plik_glowny):
         try:
             with open(plik_glowny, 'r', encoding='utf-8') as f:
                 return f"\n--- SYSTEM RULES (GŁÓWNY PLIK REGUŁ) ---\n{f.read().strip()}\n"
-        except:
+        except Exception:
             pass
 
     if not os.path.exists(katalog):
@@ -882,7 +914,7 @@ def wczytaj_pliki_regul(katalog="rule", plik_glowny="SYSTEM_RULES_KRETA_ADHD.md"
                 with open(sciezka, 'r', encoding='utf-8') as f:
                     tresc += f"[{plik}]:\n{f.read().strip()}\n\n"
                     znaleziono = True
-            except:
+            except Exception:
                 pass
     return tresc if znaleziono else ""
 
@@ -947,7 +979,7 @@ def pobierz_prognoze_pogody(lat, lon, data_docelowa):
                     return day
             if weather_list:
                 return weather_list[0]
-    except:
+    except Exception:
         pass
     return None
 
@@ -967,7 +999,7 @@ def pobierz_szczegoly_pogody_dla_godziny(wspolrzedne, planowana_data, okienko_cz
     if okienko_czasowe and "-" in okienko_czasowe:
         try:
             target_hour = int(okienko_czasowe.split("-")[0].strip().split(":")[0])
-        except:
+        except Exception:
             pass
 
     dopasowana_godzina, min_diff = None, 999
@@ -976,7 +1008,7 @@ def pobierz_szczegoly_pogody_dla_godziny(wspolrzedne, planowana_data, okienko_cz
             diff = abs(int(h.get('time', '0')) // 100 - target_hour)
             if diff < min_diff:
                 min_diff, dopasowana_godzina = diff, h
-        except:
+        except Exception:
             pass
 
     if dopasowana_godzina:
@@ -1148,7 +1180,7 @@ def sparsuj_liste_zadan(zadania_raw):
         parsed_json = json.loads(zadania_str)
         if isinstance(parsed_json, list):
             return [str(z).strip() for z in parsed_json if str(z).strip()]
-    except:
+    except Exception:
         pass
 
     linie = []
@@ -1189,16 +1221,19 @@ def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df, df_wszystkie_miejs
 
     for _, krok in kroki_df.iterrows():
         nazwa_kroku = str(krok.get('nazwa', '')).strip()
-        krok_num = str(krok.get('krok_wycieczki', '')).strip()
         krok_id = krok.get('id')
 
-        match = df_wszystkie_miejsca_ref[
-            (df_wszystkie_miejsca_ref['numer_miejsca'].astype(str) == krok_num) |
-            (df_wszystkie_miejsca_ref['nazwa'].str.lower() == nazwa_kroku.lower())
-        ]
+        # Dopasowanie precyzyjne po nazwie miejsca w bazie
+        m_row = None
+        for _, m_cand in df_wszystkie_miejsca_ref.iterrows():
+            m_cand_name = str(m_cand['nazwa']).lower()
+            m_cand_base = m_cand_name.split('(')[0].strip()
+            nazwa_kroku_l = nazwa_kroku.lower()
+            if m_cand_name == nazwa_kroku_l or (len(m_cand_base) > 3 and (m_cand_base in nazwa_kroku_l or nazwa_kroku_l in m_cand_base)):
+                m_row = m_cand
+                break
 
-        if not match.empty:
-            m_row = match.iloc[0]
+        if m_row is not None:
             zadania_raw = m_row.get('zadania_dla_dzieci', '')
             zadania = sparsuj_liste_zadan(zadania_raw)
             if zadania:
@@ -1213,10 +1248,12 @@ def znajdz_id_kroku_w_db(cursor, id_wycieczki, identyfikator):
     cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
     rows = cursor.fetchall()
     
+    # 1. Dokładne dopasowanie po ID bazy lub numerze kroku
     for r_id, r_num, r_nazwa in rows:
         if str(r_id) == str(identyfikator) or str(r_num) == str(identyfikator):
             return r_id, r_nazwa
 
+    # 2. Dopasowanie po nazwie miejsca
     for r_id, r_num, r_nazwa in rows:
         nazwa_l = r_nazwa.lower()
         if ident_str in nazwa_l or nazwa_l in ident_str:
@@ -1411,28 +1448,15 @@ def utworz_nowa_wycieczke(tytul_wycieczki, planowana_data=None, pobudka="06:00",
 def dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki, pozycja="koniec"):
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
-        rows = cursor.fetchall()
-        
-        if pozycja == "start":
-            insert_idx = 1
-        else:
-            if len(rows) > 0 and any(w in str(rows[-1][1]).lower() for w in ["domek", "powrót", "powrot"]):
-                insert_idx = len(rows) - 1
-            else:
-                insert_idx = len(rows)
-
-        cursor.execute('''
-            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis)
-            VALUES (?, ?, 'Sklep przy domku w Stavros', ?, '16:00 - 16:30', '')
-        ''', (str(id_wycieczki), insert_idx, f"{SKLEP_LAT}, {SKLEP_LON}"))
-        nowy_id = cursor.lastrowid
-
-        ordered_ids = [r[0] for r in rows]
-        ordered_ids.insert(insert_idx, nowy_id)
-
-        for idx, k_id in enumerate(ordered_ids):
-            cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k_id))
+        nowy_id = _wstaw_krok_do_wycieczki(
+            cursor=cursor,
+            id_wycieczki=id_wycieczki,
+            nazwa='Sklep przy domku w Stavros',
+            wspolrzedne=f"{SKLEP_LAT}, {SKLEP_LON}",
+            okienko='16:00 - 16:30',
+            opis='',
+            pozycja=pozycja
+        )
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
@@ -1448,23 +1472,8 @@ def usun_sklep_z_wycieczki_handler(id_wycieczki, pozycja=None):
         if not shop_rows:
             return {"success": False, "message": "Nie znaleziono sklepu w tej wycieczce."}
         
-        if pozycja == "start":
-            target = shop_rows[0]
-        elif pozycja == "koniec":
-            target = shop_rows[-1]
-        else:
-            target = shop_rows[0]
-            
-        k_id = target[0]
-        cursor.execute("DELETE FROM zakupy WHERE id_kroku = ?", (k_id,))
-        cursor.execute("DELETE FROM posilki_kroku WHERE id_kroku = ?", (k_id,))
-        cursor.execute("DELETE FROM czasy_dojazdu WHERE id_kroku_z = ? OR id_kroku_do = ?", (k_id, k_id))
-        cursor.execute("DELETE FROM krok_wycieczki WHERE id = ?", (k_id,))
-
-        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
-        all_k = cursor.fetchall()
-        for idx, k in enumerate(all_k):
-            cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k[0]))
+        target = shop_rows[-1] if pozycja == "koniec" else shop_rows[0]
+        _usun_krok_z_wycieczki(cursor, target[0], id_wycieczki)
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
@@ -1481,34 +1490,15 @@ def dodaj_rynek_w_chanii_do_wycieczki(id_wycieczki, pozycja="start"):
         wsp = rynek_info["coords"] if rynek_info else "35.5118, 24.0239"
         opis = f"Targ miejski: {rynek_info['opis_miejsca']}" if rynek_info else "Targ miejski Chania"
         
-        cursor.execute('SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
-        rows = cursor.fetchall()
-        
-        if pozycja == "start":
-            if len(rows) > 1 and any(w in str(rows[1][1]).lower() for w in ["sklep", "market"]):
-                insert_idx = 2
-            else:
-                insert_idx = 1
-        else:
-            if len(rows) > 0 and any(w in str(rows[-1][1]).lower() for w in ["domek", "powrót", "powrot"]):
-                if len(rows) > 1 and any(w in str(rows[-2][1]).lower() for w in ["sklep", "market"]):
-                    insert_idx = len(rows) - 2
-                else:
-                    insert_idx = len(rows) - 1
-            else:
-                insert_idx = len(rows)
-
-        cursor.execute('''
-            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, opis)
-            VALUES (?, ?, 'Rynek w Chanii (Laiki)', ?, '08:30 - 09:30', ?)
-        ''', (str(id_wycieczki), insert_idx, wsp, opis))
-        nowy_id = cursor.lastrowid
-
-        ordered_ids = [r[0] for r in rows]
-        ordered_ids.insert(insert_idx, nowy_id)
-
-        for idx, k_id in enumerate(ordered_ids):
-            cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k_id))
+        nowy_id = _wstaw_krok_do_wycieczki(
+            cursor=cursor,
+            id_wycieczki=id_wycieczki,
+            nazwa='Rynek w Chanii (Laiki)',
+            wspolrzedne=wsp,
+            okienko='08:30 - 09:30',
+            opis=opis,
+            pozycja=pozycja
+        )
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
@@ -1524,23 +1514,8 @@ def usun_rynek_z_wycieczki_handler(id_wycieczki, pozycja=None):
         if not market_rows:
             return {"success": False, "message": "Nie znaleziono rynku w tej wycieczce."}
         
-        if pozycja == "start":
-            target = market_rows[0]
-        elif pozycja == "koniec":
-            target = market_rows[-1]
-        else:
-            target = market_rows[0]
-            
-        k_id = target[0]
-        cursor.execute("DELETE FROM zakupy WHERE id_kroku = ?", (k_id,))
-        cursor.execute("DELETE FROM posilki_kroku WHERE id_kroku = ?", (k_id,))
-        cursor.execute("DELETE FROM czasy_dojazdu WHERE id_kroku_z = ? OR id_kroku_do = ?", (k_id, k_id))
-        cursor.execute("DELETE FROM krok_wycieczki WHERE id = ?", (k_id,))
-
-        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
-        all_k = cursor.fetchall()
-        for idx, k in enumerate(all_k):
-            cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k[0]))
+        target = market_rows[-1] if pozycja == "koniec" else market_rows[0]
+        _usun_krok_z_wycieczki(cursor, target[0], id_wycieczki)
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
@@ -1564,7 +1539,7 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, planowana_data=None, czas_wyjazdu
 def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 - 13:30", podsumowanie_taktyki=""):
     ok, err_msg = sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania)
     if not ok:
-        return {"success": False, "error": err_msg}
+        return {"success": False, "blocked_by_guardrail": True, "error": err_msg}
 
     miejsce = szukaj_miejsca_w_bazie(nazwa_z_bazy)
     wsp = miejsce.get("wspolrzedne", f"{SKLEP_LAT}, {SKLEP_LON}") if miejsce else f"{SKLEP_LAT}, {SKLEP_LON}"
@@ -1572,24 +1547,16 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 -
 
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
-        rows = cursor.fetchall()
-        
-        insert_idx = len(rows)
-        if len(rows) > 0 and any(w in str(rows[-1][1]).lower() for w in ["domek", "powrót", "powrot"]):
-            insert_idx = len(rows) - 1
-
-        cursor.execute('''
-            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania, podsumowanie_taktyki, opis)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (str(id_wycieczki), insert_idx, nazwa_z_bazy, wsp, okienko_zwiedzania, podsumowanie_taktyki, opis))
-        nowy_id = cursor.lastrowid
-
-        ordered_ids = [r[0] for r in rows]
-        ordered_ids.insert(insert_idx, nowy_id)
-
-        for idx, k_id in enumerate(ordered_ids):
-            cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k_id))
+        nowy_id = _wstaw_krok_do_wycieczki(
+            cursor=cursor,
+            id_wycieczki=id_wycieczki,
+            nazwa=nazwa_z_bazy,
+            wspolrzedne=wsp,
+            okienko=okienko_zwiedzania,
+            opis=opis,
+            podsumowanie_taktyki=podsumowanie_taktyki,
+            pozycja="koniec"
+        )
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
@@ -1616,15 +1583,7 @@ def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
             return {"success": False, "error": f"Nie znaleziono kroku: {krok_wycieczki}"}
         k_id, k_nazwa = k_info
 
-        cursor.execute("DELETE FROM zakupy WHERE id_kroku = ?", (k_id,))
-        cursor.execute("DELETE FROM posilki_kroku WHERE id_kroku = ?", (k_id,))
-        cursor.execute("DELETE FROM czasy_dojazdu WHERE id_kroku_z = ? OR id_kroku_do = ?", (k_id, k_id))
-        cursor.execute("DELETE FROM krok_wycieczki WHERE id = ?", (k_id,))
-
-        cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
-        all_k = cursor.fetchall()
-        for idx, k in enumerate(all_k):
-            cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k[0]))
+        _usun_krok_z_wycieczki(cursor, k_id, id_wycieczki)
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
@@ -2241,100 +2200,103 @@ Zwracaj się do użytkownika po imieniu w sposób bardzo personalny:
 
                     try:
                         with st.status("🧭 Analizuję bezpieczeństwo i trasę AuDHD...", expanded=False) as status:
-                            if wybrany_dostawca == "Google Gemini":
-                                client = genai.Client(api_key=api_key_input)
-                                
-                                contents = []
-                                for m in chat_historia_z_db[-4:]:
-                                    role = "model" if m["role"] in ["assistant", "model"] else "user"
-                                    contents.append(types.Content(role=role, parts=[types.Part.from_text(text=m["content"])]))
-                                
-                                contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
-                                
-                                config = types.GenerateContentConfig(
-                                    tools=cretai_tools,
-                                    system_instruction=system_prompt,
-                                    temperature=0.0,
-                                    max_output_tokens=1024
-                                )
+                            client = genai.Client(api_key=api_key_input)
+                            
+                            contents = []
+                            for m in chat_historia_z_db[-4:]:
+                                role = "model" if m["role"] in ["assistant", "model"] else "user"
+                                contents.append(types.Content(role=role, parts=[types.Part.from_text(text=m["content"])]))
+                            
+                            contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
+                            
+                            config = types.GenerateContentConfig(
+                                tools=cretai_tools,
+                                system_instruction=system_prompt,
+                                temperature=0.0,
+                                max_output_tokens=1024
+                            )
 
-                                words_declaring_action = ["dodałem", "dodałam", "zapisałem", "zapisałam", "utworzyłem", "utworzono", "stworzyłem", "zaktualizowałem", "usunąłem", "usunęłam", "skasowałem", "skasowano", "usunięto"]
-                                MAX_RETRIES = 2
+                            words_declaring_action = ["dodałem", "dodałam", "zapisałem", "zapisałam", "utworzyłem", "utworzono", "stworzyłem", "zaktualizowałem", "usunąłem", "usunęłam", "skasowałem", "skasowano", "usunięto"]
+                            MAX_RETRIES = 2
 
-                                stan_przed = pobierz_migawke_bazy(akt_wyc_id)
+                            stan_przed = pobierz_migawke_bazy(akt_wyc_id)
 
-                                for proba in range(MAX_RETRIES + 1):
-                                    executed_actions = []
-                                    assistant_reply = ""
+                            for proba in range(MAX_RETRIES + 1):
+                                executed_actions = []
+                                guardrail_rejected = False
+                                assistant_reply = ""
 
-                                    for loop_idx in range(5):
-                                        try:
+                                for loop_idx in range(5):
+                                    try:
+                                        response = client.models.generate_content(
+                                            model=wybrany_model,
+                                            contents=contents,
+                                            config=config
+                                        )
+                                    except Exception as api_err:
+                                        if "429" in str(api_err):
+                                            py_time.sleep(2.0)
                                             response = client.models.generate_content(
                                                 model=wybrany_model,
                                                 contents=contents,
                                                 config=config
                                             )
-                                        except Exception as api_err:
-                                            if "429" in str(api_err):
-                                                py_time.sleep(2.0)
-                                                response = client.models.generate_content(
-                                                    model=wybrany_model,
-                                                    contents=contents,
-                                                    config=config
-                                                )
-                                            else:
-                                                raise api_err
-
-                                        candidate = response.candidates[0] if response and response.candidates else None
-                                        calls = []
-                                        if hasattr(response, 'function_calls') and response.function_calls:
-                                            calls = response.function_calls
-                                        elif candidate and candidate.content and candidate.content.parts:
-                                            for p_part in candidate.content.parts:
-                                                if hasattr(p_part, 'function_call') and p_part.function_call:
-                                                    calls.append(p_part.function_call)
-
-                                        if calls:
-                                            if candidate and candidate.content:
-                                                contents.append(candidate.content)
-                                            
-                                            function_responses_parts = []
-                                            for call in calls:
-                                                call_name, args = call.name, call.args or {}
-                                                wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
-                                                executed_actions.append(f"{call_name}: {wynik_bazy.get('message', wynik_bazy) if isinstance(wynik_bazy, dict) else str(wynik_bazy)}")
-                                                function_responses_parts.append(
-                                                    types.Part.from_function_response(
-                                                        name=call_name, 
-                                                        response={"result": json.dumps(wynik_bazy, ensure_ascii=False) if isinstance(wynik_bazy, dict) else str(wynik_bazy)}
-                                                    )
-                                                )
-                                            contents.append(types.Content(role="user", parts=function_responses_parts))
-                                            py_time.sleep(0.3)
                                         else:
-                                            if candidate and candidate.content and candidate.content.parts:
-                                                assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
-                                            elif hasattr(response, 'text') and response.text:
-                                                assistant_reply = response.text
-                                            break
+                                            raise api_err
 
-                                    stan_po = pobierz_migawke_bazy(akt_wyc_id)
-                                    faktyczne_zmiany = weryfikuj_zmiany_w_bazie(stan_przed, stan_po)
-                                    model_twierdzi_ze_zrobil = any(w in assistant_reply.lower() for w in words_declaring_action)
-                                    
-                                    prompt_low = prompt.lower()
-                                    oczekiwal_usuniecia_wycieczki = ("usuń" in prompt_low or "usun" in prompt_low or "skasuj" in prompt_low) and any(w in prompt_low for w in ["wycieczk", "tras", "plan"])
-                                    oczekiwal_usuniecia_sklepu = ("usuń" in prompt_low or "usun" in prompt_low or "skasuj" in prompt_low) and any(w in prompt_low for w in ["sklep", "market", "targ", "rynek"])
-                                    oczekiwal_dodania_sklepu = any(w in prompt_low for w in ["dodaj", "wstaw", "zaplanuj"]) and any(w in prompt_low for w in ["sklep", "market", "rynek", "targ"])
-                                    oczekiwal_nowej_wycieczki = ("nowa" in prompt_low or "nową" in prompt_low or "stwórz" in prompt_low or "utwórz" in prompt_low) and "wycieczk" in prompt_low
-                                    oczekiwal_nowego_miejsca = ("dodaj" in prompt_low or "nowe" in prompt_low) and ("miejsc" in prompt_low or "baz" in prompt_low or "plaż" in prompt_low or "zabytek" in prompt_low)
-                                    
-                                    liczba_krokow_przed = len(stan_przed["kroki"])
-                                    liczba_krokow_po = len(stan_po["kroki"])
-                                    
-                                    brak_wymaganych_akcji = False
-                                    braki_opis = []
+                                    candidate = response.candidates[0] if response and response.candidates else None
+                                    calls = []
+                                    if hasattr(response, 'function_calls') and response.function_calls:
+                                        calls = response.function_calls
+                                    elif candidate and candidate.content and candidate.content.parts:
+                                        for p_part in candidate.content.parts:
+                                            if hasattr(p_part, 'function_call') and p_part.function_call:
+                                                calls.append(p_part.function_call)
 
+                                    if calls:
+                                        if candidate and candidate.content:
+                                            contents.append(candidate.content)
+                                        
+                                        function_responses_parts = []
+                                        for call in calls:
+                                            call_name, args = call.name, call.args or {}
+                                            wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
+                                            if isinstance(wynik_bazy, dict) and wynik_bazy.get("blocked_by_guardrail"):
+                                                guardrail_rejected = True
+                                            executed_actions.append(f"{call_name}: {wynik_bazy.get('message', wynik_bazy) if isinstance(wynik_bazy, dict) else str(wynik_bazy)}")
+                                            function_responses_parts.append(
+                                                types.Part.from_function_response(
+                                                    name=call_name, 
+                                                    response={"result": wynik_bazy}
+                                                )
+                                            )
+                                        contents.append(types.Content(role="user", parts=function_responses_parts))
+                                        py_time.sleep(0.3)
+                                    else:
+                                        if candidate and candidate.content and candidate.content.parts:
+                                            assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
+                                        elif hasattr(response, 'text') and response.text:
+                                            assistant_reply = response.text
+                                        break
+
+                                stan_po = pobierz_migawke_bazy(akt_wyc_id)
+                                faktyczne_zmiany = weryfikuj_zmiany_w_bazie(stan_przed, stan_po)
+                                model_twierdzi_ze_zrobil = any(w in assistant_reply.lower() for w in words_declaring_action)
+                                
+                                prompt_low = prompt.lower()
+                                oczekiwal_usuniecia_wycieczki = ("usuń" in prompt_low or "usun" in prompt_low or "skasuj" in prompt_low) and any(w in prompt_low for w in ["wycieczk", "tras", "plan"])
+                                oczekiwal_usuniecia_sklepu = ("usuń" in prompt_low or "usun" in prompt_low or "skasuj" in prompt_low) and any(w in prompt_low for w in ["sklep", "market", "targ", "rynek"])
+                                oczekiwal_dodania_sklepu = any(w in prompt_low for w in ["dodaj", "wstaw", "zaplanuj"]) and any(w in prompt_low for w in ["sklep", "market", "rynek", "targ"])
+                                oczekiwal_nowej_wycieczki = ("nowa" in prompt_low or "nową" in prompt_low or "stwórz" in prompt_low or "utwórz" in prompt_low) and "wycieczk" in prompt_low
+                                oczekiwal_nowego_miejsca = ("dodaj" in prompt_low or "nowe" in prompt_low) and ("miejsc" in prompt_low or "baz" in prompt_low or "plaż" in prompt_low or "zabytek" in prompt_low)
+                                
+                                liczba_krokow_przed = len(stan_przed["kroki"])
+                                liczba_krokow_po = len(stan_po["kroki"])
+                                
+                                brak_wymaganych_akcji = False
+                                braki_opis = []
+
+                                if not guardrail_rejected:
                                     if oczekiwal_nowej_wycieczki and len(stan_po["wycieczki"]) <= len(stan_przed["wycieczki"]):
                                         brak_wymaganych_akcji = True
                                         braki_opis.append("Nie wywołałeś narzędzia `utworz_nowa_wycieczke`")
@@ -2359,41 +2321,33 @@ Zwracaj się do użytkownika po imieniu w sposób bardzo personalny:
                                         brak_wymaganych_akcji = True
                                         braki_opis.append("Zadeklarowałeś wykonanie akcji, ale baza danych pozostała bez zmian")
 
-                                    if brak_wymaganych_akcji and proba < MAX_RETRIES:
-                                        status.update(label=f"🔄 Wykryto brak pełnego zapisu w bazie. Ponawiam próbę ({proba + 1}/{MAX_RETRIES})...", state="running")
-                                        contents.append(types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)]))
-                                        
-                                        feedback_prompt = (
-                                            f"SYSTEM AUDIT ERROR: Operacja niekompletna! "
-                                            f"{'; '.join(braki_opis)}. "
-                                            f"Wywołaj teraz właściwe narzędzie (np. `utworz_nowa_wycieczke`, `utworz_nowe_miejsce`, `dodaj_krok_wycieczki`, `usun_wycieczke`, `usun_sklep_z_wycieczki`). Nie odpowiadaj samym tekstem!"
-                                        )
-                                        contents.append(types.Content(role="user", parts=[types.Part.from_text(text=feedback_prompt)]))
-                                        continue
-                                    break
-
-                                if faktyczne_zmiany:
-                                    if not assistant_reply.strip():
-                                        assistant_reply = f"✅ **Zrealizowano plan dla Ciebie, {uzytkownik}.**"
-                                    assistant_reply += "\n\n**🔍 Potwierdzono fizyczny zapis w bazie SQLite:**\n" + "\n".join([f"- {z}" for z in faktyczne_zmiany])
-                                elif model_twierdzi_ze_zrobil and not faktyczne_zmiany:
-                                    assistant_reply = (
-                                        f"⚠️ **Uwaga ({uzytkownik}):** Model zadeklarował wykonanie akcji, "
-                                        f"ale **weryfikacja bazy SQLite wykazała brak zmian**. "
-                                        f"Spróbuj wydać polecenie prostszymi słowami."
+                                if brak_wymaganych_akcji and proba < MAX_RETRIES:
+                                    status.update(label=f"🔄 Wykryto brak pełnego zapisu w bazie. Ponawiam próbę ({proba + 1}/{MAX_RETRIES})...", state="running")
+                                    if len(contents) > 8:
+                                        contents = contents[-6:]
+                                    contents.append(types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)]))
+                                    
+                                    feedback_prompt = (
+                                        f"SYSTEM AUDIT ERROR: Operacja niekompletna! "
+                                        f"{'; '.join(braki_opis)}. "
+                                        f"Wywołaj teraz właściwe narzędzie (np. `utworz_nowa_wycieczke`, `utworz_nowe_miejsce`, `dodaj_krok_wycieczki`, `usun_wycieczke`, `usun_sklep_z_wycieczki`). Nie odpowiadaj samym tekstem!"
                                     )
-                                elif not assistant_reply.strip() and executed_actions:
-                                    assistant_reply = f"✅ **Zaktualizowano plan w bazie dla Ciebie, {uzytkownik}:**\n* " + "\n* ".join(executed_actions)
+                                    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=feedback_prompt)]))
+                                    continue
+                                break
 
-                            else:
-                                client_c = anthropic.Anthropic(api_key=api_key_input)
-                                resp = client_c.messages.create(
-                                    model=wybrany_model,
-                                    max_tokens=1024,
-                                    system=system_prompt,
-                                    messages=[{"role": "user", "content": prompt}]
+                            if faktyczne_zmiany:
+                                if not assistant_reply.strip():
+                                    assistant_reply = f"✅ **Zrealizowano plan dla Ciebie, {uzytkownik}.**"
+                                assistant_reply += "\n\n**🔍 Potwierdzono fizyczny zapis w bazie SQLite:**\n" + "\n".join([f"- {z}" for z in faktyczne_zmiany])
+                            elif model_twierdzi_ze_zrobil and not faktyczne_zmiany and not guardrail_rejected:
+                                assistant_reply = (
+                                    f"⚠️ **Uwaga ({uzytkownik}):** Model zadeklarował wykonanie akcji, "
+                                    f"ale **weryfikacja bazy SQLite wykazała brak zmian**. "
+                                    f"Spróbuj wydać polecenie prostszymi słowami."
                                 )
-                                assistant_reply = "".join([b.text for b in resp.content if hasattr(b, "text")])
+                            elif not assistant_reply.strip() and executed_actions:
+                                assistant_reply = f"✅ **Zaktualizowano plan w bazie dla Ciebie, {uzytkownik}:**\n* " + "\n* ".join(executed_actions)
 
                             status.update(label="✅ Gotowe!", state="complete")
 
@@ -2446,28 +2400,30 @@ def potwierdz_zakonczenie_wycieczki_dialog(wycieczka_id, tytul, czy_odbyta):
                 cursor = conn.cursor()
                 cursor.execute("UPDATE wycieczka SET odbyta = ? WHERE id = ?", (nowy_status, str(wycieczka_id)))
                 
-                # Pobranie kroków wycieczki oraz wszystkich miejsc do precyzyjnego dopasowania
-                cursor.execute("SELECT krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?", (str(wycieczka_id),))
+                cursor.execute("SELECT krok_wycieczki, nazwa, wspolrzedne FROM krok_wycieczki WHERE id_wycieczki = ?", (str(wycieczka_id),))
                 kroki = cursor.fetchall()
                 
-                cursor.execute("SELECT numer_miejsca, nazwa FROM miejsca")
+                cursor.execute("SELECT numer_miejsca, nazwa, wspolrzedne FROM miejsca")
                 wszystkie_miejsca_db = cursor.fetchall()
                 
-                for k_num, k_nazwa in kroki:
+                for k_num, k_nazwa, k_wsp in kroki:
                     k_nazwa_clean = str(k_nazwa).strip().lower()
+                    k_lat, k_lon = sparsuj_wspolrzedne(k_wsp)
                     
-                    # 1. Dopasowanie bezpośrednio po numerze kroku
-                    if k_num and str(k_num).isdigit() and str(k_num) != "0":
-                        cursor.execute("UPDATE miejsca SET odwiedzone = ? WHERE numer_miejsca = ?", (nowy_status, str(k_num)))
-                    
-                    # 2. Dopasowanie po nazwie miejsca w bazie
-                    for m_num, m_nazwa in wszystkie_miejsca_db:
+                    for m_num, m_nazwa, m_wsp in wszystkie_miejsca_db:
                         m_nazwa_clean = str(m_nazwa).strip().lower()
                         m_nazwa_bazowa = m_nazwa_clean.split('(')[0].strip()
+                        m_lat, m_lon = sparsuj_wspolrzedne(m_wsp)
                         
+                        matched = False
                         if m_nazwa_clean == k_nazwa_clean or \
                            (len(m_nazwa_bazowa) > 3 and m_nazwa_bazowa in k_nazwa_clean) or \
                            (len(m_nazwa_bazowa) > 3 and k_nazwa_clean in m_nazwa_bazowa):
+                            matched = True
+                        elif k_lat is not None and m_lat is not None and abs(k_lat - m_lat) < 0.002 and abs(k_lon - m_lon) < 0.002:
+                            matched = True
+                            
+                        if matched:
                             cursor.execute("UPDATE miejsca SET odwiedzone = ? WHERE numer_miejsca = ?", (nowy_status, str(m_num)))
                 
                 conn.commit()
@@ -2711,30 +2667,38 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         elif any(w in nazwa_lower for w in ["powrót", "powrot", "domek", "wyjazd"]):
             detected_icon = "🏠"
         else:
-            matched_typ = baza_miejsc_dict.get(krok_num)
-            if not matched_typ:
-                for k_name_db, k_typ_db in baza_miejsc_dict.items():
-                    if len(k_name_db) > 3 and k_name_db in nazwa_lower:
-                        matched_typ = k_typ_db
-                        break
+            matched_typ = None
+            for k_name_db, k_typ_db in baza_miejsc_dict.items():
+                if len(k_name_db) > 3 and k_name_db in nazwa_lower:
+                    matched_typ = k_typ_db
+                    break
             kat = kategoryzuj_typ(matched_typ) if matched_typ else kategoryzuj_typ(nazwa_lower)
             detected_icon = pobierz_ikonke_kategorii(kat)
 
         badge_symbol = detected_icon if detected_icon is not None else (krok_num if (krok_num and krok_num != "0") else str(idx))
         
+        # --- PRECYZYJNE DOPASOWANIE KARTY MIEJSCA WG RZECZYWISTYCH DANYCH KROKU ---
         matched_place_id = None
         if not df_wszystkie_miejsca_ref.empty:
-            if krok_num and str(krok_num).isdigit() and str(krok_num) != "0":
-                m_find_num = df_wszystkie_miejsca_ref[df_wszystkie_miejsca_ref['numer_miejsca'].astype(str) == str(krok_num)]
-                if not m_find_num.empty:
-                    matched_place_id = str(m_find_num.iloc[0]['numer_miejsca'])
-            
-            if not matched_place_id:
+            k_nazwa_clean = nazwa_lower.split('(')[0].strip()
+            # 1. Po dokładnej lub bazowej nazwie
+            for _, m_cand in df_wszystkie_miejsca_ref.iterrows():
+                m_cand_name = str(m_cand['nazwa']).lower()
+                m_cand_base = m_cand_name.split('(')[0].strip()
+                if m_cand_name == nazwa_lower or m_cand_base == k_nazwa_clean or \
+                   (len(m_cand_base) > 3 and m_cand_base in nazwa_lower) or \
+                   (len(k_nazwa_clean) > 3 and k_nazwa_clean in m_cand_name):
+                    matched_place_id = str(m_cand['numer_miejsca'])
+                    break
+
+            # 2. Fallback po współrzędnych geograficznych
+            if not matched_place_id and lat_parsed is not None and lon_parsed is not None:
                 for _, m_cand in df_wszystkie_miejsca_ref.iterrows():
-                    m_cand_name = str(m_cand['nazwa']).lower()
-                    if m_cand_name in nazwa_lower or nazwa_lower in m_cand_name:
-                        matched_place_id = str(m_cand['numer_miejsca'])
-                        break
+                    m_lat, m_lon = sparsuj_wspolrzedne(m_cand.get('wspolrzedne'))
+                    if m_lat is not None and m_lon is not None:
+                        if abs(m_lat - lat_parsed) < 0.002 and abs(m_lon - lon_parsed) < 0.002:
+                            matched_place_id = str(m_cand['numer_miejsca'])
+                            break
 
         is_in_places_db = bool(matched_place_id)
         is_custom_flat = not is_cottage_step and (
@@ -3315,8 +3279,7 @@ elif st.session_state.active_tab == "zabytek":
                 icon_html = f'<div style="background-color:{kolor};color:#FFFFFF;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;border:2px solid #FFFFFF;box-shadow:0 2px 5px rgba(0,0,0,0.25);">{num}</div>'
                 folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12))).add_to(m_miejsca)
 
-    map_key = f"map_places_view_{st.session_state.show_visited_places}_{st.session_state.selected_category}"
-    map_output = st_folium(m_miejsca, width=None, height=290, returned_objects=["last_object_clicked"], key=map_key)
+    map_output = st_folium(m_miejsca, width=None, height=290, returned_objects=["last_object_clicked"], key="map_places_view")
 
     sb_key = f"place_selectbox_selector_{st.session_state.show_visited_places}"
     miejsca_opcje_lista = [f"{r['numer_miejsca']}. {r['nazwa']}" for _, r in df_miejsca_filtrowane.iterrows()]
