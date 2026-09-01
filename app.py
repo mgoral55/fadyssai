@@ -756,7 +756,7 @@ with st.sidebar:
     if wybrany_dostawca == "Google Gemini":
         wybrany_model = st.selectbox(
             "Model", 
-            options=["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.6-pro"], 
+            options=["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro"], 
             index=0
         )
         env_gemini_key = os.environ.get("GEMINI_API_KEY", "")
@@ -2592,7 +2592,23 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             detected_icon = pobierz_ikonke_kategorii(kat)
 
         badge_symbol = detected_icon if detected_icon is not None else (krok_num if (krok_num and krok_num != "0") else str(idx))
-        is_in_places_db = ("numer_miejsca" in k and pd.notna(k.get("numer_miejsca"))) or (krok_num in baza_miejsc_dict)
+        
+        # Sprawdzanie czy krok powiązany jest z bazą miejsc
+        matched_place_id = None
+        if not df_wszystkie_miejsca_ref.empty:
+            if krok_num and str(krok_num).isdigit() and str(krok_num) != "0":
+                m_find_num = df_wszystkie_miejsca_ref[df_wszystkie_miejsca_ref['numer_miejsca'].astype(str) == str(krok_num)]
+                if not m_find_num.empty:
+                    matched_place_id = str(m_find_num.iloc[0]['numer_miejsca'])
+            
+            if not matched_place_id:
+                for _, m_cand in df_wszystkie_miejsca_ref.iterrows():
+                    m_cand_name = str(m_cand['nazwa']).lower()
+                    if m_cand_name in nazwa_lower or nazwa_lower in m_cand_name:
+                        matched_place_id = str(m_cand['numer_miejsca'])
+                        break
+
+        is_in_places_db = bool(matched_place_id)
         is_custom_flat = not is_cottage_step and (
             not is_in_places_db or 
             any(w in nazwa_lower for w in ["sklep", "market", "zakup", "apteka", "postój", "parking", "kawa", "cafe", "toaleta", "punkt widokowy", "widok", "rynek", "targ"])
@@ -2660,8 +2676,20 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             ostrzezenie_val = str(k.get('czerwona_strefa_ostrzezenie', '')).strip()
             warn_html = f'<div class="step-warn-box"><div class="step-warn-title">⚠️ Ostrzeżenie (Czerwona strefa)</div><div class="step-warn-text">{ostrzezenie_val}</div></div>' if (ostrzezenie_val and ostrzezenie_val not in ["None", "Brak"]) else ""
 
+            # Szybki link do karty miejsca
+            place_link_html = ""
+            if matched_place_id:
+                cur_tab = "route" if st.session_state.active_tab == "route" else "map"
+                place_url = f"?tab=zabytek&place={matched_place_id}&return_tab={cur_tab}&return_trip={wycieczka_id}"
+                place_link_html = (
+                    f'<a href="{place_url}" target="_self" class="step-action-vertical-btn" '
+                    f'style="background-color: #FAF8F2 !important; border: 2px solid #8C5338 !important; color: #8C5338 !important; margin-bottom: 8px; font-weight: 900;">'
+                    f'<span>🏛️</span><span>Zobacz pełną kartę miejsca #{matched_place_id}</span></a>'
+                )
+
             details_inner_html = (
                 f'<div class="step-details-card">'
+                f'{place_link_html}'
                 f'{pogoda_html}'
                 f'{opis_glowny_html}'
                 f'{evac_html}'
@@ -2870,7 +2898,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
     st.markdown('<div class="section-unified-header">🤖 Asystent AI</div>', unsafe_allow_html=True)
     renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=wycieczka_id, inline=True)
 
-# --- GŁÓWNY ROUTING ZAKŁADEK ---
+# --- GŁÓWNY ROUTING ZAKŁADEK I PARAMETRÓW POWROTNYCH ---
 if "tab" in st.query_params:
     st.session_state.active_tab = st.query_params["tab"]
 elif "active_tab" not in st.session_state:
@@ -2880,8 +2908,18 @@ if "place" in st.query_params:
     st.session_state.active_place_id = str(st.query_params["place"])
     st.session_state.active_tab = "zabytek"
 
+# Przechwytywanie informacji o powrocie do konkretnej wycieczki i widoku
+if "return_tab" in st.query_params:
+    st.session_state.return_tab = st.query_params["return_tab"]
+if "return_trip" in st.query_params:
+    st.session_state.return_trip = st.query_params["return_trip"]
+
 if "active_place_id" not in st.session_state:
     st.session_state.active_place_id = None
+if "return_tab" not in st.session_state:
+    st.session_state.return_tab = None
+if "return_trip" not in st.session_state:
+    st.session_state.return_trip = None
 if "map_tab_selected_place" not in st.session_state:
     st.session_state.map_tab_selected_place = None
 if "selected_category" not in st.session_state:
@@ -2975,6 +3013,13 @@ elif st.session_state.active_tab == "map":
                         st.session_state.map_tab_selected_place = None
                         st.rerun()
 
+    # Jeśli wracamy z widoku miejsca do wycieczki w zakładce mapy
+    if st.session_state.return_trip and not st.session_state.get("map_wycieczka_select"):
+        for opt in opcje_wycieczek_lista:
+            if opt and opt.startswith(f"{st.session_state.return_trip}."):
+                st.session_state["map_wycieczka_select"] = opt
+                break
+
     selected_idx = 0
     curr_sel = st.session_state.get("map_wycieczka_select")
     if curr_sel and curr_sel in opcje_wycieczek_lista:
@@ -3009,6 +3054,36 @@ elif st.session_state.active_tab == "map":
 
 elif st.session_state.active_tab == "zabytek":
     render_adventure_header("CretAi • Baza Miejsc")
+    
+    # Przycisk powrotu do wycieczki (jeśli użytkownik przeszedł z konkretnego kroku)
+    ret_tab = st.session_state.get("return_tab")
+    ret_trip = st.session_state.get("return_trip")
+
+    if ret_tab and ret_trip:
+        powrot_url = f"?tab={ret_tab}"
+        nazwa_docelowa = "Trasy Dnia" if ret_tab == "route" else f"Wycieczki #{ret_trip}"
+        
+        st.markdown(f"""
+        <div style="margin-bottom: 12px;">
+            <a href="{powrot_url}" target="_self" style="
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                background-color: #2E251E;
+                color: #FAF8F2 !important;
+                text-decoration: none;
+                padding: 12px 16px;
+                border-radius: 16px;
+                font-size: 10pt;
+                font-weight: 900;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+                border: 2px solid #D6CEBA;
+            ">
+                <span>◀</span><span>Wróć do planu: {nazwa_docelowa}</span>
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
     
     all_cats = list(CATEGORIES_CONFIG.keys())
     active_cat = st.session_state.selected_category
