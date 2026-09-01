@@ -472,190 +472,195 @@ def init_db():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_zakupy_wyc ON zakupy(id_wycieczki)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_czasy_dojazd ON czasy_dojazdu(id_kroku_z, id_kroku_do)')
 
-        if os.path.exists('miejsca.csv'):
-            for enc in ['utf-8', 'utf-8-sig', 'cp1250', 'iso-8859-2']:
-                try:
-                    df_m = pd.read_csv('miejsca.csv', encoding=enc)
-                    df_m.columns = [str(col).strip() for col in df_m.columns]
-                    
-                    def find_col(possible_names, df):
-                        for name in possible_names:
-                            for col in df.columns:
-                                if col.lower() == name.lower():
-                                    return col
-                        return None
-
-                    col_nr = find_col(['numer miejsca', 'numer_miejsca', 'id', 'nr'], df_m)
-                    col_nazwa = find_col(['nazwa', 'nazwa miejsca', 'name'], df_m)
-                    col_typ = find_col(['typ', 'type', 'kategoria'], df_m)
-                    col_wsp = find_col(['współrzędne', 'wspolrzedne', 'coordinates', 'coords'], df_m)
-                    col_dojazd = find_col(['czas dojazdu ze Stavros', 'czas dojazdu', 'czas_dojazdu'], df_m)
-                    col_orient = find_col(['orientacyjny czas zwiedzania', 'orientacyjny czas', 'orientacyjny_czas'], df_m)
-                    col_koszt = find_col(['koszt zwiedzania dla rodziny 2+2', 'koszt zwiedzania', 'koszt', 'cena'], df_m)
-                    col_godz = find_col(['godziny otwarcia', 'godziny_otwarcia', 'godziny'], df_m)
-                    col_akcja = find_col(['Konieczna akcja', 'konieczna_akcja', 'akcja'], df_m)
-                    col_trud = find_col(['Poziom trudności ADHD', 'trudnosc_adhd', 'trudność adhd'], df_m)
-                    col_slonce = find_col(['Ochrona przed słońcem', 'ochrona_slonce', 'ochrona przed sloncem'], df_m)
-                    col_pot_m = find_col(['Potencjał meltdownu', 'potencjal_meltdownu', 'meltdown'], df_m)
-                    col_strat_m = find_col(['Strategie na meltdown', 'strategie_meltdown', 'strategie meltdown'], df_m)
-                    col_opis = find_col(['Opis', 'opis', 'description'], df_m)
-                    col_zadania = find_col(['Zadania dla dzieci', 'zadania_dla_dzieci', 'zadania'], df_m)
-
-                    for _, r in df_m.iterrows():
-                        nr_raw = r.get(col_nr) if col_nr else None
-                        nr_m = str(nr_raw).strip() if pd.notna(nr_raw) else ''
-                        if not nr_m or nr_m == 'nan':
-                            continue
-                        
-                        nazwa_raw = r.get(col_nazwa) if col_nazwa else ''
-                        nazwa_m = str(nazwa_raw).strip() if pd.notna(nazwa_raw) else ''
-                        
-                        raw_typ = str(r.get(col_typ, '')).strip() if col_typ and pd.notna(r.get(col_typ)) else ''
-                        typ_m = raw_typ if raw_typ in CATEGORIES_CONFIG else kategoryzuj_typ(raw_typ or nazwa_m)
-                        
-                        wsp_m = str(r.get(col_wsp, '')).strip() if col_wsp and pd.notna(r.get(col_wsp)) else ''
-                        czas_d = str(r.get(col_dojazd, '—')).strip() if col_dojazd and pd.notna(r.get(col_dojazd)) else '—'
-                        orient_c = str(r.get(col_orient, '—')).strip() if col_orient and pd.notna(r.get(col_orient)) else '—'
-                        koszt_m = str(r.get(col_koszt, '—')).strip() if col_koszt and pd.notna(r.get(col_koszt)) else '—'
-                        godz_otw = str(r.get(col_godz, '—')).strip() if col_godz and pd.notna(r.get(col_godz)) else '—'
-                        koniecz_akc = str(r.get(col_akcja, '')).strip() if col_akcja and pd.notna(r.get(col_akcja)) else ''
-                        trud_adhd = str(r.get(col_trud, 'Średni')).strip() if col_trud and pd.notna(r.get(col_trud)) else 'Średni'
-                        ochr_slonce = str(r.get(col_slonce, 'Standardowa')).strip() if col_slonce and pd.notna(r.get(col_slonce)) else 'Standardowa'
-                        potencjal_m = str(r.get(col_pot_m, 'Średni')).strip() if col_pot_m and pd.notna(r.get(col_pot_m)) else 'Średni'
-                        strat_m = str(r.get(col_strat_m, 'Brak')).strip() if col_strat_m and pd.notna(r.get(col_strat_m)) else 'Brak'
-                        opis_m = str(r.get(col_opis, '')).strip() if col_opis and pd.notna(r.get(col_opis)) else ''
-                        zadania_d = str(r.get(col_zadania, '')).strip() if col_zadania and pd.notna(r.get(col_zadania)) else ''
-
-                        cursor.execute('''
-                            INSERT OR REPLACE INTO miejsca (
-                                numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
-                                koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd, ochrona_slonce,
-                                potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci, odwiedzone
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-                        ''', (
-                            nr_m, nazwa_m, typ_m, wsp_m, czas_d, orient_c,
-                            koszt_m, godz_otw, koniecz_akc, trud_adhd, ochr_slonce,
-                            potencjal_m, strat_m, opis_m, zadania_d
-                        ))
-                    conn.commit()
-                    break
-                except Exception:
-                    continue
-
+        cursor.execute('SELECT COUNT(*) FROM miejsca')
+        miejsca_count = cursor.fetchone()[0]
         cursor.execute('SELECT COUNT(*) FROM wycieczka')
-        if cursor.fetchone()[0] == 0 and os.path.exists('wycieczki.csv'):
-            for enc in ['utf-8', 'utf-8-sig', 'cp1250', 'iso-8859-2']:
-                try:
-                    df_csv = pd.read_csv('wycieczki.csv', encoding=enc)
-                    df_csv.columns = [str(col).strip() for col in df_csv.columns]
-                    dzisiaj_str = date.today().strftime("%Y-%m-%d")
-                    unikalne_wycieczki = df_csv['id_wycieczki'].unique()
+        wycieczka_count = cursor.fetchone()[0]
 
-                    col_nr_miejsca_csv = find_col(['numer_miejsca', 'numer miejsca', 'id_miejsca', 'nr_miejsca'], df_csv)
-
-                    for wid in unikalne_wycieczki:
-                        w_df = df_csv[df_csv['id_wycieczki'] == wid]
-                        first_row = w_df.iloc[0]
-
-                        pobudka_raw = str(first_row.get('godzina_pobudki', '06:00')).strip()
-                        pobudka_val = pobudka_raw if (pobudka_raw and pobudka_raw != '-') else '06:00'
+        if miejsca_count == 0 and wycieczka_count == 0:
+            if os.path.exists('miejsca.csv'):
+                for enc in ['utf-8', 'utf-8-sig', 'cp1250', 'iso-8859-2']:
+                    try:
+                        df_m = pd.read_csv('miejsca.csv', encoding=enc)
+                        df_m.columns = [str(col).strip() for col in df_m.columns]
                         
-                        tytul_val = str(first_row.get('tytul_wycieczki', f'Wycieczka {wid}'))
-                        opis_val = str(first_row.get('calosciowy_opis_wycieczki', ''))
-                        taktyka_val = str(first_row.get('calosciowa_taktyka_dnia', ''))
+                        def find_col(possible_names, df):
+                            for name in possible_names:
+                                for col in df.columns:
+                                    if col.lower() == name.lower():
+                                        return col
+                            return None
 
-                        cursor.execute('''
-                            INSERT INTO wycieczka (
-                                id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia,
-                                pobudka, planowana_data, szacowany_czas_ogarniania_rano, odbyta
-                            ) VALUES (?, ?, ?, ?, ?, ?, '0.5h', 0)
-                        ''', (str(wid), tytul_val, opis_val, taktyka_val, pobudka_val, dzisiaj_str))
+                        col_nr = find_col(['numer miejsca', 'numer_miejsca', 'id', 'nr'], df_m)
+                        col_nazwa = find_col(['nazwa', 'nazwa miejsca', 'name'], df_m)
+                        col_typ = find_col(['typ', 'type', 'kategoria'], df_m)
+                        col_wsp = find_col(['współrzędne', 'wspolrzedne', 'coordinates', 'coords'], df_m)
+                        col_dojazd = find_col(['czas dojazdu ze Stavros', 'czas dojazdu', 'czas_dojazdu'], df_m)
+                        col_orient = find_col(['orientacyjny czas zwiedzania', 'orientacyjny czas', 'orientacyjny_czas'], df_m)
+                        col_koszt = find_col(['koszt zwiedzania dla rodziny 2+2', 'koszt zwiedzania', 'koszt', 'cena'], df_m)
+                        col_godz = find_col(['godziny otwarcia', 'godziny_otwarcia', 'godziny'], df_m)
+                        col_akcja = find_col(['Konieczna akcja', 'konieczna_akcja', 'akcja'], df_m)
+                        col_trud = find_col(['Poziom trudności ADHD', 'trudnosc_adhd', 'trudność adhd'], df_m)
+                        col_slonce = find_col(['Ochrona przed słońcem', 'ochrona_slonce', 'ochrona przed sloncem'], df_m)
+                        col_pot_m = find_col(['Potencjał meltdownu', 'potencjal_meltdownu', 'meltdown'], df_m)
+                        col_strat_m = find_col(['Strategie na meltdown', 'strategie_meltdown', 'strategie meltdown'], df_m)
+                        col_opis = find_col(['Opis', 'opis', 'description'], df_m)
+                        col_zadania = find_col(['Zadania dla dzieci', 'zadania_dla_dzieci', 'zadania'], df_m)
 
-                        step_counter = 0
-                        for _, r in w_df.iterrows():
-                            nazwa_kroku = str(r.get('nazwa', '')).strip()
-                            wsp_kroku = str(r.get('wspolrzedne', '')).strip()
-                            okienko_kroku = str(r.get('okienko_zwiedzania', '')).strip()
-                            ewak_kroku = str(r.get('godzina_ewakuacji', '')).strip() if pd.notna(r.get('godzina_ewakuacji')) else None
-                            czerwona_kroku = str(r.get('czerwona_strefa_ostrzezenie', '')).strip() if pd.notna(r.get('czerwona_strefa_ostrzezenie')) else None
-                            strefa_kroku = str(r.get('strefa_luzu_i_regeneracji', '')).strip() if pd.notna(r.get('strefa_luzu_i_regeneracji')) else None
-                            taktyka_kroku = str(r.get('podsumowanie_taktyki', '')).strip() if pd.notna(r.get('podsumowanie_taktyki')) else None
+                        for _, r in df_m.iterrows():
+                            nr_raw = r.get(col_nr) if col_nr else None
+                            nr_m = str(nr_raw).strip() if pd.notna(nr_raw) else ''
+                            if not nr_m or nr_m == 'nan':
+                                continue
                             
-                            numer_m_val = str(r.get(col_nr_miejsca_csv)).strip() if (col_nr_miejsca_csv and pd.notna(r.get(col_nr_miejsca_csv))) else None
-                            if not numer_m_val or numer_m_val in ['nan', '-', 'None']:
-                                cursor.execute("SELECT numer_miejsca FROM miejsca WHERE LOWER(nazwa) = LOWER(?)", (nazwa_kroku,))
-                                res_m = cursor.fetchone()
-                                numer_m_val = res_m[0] if res_m else None
+                            nazwa_raw = r.get(col_nazwa) if col_nazwa else ''
+                            nazwa_m = str(nazwa_raw).strip() if pd.notna(nazwa_raw) else ''
+                            
+                            raw_typ = str(r.get(col_typ, '')).strip() if col_typ and pd.notna(r.get(col_typ)) else ''
+                            typ_m = raw_typ if raw_typ in CATEGORIES_CONFIG else kategoryzuj_typ(raw_typ or nazwa_m)
+                            
+                            wsp_m = str(r.get(col_wsp, '')).strip() if col_wsp and pd.notna(r.get(col_wsp)) else ''
+                            czas_d = str(r.get(col_dojazd, '—')).strip() if col_dojazd and pd.notna(r.get(col_dojazd)) else '—'
+                            orient_c = str(r.get(col_orient, '—')).strip() if col_orient and pd.notna(r.get(col_orient)) else '—'
+                            koszt_m = str(r.get(col_koszt, '—')).strip() if col_koszt and pd.notna(r.get(col_koszt)) else '—'
+                            godz_otw = str(r.get(col_godz, '—')).strip() if col_godz and pd.notna(r.get(col_godz)) else '—'
+                            koniecz_akc = str(r.get(col_akcja, '')).strip() if col_akcja and pd.notna(r.get(col_akcja)) else ''
+                            trud_adhd = str(r.get(col_trud, 'Średni')).strip() if col_trud and pd.notna(r.get(col_trud)) else 'Średni'
+                            ochr_slonce = str(r.get(col_slonce, 'Standardowa')).strip() if col_slonce and pd.notna(r.get(col_slonce)) else 'Standardowa'
+                            potencjal_m = str(r.get(col_pot_m, 'Średni')).strip() if col_pot_m and pd.notna(r.get(col_pot_m)) else 'Średni'
+                            strat_m = str(r.get(col_strat_m, 'Brak')).strip() if col_strat_m and pd.notna(r.get(col_strat_m)) else 'Brak'
+                            opis_m = str(r.get(col_opis, '')).strip() if col_opis and pd.notna(r.get(col_opis)) else ''
+                            zadania_d = str(r.get(col_zadania, '')).strip() if col_zadania and pd.notna(r.get(col_zadania)) else ''
 
                             cursor.execute('''
-                                INSERT INTO krok_wycieczki (
-                                    id_wycieczki, krok_wycieczki, numer_miejsca, nazwa, wspolrzedne, okienko_zwiedzania,
-                                    godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji,
-                                    podsumowanie_taktyki, opis
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                INSERT OR REPLACE INTO miejsca (
+                                    numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
+                                    koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd, ochrona_slonce,
+                                    potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci, odwiedzone
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                             ''', (
-                                str(wid), step_counter, numer_m_val, nazwa_kroku, wsp_kroku, okienko_kroku,
-                                ewak_kroku, czerwona_kroku, strefa_kroku, taktyka_kroku, nazwa_kroku
+                                nr_m, nazwa_m, typ_m, wsp_m, czas_d, orient_c,
+                                koszt_m, godz_otw, koniecz_akc, trud_adhd, ochr_slonce,
+                                potencjal_m, strat_m, opis_m, zadania_d
                             ))
-                            nowy_krok_id = cursor.lastrowid
+                        conn.commit()
+                        break
+                    except Exception:
+                        continue
 
-                            nazwa_p_raw = r.get('nazwa_posilku')
-                            godz_p_raw = r.get('godzina_posilku')
-                            pos_raw = r.get('posilek')
+            if os.path.exists('wycieczki.csv'):
+                for enc in ['utf-8', 'utf-8-sig', 'cp1250', 'iso-8859-2']:
+                    try:
+                        df_csv = pd.read_csv('wycieczki.csv', encoding=enc)
+                        df_csv.columns = [str(col).strip() for col in df_csv.columns]
+                        dzisiaj_str = date.today().strftime("%Y-%m-%d")
+                        unikalne_wycieczki = df_csv['id_wycieczki'].unique()
 
-                            nazwa_posilku_val = str(nazwa_p_raw).strip() if (pd.notna(nazwa_p_raw) and str(nazwa_p_raw).strip() and str(nazwa_p_raw).strip() not in ['-', 'nan']) else (
-                                str(pos_raw).strip() if (pd.notna(pos_raw) and str(pos_raw).strip() and str(pos_raw).strip() not in ['-', 'nan']) else None
-                            )
-                            godzina_posilku_val = str(godz_p_raw).strip() if (pd.notna(godz_p_raw) and str(godz_p_raw).strip() and str(godz_p_raw).strip() not in ['-', 'nan']) else None
+                        col_nr_miejsca_csv = find_col(['numer_miejsca', 'numer miejsca', 'id_miejsca', 'nr_miejsca'], df_csv)
 
-                            if nazwa_posilku_val:
-                                p_str = nazwa_posilku_val
-                                p_str_l = p_str.lower()
+                        for wid in unikalne_wycieczki:
+                            w_df = df_csv[df_csv['id_wycieczki'] == wid]
+                            first_row = w_df.iloc[0]
+
+                            pobudka_raw = str(first_row.get('godzina_pobudki', '06:00')).strip()
+                            pobudka_val = pobudka_raw if (pobudka_raw and pobudka_raw != '-') else '06:00'
+                            
+                            tytul_val = str(first_row.get('tytul_wycieczki', f'Wycieczka {wid}'))
+                            opis_val = str(first_row.get('calosciowy_opis_wycieczki', ''))
+                            taktyka_val = str(first_row.get('calosciowa_taktyka_dnia', ''))
+
+                            cursor.execute('''
+                                INSERT INTO wycieczka (
+                                    id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia,
+                                    pobudka, planowana_data, szacowany_czas_ogarniania_rano, odbyta
+                                ) VALUES (?, ?, ?, ?, ?, ?, '0.5h', 0)
+                            ''', (str(wid), tytul_val, opis_val, taktyka_val, pobudka_val, dzisiaj_str))
+
+                            step_counter = 0
+                            for _, r in w_df.iterrows():
+                                nazwa_kroku = str(r.get('nazwa', '')).strip()
+                                wsp_kroku = str(r.get('wspolrzedne', '')).strip()
+                                okienko_kroku = str(r.get('okienko_zwiedzania', '')).strip()
+                                ewak_kroku = str(r.get('godzina_ewakuacji', '')).strip() if pd.notna(r.get('godzina_ewakuacji')) else None
+                                czerwona_kroku = str(r.get('czerwona_strefa_ostrzezenie', '')).strip() if pd.notna(r.get('czerwona_strefa_ostrzezenie')) else None
+                                strefa_kroku = str(r.get('strefa_luzu_i_regeneracji', '')).strip() if pd.notna(r.get('strefa_luzu_i_regeneracji')) else None
+                                taktyka_kroku = str(r.get('podsumowanie_taktyki', '')).strip() if pd.notna(r.get('podsumowanie_taktyki')) else None
                                 
-                                if 'śniadanie' in p_str_l or 'sniadanie' in p_str_l:
-                                    p_rodzaj = 'śniadanie'
-                                    p_miejsce = 'w domku'
-                                elif 'kolacja' in p_str_l:
-                                    p_rodzaj = 'kolacja'
-                                    p_miejsce = 'w domku'
-                                elif any(w in p_str_l for w in ['obiad', 'lunch', 'tawerna', 'restauracja']) and 'lunchbox' not in p_str_l:
-                                    p_rodzaj = 'obiad'
-                                    p_miejsce = 'restauracja'
-                                elif 'lunchbox duży' in p_str_l or 'duży lunchbox' in p_str_l or 'obiad z domku' in p_str_l:
-                                    p_rodzaj = 'lunchbox_duzy'
-                                    p_miejsce = 'z domu (lunchbox)'
-                                elif 'lunchbox' in p_str_l or 'drugie śniadanie' in p_str_l or 'podwieczorek' in p_str_l:
-                                    p_rodzaj = 'lunchbox_maly'
-                                    p_miejsce = 'z domu (lunchbox)'
-                                else:
-                                    p_rodzaj = None
+                                numer_m_val = str(r.get(col_nr_miejsca_csv)).strip() if (col_nr_miejsca_csv and pd.notna(r.get(col_nr_miejsca_csv))) else None
+                                if not numer_m_val or numer_m_val in ['nan', '-', 'None']:
+                                    cursor.execute("SELECT numer_miejsca FROM miejsca WHERE LOWER(nazwa) = LOWER(?)", (nazwa_kroku,))
+                                    res_m = cursor.fetchone()
+                                    numer_m_val = res_m[0] if res_m else None
+
+                                cursor.execute('''
+                                    INSERT INTO krok_wycieczki (
+                                        id_wycieczki, krok_wycieczki, numer_miejsca, nazwa, wspolrzedne, okienko_zwiedzania,
+                                        godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji,
+                                        podsumowanie_taktyki, opis
+                                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ''', (
+                                    str(wid), step_counter, numer_m_val, nazwa_kroku, wsp_kroku, okienko_kroku,
+                                    ewak_kroku, czerwona_kroku, strefa_kroku, taktyka_kroku, nazwa_kroku
+                                ))
+                                nowy_krok_id = cursor.lastrowid
+
+                                nazwa_p_raw = r.get('nazwa_posilku')
+                                godz_p_raw = r.get('godzina_posilku')
+                                pos_raw = r.get('posilek')
+
+                                nazwa_posilku_val = str(nazwa_p_raw).strip() if (pd.notna(nazwa_p_raw) and str(nazwa_p_raw).strip() and str(nazwa_p_raw).strip() not in ['-', 'nan']) else (
+                                    str(pos_raw).strip() if (pd.notna(pos_raw) and str(pos_raw).strip() and str(pos_raw).strip() not in ['-', 'nan']) else None
+                                )
+                                godzina_posilku_val = str(godz_p_raw).strip() if (pd.notna(godz_p_raw) and str(godz_p_raw).strip() and str(godz_p_raw).strip() not in ['-', 'nan']) else None
+
+                                if nazwa_posilku_val:
+                                    p_str = nazwa_posilku_val
+                                    p_str_l = p_str.lower()
                                     
-                                if p_rodzaj:
-                                    sugerowana_godz = godzina_posilku_val if godzina_posilku_val else (
-                                        '18:30' if p_rodzaj == 'kolacja' else (
-                                            '12:30' if p_rodzaj in ['obiad', 'lunchbox_duzy'] else (
-                                                '10:30' if p_rodzaj == 'lunchbox_maly' else (
-                                                    okienko_kroku.split('-')[0].strip() if '-' in okienko_kroku else '11:00'
+                                    if 'śniadanie' in p_str_l or 'sniadanie' in p_str_l:
+                                        p_rodzaj = 'śniadanie'
+                                        p_miejsce = 'w domku'
+                                    elif 'kolacja' in p_str_l:
+                                        p_rodzaj = 'kolacja'
+                                        p_miejsce = 'w domku'
+                                    elif any(w in p_str_l for w in ['obiad', 'lunch', 'tawerna', 'restauracja']) and 'lunchbox' not in p_str_l:
+                                        p_rodzaj = 'obiad'
+                                        p_miejsce = 'restauracja'
+                                    elif 'lunchbox duży' in p_str_l or 'duży lunchbox' in p_str_l or 'obiad z domku' in p_str_l:
+                                        p_rodzaj = 'lunchbox_duzy'
+                                        p_miejsce = 'z domu (lunchbox)'
+                                    elif 'lunchbox' in p_str_l or 'drugie śniadanie' in p_str_l or 'podwieczorek' in p_str_l:
+                                        p_rodzaj = 'lunchbox_maly'
+                                        p_miejsce = 'z domu (lunchbox)'
+                                    else:
+                                        p_rodzaj = None
+                                        
+                                    if p_rodzaj:
+                                        sugerowana_godz = godzina_posilku_val if godzina_posilku_val else (
+                                            '18:30' if p_rodzaj == 'kolacja' else (
+                                                '12:30' if p_rodzaj in ['obiad', 'lunchbox_duzy'] else (
+                                                    '10:30' if p_rodzaj == 'lunchbox_maly' else (
+                                                        okienko_kroku.split('-')[0].strip() if '-' in okienko_kroku else '11:00'
+                                                    )
                                                 )
                                             )
                                         )
-                                    )
-                                    
-                                    cursor.execute('''
-                                        INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
-                                        VALUES (?, ?, ?, ?, ?)
-                                    ''', (nowy_krok_id, p_rodzaj, p_miejsce, sugerowana_godz, p_str))
+                                        
+                                        cursor.execute('''
+                                            INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
+                                            VALUES (?, ?, ?, ?, ?)
+                                        ''', (nowy_krok_id, p_rodzaj, p_miejsce, sugerowana_godz, p_str))
 
-                            step_counter += 1
+                                step_counter += 1
 
-                    conn.commit()
-                    
-                    for wid in unikalne_wycieczki:
-                        przelicz_i_zsynchronizuj_wycieczke(wid)
+                        conn.commit()
                         
-                    break
-                except Exception as e:
-                    print(f"Błąd importu wycieczki.csv podczas init_db: {e}")
+                        for wid in unikalne_wycieczki:
+                            przelicz_i_zsynchronizuj_wycieczke(wid)
+                            
+                        break
+                    except Exception as e:
+                        print(f"Błąd importu wycieczki.csv podczas init_db: {e}")
 
         conn.commit()
 
