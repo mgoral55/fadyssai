@@ -904,7 +904,7 @@ if "flash_toast" in st.session_state and st.session_state["flash_toast"]:
 # --- SIDEBAR CONFIG ---
 with st.sidebar:
     st.markdown("### ⚙️ Konfiguracja CretAi")
-    aktualny_uzytkownik = st.selectbox("Profil użytkownika", options=["Tata", "Mama", "Dzieci"], index=0)
+    aktualny_uzytkownik = st.selectbox("Profil użytkownika", options=["Magda", "Michał", "Jurek", "Julia"], index=0)
     wybrany_model = st.selectbox(
         "Model Gemini", 
         options=["gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3.1-pro"], 
@@ -1456,8 +1456,8 @@ def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="4
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ''', (
             nowy_nr, nazwa.strip(), kat_norm, wspolrzedne.strip(), czas_dojazdu_z_domku,
-            orientacyjny_czas, koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd,
-            ochrona_slonce, potencjal_meltdownu, strat_m, opis, zadania_d
+            orientacyjny_czas, koszt, godziny_otwarcia, koniecz_akc, trud_adhd,
+            ochr_slonce, potencjal_m, strat_m, opis, zadania_d
         ) if 'strat_m' in locals() else (
             nowy_nr, nazwa.strip(), kat_norm, wspolrzedne.strip(), czas_dojazdu_z_domku,
             orientacyjny_czas, koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd,
