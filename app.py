@@ -385,18 +385,28 @@ def formatuj_komunikat_bledu_ai(e):
         return "🔑 Błąd uwierzytelnienia klucza API", "Wprowadzony klucz API jest nieprawidłowy lub wygasł."
     return f"⚠️ Błąd połączenia z API ({type(e).__name__})", f"Szczegóły: {msg}"
 
+# --- ULEPSZONY PARSER DOPASOWANIA KROKÓW (SYNONYMS & ACCENT INSENSITIVE) ---
 def znajdz_id_kroku_w_db(cursor, id_wycieczki, identyfikator):
-    query = '''
-        SELECT id, nazwa FROM krok_wycieczki 
-        WHERE id_wycieczki = ? AND (
-            id = ? OR 
-            krok_wycieczki = ? OR 
-            nazwa LIKE ? OR 
-            ? LIKE ('%' || nazwa || '%')
-        )
-    '''
-    cursor.execute(query, (str(id_wycieczki), str(identyfikator), str(identyfikator), f"%{identyfikator}%", str(identyfikator)))
-    return cursor.fetchone()
+    ident_str = str(identyfikator).strip().lower()
+    cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
+    rows = cursor.fetchall()
+    
+    # 1. Dokładne dopasowanie ID lub numeru kroku
+    for r_id, r_num, r_nazwa in rows:
+        if str(r_id) == str(identyfikator) or str(r_num) == str(identyfikator):
+            return r_id, r_nazwa
+
+    # 2. Dopasowanie po nazwie (w tym synonimy sklepów i rynków)
+    for r_id, r_num, r_nazwa in rows:
+        nazwa_l = r_nazwa.lower()
+        if ident_str in nazwa_l or nazwa_l in ident_str:
+            return r_id, r_nazwa
+        if ident_str in ["sklep", "market", "zakupy"] and any(w in nazwa_l for w in ["sklep", "market", "zakup"]):
+            return r_id, r_nazwa
+        if ident_str in ["rynek", "targ", "laiki"] and any(w in nazwa_l for w in ["rynek", "targ", "laiki"]):
+            return r_id, r_nazwa
+
+    return None
 
 def render_shopping_checkbox_list(df_items, key_prefix):
     for _, zrow in df_items.iterrows():
@@ -589,6 +599,118 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
         ''', (pobudka_z_bazy, dt_wyjazd.strftime("%H:%M"), dt_powrot.strftime("%H:%M"), str(czas_trwania_h), str(id_wycieczki)))
         conn.commit()
 
+# --- MODUŁ DUPLIKACJI WYCIECZKI (DEEP COPY) ---
+def duplikuj_wycieczke(id_zrodlowe):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # 1. Pobierz wycieczkę źródłową
+        cursor.execute("SELECT * FROM wycieczka WHERE id = ?", (str(id_zrodlowe),))
+        trip = cursor.fetchone()
+        if not trip:
+            return None
+            
+        cursor.execute("PRAGMA table_info(wycieczka)")
+        cols_w = [c[1] for c in cursor.fetchall()]
+        trip_dict = dict(zip(cols_w, trip))
+
+        # 2. Wyznacz nowe unikalne ID
+        cursor.execute("SELECT id FROM wycieczka")
+        wszystkie_id = [int(r[0]) for r in cursor.fetchall() if str(r[0]).isdigit()]
+        nowe_id = str(max(wszystkie_id) + 1 if wszystkie_id else 2)
+
+        stary_tytul = trip_dict.get('tytul_wycieczki', 'Wycieczka')
+        
+        # Sprytne dodanie "- kopia" przed dwukropkiem, aby było zawsze widoczne na liście
+        if ":" in stary_tytul:
+            czesci = stary_tytul.split(":", 1)
+            nowy_tytul = f"{czesci[0].strip()} - kopia: {czesci[1].strip()}"
+        else:
+            nowy_tytul = f"{stary_tytul.strip()} - kopia"
+
+        # 3. Wstaw zduplikowaną wycieczkę
+        cursor.execute('''
+            INSERT INTO wycieczka (
+                id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia,
+                calkowity_czas_wycieczki_godziny, szacowana_godzina_powrotu, pobudka, czas_wyjazdu,
+                planowana_data, czas_powrotu_do_domku, szacowany_czas_ogarniania_rano, odbyta
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        ''', (
+            nowe_id, nowy_tytul, trip_dict.get('calosciowy_opis_wycieczki'), trip_dict.get('calosciowa_taktyka_dnia'),
+            trip_dict.get('calkowity_czas_wycieczki_godziny'), trip_dict.get('szacowana_godzina_powrotu'),
+            trip_dict.get('pobudka'), trip_dict.get('czas_wyjazdu'), trip_dict.get('planowana_data'),
+            trip_dict.get('czas_powrotu_do_domku'), trip_dict.get('szacowany_czas_ogarniania_rano', '0.5h')
+        ))
+
+        # 4. Kopiuj kroki i twórz mapę stary_id -> nowy_id
+        cursor.execute("SELECT * FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC, id ASC", (str(id_zrodlowe),))
+        kroki = cursor.fetchall()
+        cursor.execute("PRAGMA table_info(krok_wycieczki)")
+        cols_k = [c[1] for c in cursor.fetchall()]
+
+        stare_do_nowe_id_krokow = {}
+
+        for k in kroki:
+            k_dict = dict(zip(cols_k, k))
+            stary_krok_id = k_dict['id']
+            
+            cursor.execute('''
+                INSERT INTO krok_wycieczki (
+                    id_wycieczki, krok_wycieczki, nazwa, wspolrzedne, okienko_zwiedzania,
+                    godzina_ewakuacji, czerwona_strefa_ostrzezenie, strefa_luzu_i_regeneracji,
+                    podsumowanie_taktyki, potencjal_meltdownu, strategie_meltdown, opis
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                nowe_id, k_dict.get('krok_wycieczki'), k_dict.get('nazwa'), k_dict.get('wspolrzedne'),
+                k_dict.get('okienko_zwiedzania'), k_dict.get('godzina_ewakuacji'), k_dict.get('czerwona_strefa_ostrzezenie'),
+                k_dict.get('strefa_luzu_i_regeneracji'), k_dict.get('podsumowanie_taktyki'),
+                k_dict.get('potencjal_meltdownu'), k_dict.get('strategie_meltdown'), k_dict.get('opis')
+            ))
+            nowy_krok_id = cursor.lastrowid
+            stare_do_nowe_id_krokow[stary_krok_id] = nowy_krok_id
+
+            # Kopiuj posiłki dla danego kroku
+            cursor.execute("SELECT rodzaj_posilku, miejsce, sugerowana_godzina, opis FROM posilki_kroku WHERE id_kroku = ?", (stary_krok_id,))
+            for p in cursor.fetchall():
+                cursor.execute('''
+                    INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (nowy_krok_id, p[0], p[1], p[2], p[3]))
+
+        # 5. Kopiuj zakupy
+        cursor.execute("SELECT id_kroku, nazwa_produktu, ilosc FROM zakupy WHERE id_wycieczki = ?", (str(id_zrodlowe),))
+        for z in cursor.fetchall():
+            stary_id_k = z[0]
+            nowy_id_k = stare_do_nowe_id_krokow.get(stary_id_k) if (stary_id_k and stary_id_k in stare_do_nowe_id_krokow) else None
+            cursor.execute('''
+                INSERT INTO zakupy (id_wycieczki, id_kroku, nazwa_produktu, ilosc, kupione)
+                VALUES (?, ?, ?, ?, 0)
+            ''', (nowe_id, nowy_id_k, z[1], z[2]))
+
+        # 6. Kopiuj czasy dojazdu
+        for stary_z, nowy_z in stare_do_nowe_id_krokow.items():
+            for stary_do, nowy_do in stare_do_nowe_id_krokow.items():
+                cursor.execute("SELECT czas_przejazdu, szacowany_czas_postoju FROM czasy_dojazdu WHERE id_kroku_z = ? AND id_kroku_do = ?", (stary_z, stary_do))
+                dojazd = cursor.fetchone()
+                if dojazd:
+                    cursor.execute('''
+                        INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
+                        VALUES (?, ?, ?, ?)
+                    ''', (nowy_z, nowy_do, dojazd[0], dojazd[1]))
+
+        # 7. Kopiuj notatki
+        cursor.execute("SELECT id_miejsca, tytul, zawartosc, typ_notatki FROM notatki WHERE id_wycieczki = ?", (str(id_zrodlowe),))
+        for n in cursor.fetchall():
+            cursor.execute('''
+                INSERT INTO notatki (id_wycieczki, id_miejsca, tytul, zawartosc, typ_notatki)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (nowe_id, n[0], n[1], n[2], n[3]))
+
+        conn.commit()
+
+    przelicz_i_zsynchronizuj_wycieczke(nowe_id)
+    return nowe_id
+
 def init_db():
     conn = get_db()
     cursor = conn.cursor()
@@ -726,7 +848,7 @@ def init_db():
 
 init_db()
 
-# --- SYSTEM WERYFIKACJI I MIGAWEK BAZY DANYCH ---
+# --- SYSTEM WERYFIKACJI I MIGAWEK BAZY DANYCH (INSERT + DELETE AUDIT) ---
 def pobierz_migawke_bazy(id_wycieczki):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -752,23 +874,33 @@ def pobierz_migawke_bazy(id_wycieczki):
 def weryfikuj_zmiany_w_bazie(stan_przed, stan_po):
     nowe_elementy = []
     
-    nowe_kroki_ids = set(stan_po["kroki"].keys()) - set(stan_przed["kroki"].keys())
-    for k_id in nowe_kroki_ids:
+    # 1. Dodane kroki
+    nowe_kroki = set(stan_po["kroki"].keys()) - set(stan_przed["kroki"].keys())
+    for k_id in nowe_kroki:
         nowe_elementy.append(f"📍 Dodano krok trasy: **{stan_po['kroki'][k_id]}** (ID: #{k_id})")
         
-    nowe_notatki_ids = set(stan_po["notatki"].keys()) - set(stan_przed["notatki"].keys())
-    for n_id in nowe_notatki_ids:
-        nowe_elementy.append(f"📌 Zapisano notatkę: *{stan_po['notatki'][n_id]}*")
+    # 2. Usunięte kroki
+    usuniete_kroki = set(stan_przed["kroki"].keys()) - set(stan_po["kroki"].keys())
+    for k_id in usuniete_kroki:
+        nowe_elementy.append(f"🗑️ Usunięto krok trasy: **{stan_przed['kroki'][k_id]}**")
         
-    nowe_posilki_ids = set(stan_po["posilki"].keys()) - set(stan_przed["posilki"].keys())
-    for p_id in nowe_posilki_ids:
+    # 3. Notatki
+    for n_id in set(stan_po["notatki"].keys()) - set(stan_przed["notatki"].keys()):
+        nowe_elementy.append(f"📌 Zapisano notatkę: *{stan_po['notatki'][n_id]}*")
+
+    # 4. Posiłki
+    for p_id in set(stan_po["posilki"].keys()) - set(stan_przed["posilki"].keys()):
         nowe_elementy.append(f"🍲 Zaplanowano posiłek: **{stan_po['posilki'][p_id]}**")
         
-    nowe_zakupy_ids = set(stan_po["zakupy"].keys()) - set(stan_przed["zakupy"].keys())
-    for z_id in nowe_zakupy_ids:
+    # 5. Dodane zakupy
+    for z_id in set(stan_po["zakupy"].keys()) - set(stan_przed["zakupy"].keys()):
         nazwa_p, id_k = stan_po["zakupy"][z_id]
         lok = f"w kroku #{id_k}" if id_k else "na całą wycieczkę"
         nowe_elementy.append(f"🛒 Dodano do zakupów ({lok}): **{nazwa_p}**")
+
+    # 6. Usunięte zakupy
+    for z_id in set(stan_przed["zakupy"].keys()) - set(stan_przed["zakupy"].keys()):
+        nowe_elementy.append(f"🗑️ Usunięto z zakupów: **{stan_przed['zakupy'][z_id][0]}**")
         
     return nowe_elementy
 
@@ -1005,6 +1137,26 @@ def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
     przelicz_i_zsynchronizuj_wycieczke(str(id_wycieczki))
     return {"success": True, "action": "usun_krok_wycieczki", "message": f"Usunięto krok '{nazwa}' z wycieczki #{id_wycieczki}."}
 
+def usun_sklep_z_wycieczki_handler(id_wycieczki):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? AND (nazwa LIKE '%sklep%' OR nazwa LIKE '%market%') LIMIT 1", (str(id_wycieczki),))
+        row = cursor.fetchone()
+        if not row:
+            return {"success": False, "action": "usun_sklep", "error": "W tej wycieczce nie ma zaplanowanego sklepu."}
+        krok_num = row[0]
+    return usun_krok_wycieczki(id_wycieczki, krok_num)
+
+def usun_rynek_z_wycieczki_handler(id_wycieczki):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? AND (nazwa LIKE '%rynek%' OR nazwa LIKE '%targ%' OR nazwa LIKE '%laiki%') LIMIT 1", (str(id_wycieczki),))
+        row = cursor.fetchone()
+        if not row:
+            return {"success": False, "action": "usun_rynek", "error": "W tej wycieczce nie ma zaplanowanego rynku/targu."}
+        krok_num = row[0]
+    return usun_krok_wycieczki(id_wycieczki, krok_num)
+
 def dodaj_notatke(zawartosc, typ_notatki='text', id_wycieczki=None, id_miejsca=None, tytul=None):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -1029,7 +1181,6 @@ def dodaj_produkt_zakupow(id_wycieczki, nazwa_produktu, id_kroku=None, ilosc="1"
         cursor = conn.cursor()
         krok_val = str(id_kroku) if id_kroku not in [None, "", "None", "null"] else None
         
-        # Jeśli id_kroku nie podano, sprawdź czy na trasie jest krok sklepu i przypisz do niego
         if krok_val is None:
             krok_auto = znajdz_domyslny_krok_sklepu(cursor, id_wycieczki)
             if krok_auto:
@@ -1048,7 +1199,6 @@ def dodaj_wiele_produktow_zakupow(id_wycieczki, produkty, id_kroku=None):
         cursor = conn.cursor()
         krok_val = str(id_kroku) if id_kroku not in [None, "", "None", "null"] else None
         
-        # Jeśli id_kroku nie podano, sprawdź czy na trasie jest krok sklepu i przypisz do niego
         if krok_val is None:
             krok_auto = znajdz_domyslny_krok_sklepu(cursor, id_wycieczki)
             if krok_auto:
@@ -1187,6 +1337,17 @@ cretai_tools = [
                 ),
             ),
             types.FunctionDeclaration(
+                name="usun_sklep_z_wycieczki",
+                description="Usuwa krok sklepu/marketu przy domku z trasy wycieczki. ZAWSZE wywołaj to narzędzie, gdy użytkownik prosi o usunięcie sklepu/marketu.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID aktywnej wycieczki"),
+                    },
+                    required=["id_wycieczki"]
+                ),
+            ),
+            types.FunctionDeclaration(
                 name="dodaj_rynek_w_chanii",
                 description="Dodaje targ miejski (Laiki) w Chanii jako krok wycieczki.",
                 parameters=types.Schema(
@@ -1194,6 +1355,17 @@ cretai_tools = [
                     properties={
                         "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID aktywnej wycieczki"),
                         "pozycja": types.Schema(type=types.Type.STRING, description="'start' lub 'koniec'"),
+                    },
+                    required=["id_wycieczki"]
+                ),
+            ),
+            types.FunctionDeclaration(
+                name="usun_rynek_z_wycieczki",
+                description="Usuwa targ miejski (Laiki) w Chanii z trasy wycieczki.",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID aktywnej wycieczki"),
                     },
                     required=["id_wycieczki"]
                 ),
@@ -1256,7 +1428,7 @@ cretai_tools = [
             ),
             types.FunctionDeclaration(
                 name="usun_krok_wycieczki",
-                description="Usuwa wskazany krok z wycieczki.",
+                description="Usuwa wskazany krok z wycieczki po ID lub nazwie.",
                 parameters=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
@@ -1339,7 +1511,9 @@ NARZEDZIA_DISPATCHER = {
     "szukaj_miejsca_w_bazie": lambda args: szukaj_miejsca_w_bazie(**args) or {"error": "Brak miejsca w bazie."},
     "sprawdz_pogode": lambda args: pobierz_szczegoly_pogody_dla_godziny(**args) or {"error": "Brak danych pogodowych."},
     "dodaj_sklep_przy_domku": lambda args: dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki=args.get("id_wycieczki"), pozycja=args.get("pozycja", "koniec")),
+    "usun_sklep_z_wycieczki": lambda args: usun_sklep_z_wycieczki_handler(args.get("id_wycieczki")),
     "dodaj_rynek_w_chanii": lambda args: dodaj_rynek_w_chanii_do_wycieczki(id_wycieczki=args.get("id_wycieczki"), pozycja=args.get("pozycja", "start")),
+    "usun_rynek_z_wycieczki": lambda args: usun_rynek_z_wycieczki_handler(args.get("id_wycieczki")),
     "dodaj_notatke": lambda args: dodaj_notatke(**args),
     "edytuj_wycieczke": lambda args: edytuj_wycieczke(**args),
     "dodaj_krok_wycieczki": lambda args: dodaj_krok_wycieczki(**args),
@@ -1546,9 +1720,22 @@ def pobierz_skrocone_opcje_wycieczek(pokaz_ukonczone=False):
     opcje = []
     for _, row in df_w.iterrows():
         wid, pelny, odbyta = str(row['id']), str(row['tytul_wycieczki']), bool(row.get('odbyta', 0))
-        skrocony = pelny.split(':')[0] if ':' in pelny else pelny
-        if len(skrocony) > 35:
-            skrocony = skrocony[:35] + "..."
+        
+        # Wykrywamy dopisek kopii
+        jest_kopia = " - kopia" in pelny.lower() or " - copy" in pelny.lower()
+        
+        # Bierzemy część przed dwukropkiem
+        skrocony = pelny.split(':')[0].strip() if ':' in pelny else pelny.strip()
+        
+        # Usuwamy ewentualny stary sufiks z uciętej części i dodajemy go z powrotem na wierzch
+        skrocony = re.sub(r'\s*-\s*(kopia|copy)', '', skrocony, flags=re.IGNORECASE).strip()
+        
+        if len(skrocony) > 28:
+            skrocony = skrocony[:28] + "..."
+            
+        if jest_kopia:
+            skrocony += " 📋(kopia)"
+            
         opcje.append(f"{wid}. {skrocony} (ukończona)" if odbyta else f"{wid}. {skrocony}")
     return opcje
 
@@ -1595,7 +1782,7 @@ def dodaj_marker_domku(m):
 def sprobuj_wykonac_komende_lokalnie(prompt, id_wycieczki):
     p = prompt.strip().lower()
     m_zakup = re.search(r'^(?:kup|kupić|dodaj do zakup[oó]w|dopisz)\s+([^,]+)', p)
-    if m_zakup and not any(w in p for w in ["krok", "miejsce", "atrakcj", "godzin", "wyjazd", "start", "market", "sklep", "rynek", "targ", "musak", "składnik"]):
+    if m_zakup and not any(w in p for w in ["krok", "miejsce", "atrakcj", "godzin", "wyjazd", "start", "market", "sklep", "rynek", "targ", "musak", "składnik", "usun", "usuń"]):
         prod = m_zakup.group(1).strip()
         dodaj_produkt_zakupow(id_wycieczki, prod)
         return f"⚡ Dodano **{prod}** do listy zakupów wycieczki."
@@ -1644,7 +1831,7 @@ def renderuj_globalny_czat_ai(uzytkownik, inline=False):
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"] if isinstance(message["content"], str) else "")
 
-        prompt = st.chat_input(f"Napisz np. 'wyjazd o 7:30', 'dodaj sklep i składniki na obiad'...", key=f"chat_input_{uzytkownik}_{'inline' if inline else 'float'}")
+        prompt = st.chat_input(f"Napisz np. 'wyjazd o 7:30', 'usuń sklep'...", key=f"chat_input_{uzytkownik}_{'inline' if inline else 'float'}")
         if prompt:
             zapisz_wiadomosc_w_db(uzytkownik, "user", prompt)
             akt_wyc_id = pobierz_aktywna_wycieczke_id()
@@ -1677,26 +1864,21 @@ ID aktywnej wycieczki: {akt_wyc_id}.
 {zewnetrzny_kontekst}
 
 ZASADY KRYTYCZNE DOTYCZĄCE BAZY DANYCH I NARZĘDZI (FUNCTION CALLING):
-1. ZAWSZE FIZYCZNIE WYWOŁUJ NARZĘDZIA:
-   - Gdy użytkownik mówi o sklepie/markecie przy domku rano lub wracając – wywołaj `dodaj_sklep_przy_domku(id_wycieczki, pozycja='start' lub 'koniec')`. Narzędzie to zwróci `id_kroku`.
-   - Gdy użytkownik wymienia chęć zakupu składników na danie (np. musaka, souvlaki, śniadanie) – rozbij to na konkretne produkty i wywołaj `dodaj_wiele_produktow_zakupow(id_wycieczki, produkty=[...], id_kroku=...)`.
-   - KRYTYCZNE: Jeśli użytkownik prosi o sklep ORAZ zakupy, wstaw produkty bezpośrednio do nowo utworzonego sklepu, przekazując otrzymany `id_kroku`! Nigdy nie wrzucaj ich na całą wycieczkę i nie zastępuj tego samą notatką!
-2. NIGDY nie twierdz w tekście, że coś dodałeś, zmieniłeś lub zapisałeś, dopóki narzędzie nie zwróci success=True.
+1. ZAWSZE FIZYCZNIE WYWOŁUJ DEDYKOWANE NARZĘDZIA:
+   - Dodanie sklepu przy domku: `dodaj_sklep_przy_domku(id_wycieczki, pozycja='start' lub 'koniec')`.
+   - Usunięcie sklepu: `usun_sklep_z_wycieczki(id_wycieczki)` (lub `usun_krok_wycieczki`).
+   - Usunięcie rynku/targu: `usun_rynek_z_wycieczki(id_wycieczki)`.
+   - Zakupy na danie: `dodaj_wiele_produktow_zakupow(id_wycieczki, produkty=[...], id_kroku=...)`.
+   - Jeśli użytkownik prosi o sklep ORAZ zakupy, wstaw produkty do ID nowo utworzonego sklepu!
+2. NIGDY nie twierdz w tekście, że coś dodałeś, usunąłeś lub zmieniłeś, dopóki narzędzie nie zwróci success=True.
 3. Jeśli narzędzie zwróci błąd lub odmowę (np. strażnik sjesty 11:30–15:30), poinformuj użytkownika wprost o odrzuceniu operacji i podaj powód.
 4. Zawsze przekazuj właściwe id_wycieczki (obecnie: "{akt_wyc_id}").
 
 ZASADA OSOBOWEGO I DIREKTYWNEGO TONU:
-Zwracaj się do użytkownika po imieniu w sposób bardzo personalny, dopasowany do jakości jego pomysłu:
-- Na powitanie lub w normalnych wiadomościach używaj jego imienia (np. "Witaj {uzytkownik}", "Cześć {uzytkownik}").
-- Gdy propozycja rodzica jest zła (narusza lekko zasady, np. zła pora, małe ryzyko): zwracaj się bezpośrednio (np. "To zły pomysł, {uzytkownik}").
-- Gdy propozycja rodzica jest bardzo zła / katastrofalna dla dzieci z AuDHD (np. pełne słońce w upale 11:30-15:30, głód >4h, brak cienia): reaguj kategorycznie i ostrzegawczo (np. "To bardzo zły pomysł, {uzytkownik}").
-
-ZASADA NACZELNA (STRAŻNIK AuDHD & TAKTYKA POSIŁKÓW):
-1. Upał i słońce w oknie 11:30–15:30 – zakaz planowania odsłoniętych ruin i miejsc bez cienia w tych godzinach!
-2. Luki żywieniowe (Zasada 4H) – maksymalny odstęp wyłącznie między posiłkami głównymi (śniadanie, obiad, kolacja) nie może przekraczać 4.0 godzin. Przekąski w tle nie resetują tego limitu.
-3. Taktyka obiadów domowych:
-   - Domyślnie preferuj powrót na obiad do naszej bazy (domek w Stavros), by zapewnić wyciszenie sensoryczne i bezpieczne posiłki (safe foods).
-   - W przypadku dłuższego okna zwiedzania lub braku możliwości szybkiego powrotu – zaplanuj przygotowanie domowych kanapek / prowiantu na wynos w torbie termicznej."""
+Zwracaj się do użytkownika po imieniu w sposób bardzo personalny:
+- Na powitanie lub w normalnych wiadomościach: "Witaj {uzytkownik}", "Cześć {uzytkownik}".
+- Gdy propozycja rodzica jest zła: "To zły pomysł, {uzytkownik}".
+- Gdy propozycja jest katastrofalna dla AuDHD (upał 11:30-15:30, brak cienia, głód >4h): "To bardzo zły pomysł, {uzytkownik}"."""
 
                     try:
                         with st.status("🧭 Analizuję bezpieczeństwo i trasę AuDHD...", expanded=False) as status:
@@ -1717,7 +1899,7 @@ ZASADA NACZELNA (STRAŻNIK AuDHD & TAKTYKA POSIŁKÓW):
                                     max_output_tokens=1024
                                 )
 
-                                words_declaring_action = ["dodałem", "dodałam", "zapisałem", "zapisałam", "utworzyłem", "utworzono", "stworzyłem", "zaktualizowałem", "dodać krok", "dodano krok", "dodałem sklep", "dodałem market", "dodałam produkty"]
+                                words_declaring_action = ["dodałem", "dodałam", "zapisałem", "zapisałam", "utworzyłem", "utworzono", "stworzyłem", "zaktualizowałem", "usunąłem", "usunęłam", "skasowałem", "skasowano", "usunięto"]
                                 MAX_RETRIES = 2
 
                                 stan_przed = pobierz_migawke_bazy(akt_wyc_id)
@@ -1779,39 +1961,39 @@ ZASADA NACZELNA (STRAŻNIK AuDHD & TAKTYKA POSIŁKÓW):
 
                                     stan_po = pobierz_migawke_bazy(akt_wyc_id)
                                     faktyczne_zmiany = weryfikuj_zmiany_w_bazie(stan_przed, stan_po)
-                                    model_twierdzi_ze_dodal = any(w in assistant_reply.lower() for w in words_declaring_action)
+                                    model_twierdzi_ze_zrobil = any(w in assistant_reply.lower() for w in words_declaring_action)
                                     
-                                    # Sprawdzenie intencji
+                                    # Sprawdzenie intencji użytkownika
                                     prompt_low = prompt.lower()
-                                    oczekiwal_sklepu = any(w in prompt_low for w in ["sklep", "market", "rynek", "targ"])
-                                    oczekiwal_zakupow = any(w in prompt_low for w in ["kup", "kupi", "składnik", "skladnik", "produkt", "musak"])
+                                    oczekiwal_usuniecia_sklepu = ("usuń" in prompt_low or "usun" in prompt_low or "skasuj" in prompt_low) and any(w in prompt_low for w in ["sklep", "market", "targ", "rynek"])
+                                    oczekiwal_dodania_sklepu = any(w in prompt_low for w in ["dodaj", "wstaw", "zaplanuj"]) and any(w in prompt_low for w in ["sklep", "market", "rynek", "targ"])
                                     
-                                    nowe_kroki_ids = set(stan_po["kroki"].keys()) - set(stan_przed["kroki"].keys())
-                                    nowe_zakupy_ids = set(stan_po["zakupy"].keys()) - set(stan_przed["zakupy"].keys())
+                                    liczba_krokow_przed = len(stan_przed["kroki"])
+                                    liczba_krokow_po = len(stan_po["kroki"])
                                     
-                                    przybyly_kroki = len(nowe_kroki_ids) > 0
-                                    przybyly_zakupy = len(nowe_zakupy_ids) > 0
+                                    brak_wymaganych_akcji = False
+                                    braki_opis = []
 
-                                    brak_wymaganych_akcji = (
-                                        (model_twierdzi_ze_dodal and not faktyczne_zmiany) or
-                                        (oczekiwal_sklepu and not przybyly_kroki) or
-                                        (oczekiwal_zakupow and not przybyly_zakupy)
-                                    )
+                                    if oczekiwal_usuniecia_sklepu and liczba_krokow_po >= liczba_krokow_przed:
+                                        brak_wymaganych_akcji = True
+                                        braki_opis.append("Nie wywołałeś narzędzia `usun_sklep_z_wycieczki`")
+                                        
+                                    if oczekiwal_dodania_sklepu and liczba_krokow_po <= liczba_krokow_przed:
+                                        brak_wymaganych_akcji = True
+                                        braki_opis.append("Nie wywołałeś narzędzia `dodaj_sklep_przy_domku`")
+                                        
+                                    if model_twierdzi_ze_zrobil and not faktyczne_zmiany:
+                                        brak_wymaganych_akcji = True
+                                        braki_opis.append("Zadeklarowałeś wykonanie akcji, ale baza danych pozostała bez zmian")
 
                                     if brak_wymaganych_akcji and proba < MAX_RETRIES:
                                         status.update(label=f"🔄 Wykryto brak pełnego zapisu w bazie. Ponawiam próbę ({proba + 1}/{MAX_RETRIES})...", state="running")
                                         contents.append(types.Content(role="model", parts=[types.Part.from_text(text=assistant_reply)]))
                                         
-                                        braki_opis = []
-                                        if oczekiwal_sklepu and not przybyly_kroki:
-                                            braki_opis.append("Nie wywołałeś `dodaj_sklep_przy_domku(id_wycieczki, pozycja='koniec')`")
-                                        if oczekiwal_zakupow and not przybyly_zakupy:
-                                            braki_opis.append("Nie wywołałeś `dodaj_wiele_produktow_zakupow` dla składników")
-                                            
                                         feedback_prompt = (
                                             f"SYSTEM AUDIT ERROR: Operacja niekompletna! "
                                             f"{'; '.join(braki_opis)}. "
-                                            f"Wywołaj teraz brakujące narzędzia. Jeśli dodałeś sklep, przypisz produkty do ID tego sklepu!"
+                                            f"Wywołaj teraz właściwe narzędzie (np. `usun_sklep_z_wycieczki`, `usun_krok_wycieczki` lub `dodaj_sklep_przy_domku`). Nie odpowiadaj samym tekstem!"
                                         )
                                         contents.append(types.Content(role="user", parts=[types.Part.from_text(text=feedback_prompt)]))
                                         continue
@@ -1822,11 +2004,11 @@ ZASADA NACZELNA (STRAŻNIK AuDHD & TAKTYKA POSIŁKÓW):
                                     if not assistant_reply.strip():
                                         assistant_reply = f"✅ **Zrealizowano plan dla Ciebie, {uzytkownik}.**"
                                     assistant_reply += "\n\n**🔍 Potwierdzono fizyczny zapis w bazie SQLite:**\n" + "\n".join([f"- {z}" for z in faktyczne_zmiany])
-                                elif model_twierdzi_ze_dodal and not faktyczne_zmiany:
+                                elif model_twierdzi_ze_zrobil and not faktyczne_zmiany:
                                     assistant_reply = (
                                         f"⚠️ **Uwaga ({uzytkownik}):** Model zadeklarował wykonanie akcji, "
-                                        f"ale **weryfikacja bazy SQLite wykazała brak nowych rekordów**. "
-                                        f"Upewnij się, że nazwa miejsca istnieje w bazie lub powtórz polecenie wprost."
+                                        f"ale **weryfikacja bazy SQLite wykazała brak zmian**. "
+                                        f"Spróbuj wydać polecenie prostszymi słowami."
                                     )
                                 elif not assistant_reply.strip() and executed_actions:
                                     assistant_reply = f"✅ **Zaktualizowano plan w bazie dla Ciebie, {uzytkownik}:**\n* " + "\n* ".join(executed_actions)
@@ -2325,9 +2507,19 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             st.markdown("<div style='font-size: 8.5pt; color: #8C827A; font-style: italic;'>Brak zadań dla tej wycieczki.</div>", unsafe_allow_html=True)
 
     czy_odbyta = bool(w_gen.get('odbyta', 0))
-    st.markdown('<div class="section-unified-header">🏁 Status Wycieczki</div>', unsafe_allow_html=True)
-    if st.button("✓ Wycieczka ukończona (cofnij)" if czy_odbyta else "🏁 Oznacz całą wycieczkę jako ukończoną", key=f"btn_finish_trip_{wycieczka_id}", use_container_width=True):
-        potwierdz_zakonczenie_wycieczki_dialog(wycieczka_id, tytul_wycieczki, czy_odbyta)
+    st.markdown('<div class="section-unified-header">⚙️ Zarządzanie Wycieczką</div>', unsafe_allow_html=True)
+    
+    col_stat, col_dup = st.columns(2)
+    with col_stat:
+        if st.button("✓ Ukończona (cofnij)" if czy_odbyta else "🏁 Oznacz jako odbytą", key=f"btn_finish_trip_{wycieczka_id}", use_container_width=True):
+            potwierdz_zakonczenie_wycieczki_dialog(wycieczka_id, tytul_wycieczki, czy_odbyta)
+    with col_dup:
+        if st.button("📋 Klonuj wycieczkę", key=f"btn_dup_trip_{wycieczka_id}", use_container_width=True):
+            nowe_id = duplikuj_wycieczke(wycieczka_id)
+            if nowe_id:
+                st.session_state["selected_trip_from_click"] = nowe_id
+                st.session_state["flash_toast"] = f"📋 Skopiowano wycieczkę jako #{nowe_id}!"
+                st.rerun()
 
     st.markdown('<div class="section-unified-header">🤖 Asystent AI</div>', unsafe_allow_html=True)
     renderuj_globalny_czat_ai(aktualny_uzytkownik, inline=True)
@@ -2406,6 +2598,9 @@ elif st.session_state.active_tab == "map":
 
     if wybrana_mapa_sb is not None:
         renderuj_karte_wycieczki(wybrana_mapa_sb.split(". ")[0], df_miejsca, pokaz_mape=True, pokaz_pogode=False)
+    else:
+        # Renderuj czat jako pływający tylko wtedy, gdy żadna wycieczka nie jest otwarta
+        renderuj_globalny_czat_ai(aktualny_uzytkownik, inline=False)
 
 elif st.session_state.active_tab == "zabytek":
     render_adventure_header("CretAi • Baza Miejsc")
@@ -2600,5 +2795,5 @@ elif st.session_state.active_tab == "zabytek":
 
             renderuj_sekcje_notatek(id_miejsca=str(docelowy_nr))
 
-if st.session_state.active_tab != "route":
-    renderuj_globalny_czat_ai(aktualny_uzytkownik)
+    # Pływający czat w widoku bazy miejsc
+    renderuj_globalny_czat_ai(aktualny_uzytkownik, inline=False)
