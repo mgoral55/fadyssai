@@ -769,9 +769,19 @@ div.st-key-btn_powrot_static button, div[class*="btn_powrot_static"] button:disa
     opacity: 0.95 !important;
     cursor: default !important;
 }
+
 div[data-testid="stPopover"] { width: 100% !important; }
-div[data-testid="stPopover"] > button, div[data-testid="stPopover"] > button:disabled, div[data-testid="stPopover"] > button[aria-expanded], div[data-testid="stPopover"] > button:focus, div[data-testid="stPopover"] > button:active { background-color: #F6F0DD !important; color: #2B2118 !important; border: 1.5px solid #E2DEC8 !important; border-radius: 20px !important; padding: 14px 8px !important; min-height: 64px !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; }
-div[data-testid="stPopover"] > button * { color: #2B2118 !important; font-weight: 900 !important; font-size: 1.05rem !important; }
+div[data-testid="stPopover"] > button {
+    background-color: #F6F0DD !important;
+    color: #2B2118 !important;
+    border: 1.5px solid #D6CEBA !important;
+    border-radius: 16px !important;
+    padding: 8px 12px !important;
+    min-height: 42px !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
+    width: 100% !important;
+    font-weight: 800 !important;
+}
 div[data-testid="stPopover"] > button:hover { border-color: #8C5338 !important; background-color: #EFE8D1 !important; }
 
 [data-testid="stExpander"], div[data-testid="stExpander"] { 
@@ -795,23 +805,6 @@ div[data-testid="stPopover"] > button:hover { border-color: #8C5338 !important; 
     background-color: #F6F0DD !important; 
     border-top: 1px solid #D1C7AE !important; 
     padding: 10px 12px !important; 
-}
-
-[data-testid="stExpanderDetails"] [data-testid="stExpander"] {
-    background-color: #EDE8D6 !important;
-    border: 1.5px solid #D6CEBA !important;
-    border-radius: 14px !important;
-    margin-bottom: 6px !important;
-}
-[data-testid="stExpanderDetails"] [data-testid="stExpander"] summary {
-    background-color: #EDE8D6 !important;
-    font-size: 9pt !important;
-    font-weight: 800 !important;
-    color: #2B2118 !important;
-}
-[data-testid="stExpanderDetails"] [data-testid="stExpander"] [data-testid="stExpanderDetails"] {
-    background-color: #EDE8D6 !important;
-    border-top: 1px solid #C8C0AA !important;
 }
 
 .top-sticky-nav-container { position: sticky; top: 0; z-index: 999; background-color: #B4C29D; padding: 6px 0 10px 0; margin-bottom: 6px; border-bottom: 1.5px solid rgba(255, 255, 255, 0.2); }
@@ -955,15 +948,39 @@ with st.sidebar:
                 st.session_state["flash_toast"] = "♻️ Baza danych została całkowicie zresetowana i odtworzona z CSV!"
                 st.rerun()
 
-# --- OBSŁUGA LOGO ---
+# --- OBSŁUGA LOGO I ZDJĘĆ MIEJSC ---
 @st.cache_data
 def pobierz_logo_b64(sciezka_pliku="logo.png"):
     if os.path.exists(sciezka_pliku):
         try:
             with open(sciezka_pliku, "rb") as f:
-                return f"data:imagepng;base64,{base64.b64encode(f.read()).decode()}"
+                return f"data:image/png;base64,{base64.b64encode(f.read()).decode()}"
         except Exception:
             return None
+    return None
+
+@st.cache_data
+def pobierz_zdjecie_miejsca_b64(numer_miejsca):
+    if not numer_miejsca:
+        return None
+    nr_clean = str(numer_miejsca).strip()
+    katalogi = ["zdjęcia", "zdjecia", "assets/zdjecia", "assets/places"]
+    rozszerzenia = [
+        ("jpg", "image/jpeg"), 
+        ("jpeg", "image/jpeg"), 
+        ("webp", "image/webp"), 
+        ("png", "image/png")
+    ]
+    for kat in katalogi:
+        for ext, mime in rozszerzenia:
+            sciezka = os.path.join(kat, f"{nr_clean}.{ext}")
+            if os.path.exists(sciezka):
+                try:
+                    with open(sciezka, "rb") as img_file:
+                        encoded = base64.b64encode(img_file.read()).decode()
+                        return f"data:{mime};base64,{encoded}"
+                except Exception:
+                    pass
     return None
 
 def render_adventure_header(tytul_belki):
@@ -1594,7 +1611,7 @@ def dodaj_rynek_w_chanii_do_wycieczki(id_wycieczki, pozycja="start"):
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
-    return {"success": True, "action": "dodaj_rynek_w_chanii", "id_kroku": nowy_id, "message": "Pomyślnie dodano rynek w Chanii."}
+    return {"success": True, "action": "dodaj_rynek_w_chanii", "id_kroku": nowy_id, "message": f"Pomyślnie dodano rynek w Chanii."}
 
 def usun_rynek_z_wycieczki_handler(id_wycieczki, pozycja=None):
     with get_db() as conn:
@@ -3086,7 +3103,7 @@ elif st.session_state.active_tab == "zabytek":
         nazwa_docelowa = "Trasy Dnia" if ret_tab == "route" else f"Wycieczki #{ret_trip}"
         
         st.markdown(f"""
-        <div style="margin-bottom: 12px;">
+        <div style="margin-bottom: 8px;">
             <a href="{powrot_url}" target="_self" style="
                 display: flex;
                 align-items: center;
@@ -3095,9 +3112,9 @@ elif st.session_state.active_tab == "zabytek":
                 background-color: #2E251E;
                 color: #FAF8F2 !important;
                 text-decoration: none;
-                padding: 12px 16px;
+                padding: 10px 14px;
                 border-radius: 16px;
-                font-size: 10pt;
+                font-size: 9.5pt;
                 font-weight: 900;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.18);
                 border: 2px solid #D6CEBA;
@@ -3109,47 +3126,30 @@ elif st.session_state.active_tab == "zabytek":
     
     all_cats = list(CATEGORIES_CONFIG.keys())
     active_cat = st.session_state.selected_category
-    
-    cat_style_rules = [
-        """
-        div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 4px !important; margin-bottom: 0px !important; }
-        div[data-testid="stHorizontalBlock"] > div { flex: 1 1 0px !important; min-width: 0 !important; }
-        """
-    ]
 
-    for cat_name, conf in CATEGORIES_CONFIG.items():
-        is_sel = (active_cat == cat_name or active_cat is None)
-        bg = conf["color"] if is_sel else "#E0DCCE"
-        border = conf["color"] if is_sel else "#C8C2B0"
-        opacity = "1.0" if is_sel else "0.45"
-        text_c = "#FAF8F2" if is_sel else "#2F241D"
-        cat_style_rules.append(f"""
-        div.st-key-btn_cat_filter_{conf['slug']} button {{
-            background-color: {bg} !important; color: {text_c} !important; border: 1.5px solid {border} !important;
-            opacity: {opacity} !important; height: 30px !important; border-radius: 9px !important; width: 100% !important; font-size: 8.5pt !important;
-        }}
-        """)
+    # --- ZWIĘZŁY PASEK FILTRÓW (POPOVER) OSZCZĘDZAJĄCY MIEJSCE ---
+    filtr_label = f"🌪️ Filtr: {active_cat}" if active_cat else "🌪️ Filtry i opcje widoku"
+    if st.session_state.show_visited_places:
+        filtr_label += " (z odwiedzonymi)"
 
-    st.markdown(f"<style>{''.join(cat_style_rules)}</style>", unsafe_allow_html=True)
-
-    cols_row1 = st.columns(3, gap="small")
-    for idx, cat_name in enumerate(all_cats[:3]):
-        slug = CATEGORIES_CONFIG[cat_name]["slug"]
-        with cols_row1[idx]:
-            if st.button(f"✓ {cat_name}" if active_cat == cat_name else cat_name, key=f"btn_cat_filter_{slug}", use_container_width=True):
-                st.session_state.selected_category = None if active_cat == cat_name else cat_name
+    with st.popover(filtr_label, use_container_width=True):
+        st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;'>Kategoria miejsc</div>", unsafe_allow_html=True)
+        col_c1, col_c2 = st.columns(2)
+        for idx, cat_name in enumerate(all_cats):
+            col_target = col_c1 if idx % 2 == 0 else col_c2
+            slug = CATEGORIES_CONFIG[cat_name]["slug"]
+            with col_target:
+                btn_txt = f"✓ {cat_name}" if active_cat == cat_name else cat_name
+                if st.button(btn_txt, key=f"pop_btn_cat_{slug}", use_container_width=True):
+                    st.session_state.selected_category = None if active_cat == cat_name else cat_name
+                    st.rerun()
+        if active_cat:
+            if st.button("Pokaż wszystkie kategorie", use_container_width=True):
+                st.session_state.selected_category = None
                 st.rerun()
 
-    cols_row2 = st.columns(3, gap="small")
-    for idx, cat_name in enumerate(all_cats[3:]):
-        slug = CATEGORIES_CONFIG[cat_name]["slug"]
-        with cols_row2[idx]:
-            if st.button(f"✓ {cat_name}" if active_cat == cat_name else cat_name, key=f"btn_cat_filter_{slug}", use_container_width=True):
-                st.session_state.selected_category = None if active_cat == cat_name else cat_name
-                st.rerun()
-
-    st.markdown("<div style='margin-top: 4px;'></div>", unsafe_allow_html=True)
-    st.checkbox("Pokaż odwiedzone miejsca", key="show_visited_places")
+        st.markdown("<div style='border-top: 1px solid #D1C7AE; margin: 8px 0 6px 0;'></div>", unsafe_allow_html=True)
+        st.checkbox("Pokaż odwiedzone miejsca", key="show_visited_places")
 
     df_miejsca_filtrowane = df_miejsca.copy()
     if not df_miejsca_filtrowane.empty:
@@ -3162,6 +3162,7 @@ elif st.session_state.active_tab == "zabytek":
         df_miejsca_filtrowane['sort_num'] = pd.to_numeric(df_miejsca_filtrowane['numer_miejsca'], errors='coerce').fillna(9999)
         df_miejsca_filtrowane = df_miejsca_filtrowane.sort_values(by='sort_num').drop(columns=['sort_num'])
 
+    # --- KOMPAKTOWA MAPA DLA MOBILNYCH (230px) ---
     m_miejsca = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="CartoDB positron")
     dodaj_marker_domku(m_miejsca)
 
@@ -3171,15 +3172,13 @@ elif st.session_state.active_tab == "zabytek":
             lat, lon = sparsuj_wspolrzedne(row.get('wspolrzedne'))
             if lat is not None and lon is not None:
                 num = str(row.get('numer_miejsca', '')).strip()
+                nazwa_p = str(row.get('nazwa', '')).strip()
                 kolor = "#A8A29E" if bool(row.get('odwiedzone', 0)) else pobierz_kolor_kategorii(row.get('kategoria_normalizowana', 'Other'))
-                marker_coords_dict[(round(lat, 4), round(lon, 4))] = num
+                marker_coords_dict[(round(lat, 4), round(lon, 4))] = (num, nazwa_p)
                 icon_html = f'<div style="background-color:{kolor};color:#FFFFFF;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;border:2px solid #FFFFFF;box-shadow:0 2px 5px rgba(0,0,0,0.25);">{num}</div>'
                 folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12))).add_to(m_miejsca)
 
-    map_output = st_folium(m_miejsca, width=None, height=290, returned_objects=["last_object_clicked"], key="map_places_view")
-
-    sb_key = f"place_selectbox_selector_{st.session_state.show_visited_places}"
-    miejsca_opcje_lista = [f"{str(r['numer_miejsca']).strip()}. {r['nazwa']}" for _, r in df_miejsca_filtrowane.iterrows()]
+    map_output = st_folium(m_miejsca, width=None, height=230, returned_objects=["last_object_clicked"], key="map_places_view")
 
     if map_output and map_output.get("last_object_clicked"):
         c_lat, c_lng = map_output["last_object_clicked"].get("lat"), map_output["last_object_clicked"].get("lng")
@@ -3187,52 +3186,22 @@ elif st.session_state.active_tab == "zabytek":
             click_pt = (round(c_lat, 4), round(c_lng, 4))
             if st.session_state.last_map_click_place != click_pt:
                 st.session_state.last_map_click_place = click_pt
-                clicked_id = marker_coords_dict.get(click_pt)
-                if not clicked_id:
+                match_info = marker_coords_dict.get(click_pt)
+                if not match_info:
                     for (mlat, mlon), data_tuple in marker_coords_dict.items():
                         if abs(mlat - c_lat) < 0.005 and abs(mlon - c_lng) < 0.005:
-                            clicked_id = data_tuple
+                            match_info = data_tuple
                             break
-                if clicked_id:
+                if match_info:
+                    clicked_id, clicked_nazwa = match_info
                     st.session_state.active_place_id = str(clicked_id).strip()
                     st.query_params["place"] = str(clicked_id).strip()
-                    for opt_str in miejsca_opcje_lista:
-                        if opt_str.startswith(f"{clicked_id}."):
-                            st.session_state[sb_key] = opt_str
-                            break
+                    st.session_state["flash_toast"] = f"📍 Wybrano: #{clicked_id} {clicked_nazwa}"
                     st.rerun()
 
-    def on_place_select_changed():
-        val = st.session_state.get(sb_key)
-        if val:
-            nowy_id = str(val).split(".")[0].strip()
-            st.session_state.active_place_id = nowy_id
-            st.query_params["place"] = nowy_id
-        else:
-            st.session_state.active_place_id = None
-            if "place" in st.query_params:
-                del st.query_params["place"]
+    docelowy_nr = str(st.session_state.active_place_id).strip() if st.session_state.active_place_id else None
 
-    domyslny_indeks = 0
-    if st.session_state.active_place_id:
-        target_prefix = f"{str(st.session_state.active_place_id).strip()}."
-        for idx, opt in enumerate(miejsca_opcje_lista):
-            if opt.startswith(target_prefix):
-                domyslny_indeks = idx + 1
-                break
-
-    selected_option = st.selectbox(
-        "",
-        options=[None] + miejsca_opcje_lista,
-        index=domyslny_indeks,
-        format_func=lambda x: "🔍 Lub wybierz z listy..." if x is None else x,
-        key=sb_key,
-        on_change=on_place_select_changed,
-        label_visibility="collapsed"
-    )
-    
-    docelowy_nr = selected_option.split(".")[0].strip() if selected_option else (str(st.session_state.active_place_id).strip() if st.session_state.active_place_id else None)
-
+    # --- KARTA WYBRANEGO MIEJSCA WIDOCZNA BEZPOŚREDNIO POD MAPĄ ---
     if docelowy_nr:
         with get_db() as conn:
             p_df_fresh = pd.read_sql("SELECT * FROM miejsca WHERE TRIM(numer_miejsca) = ?", conn, params=(str(docelowy_nr).strip(),))
@@ -3244,63 +3213,57 @@ elif st.session_state.active_tab == "zabytek":
             coords_p = str(p.get('wspolrzedne', '')).replace(" ", "")
             czy_odwiedzone = bool(p.get('odwiedzone', 0))
 
-            st.markdown(f"""
-            <div class="overview-card" style="margin-top: 8px;">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
-                    <div style="font-size: 13pt; font-weight: 900; color: #2B2118; line-height: 1.2;">{p.get('numer_miejsca')}. {p.get('nazwa')}</div>
-                    <span style="background-color: {kolor_p}; color: #FAF8F2; font-size: 8pt; font-weight: 800; padding: 2px 8px; border-radius: 10px;">{kat_p}</span>
-                </div>
-                <div class="overview-card-text">{p.get('opis', '')}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            zdjecie_b64 = pobierz_zdjecie_miejsca_b64(docelowy_nr)
+            zdjecie_html = f"""<div style="width: calc(100% + 28px); height: 185px; margin: -14px -14px 12px -14px; overflow: hidden; border-radius: 18px 18px 0 0; background-color: #EDE8D6;"><img src="{zdjecie_b64}" style="width: 100%; height: 100%; object-fit: cover; display: block;" alt="{p.get('nazwa')}" /></div>""" if zdjecie_b64 else ""
 
-            st.markdown(f"""
-            <div class="overview-card">
-                <div class="overview-card-title"><span>ℹ️</span> INFORMACJE PRAKTYCZNE</div>
-                <div class="logistics-grid">
-                    <div class="logistics-pill">
-                        <div class="logistics-pill-title">🚗 Czas dojazdu</div>
-                        <div class="logistics-pill-value" style="font-size: 9.5pt;">{p.get('czas_dojazdu', '—')}</div>
-                    </div>
-                    <div class="logistics-pill">
-                        <div class="logistics-pill-title">⏱️ Czas na miejscu</div>
-                        <div class="logistics-pill-value" style="font-size: 9.5pt;">{p.get('orientacyjny_czas', '—')}</div>
-                    </div>
-                    <div class="logistics-pill">
-                        <div class="logistics-pill-title">💶 Koszt (2+2)</div>
-                        <div class="logistics-pill-value" style="font-size: 9.5pt;">{p.get('koszt', '—')}</div>
-                    </div>
-                    <div class="logistics-pill">
-                        <div class="logistics-pill-title">🕒 Godziny otwarcia</div>
-                        <div class="logistics-pill-value" style="font-size: 9.5pt;">{p.get('godziny_otwarcia', '—')}</div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div class="overview-card" style="margin-top: 6px; overflow: hidden;">
+{zdjecie_html}
+<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+<div style="font-size: 13pt; font-weight: 900; color: #2B2118; line-height: 1.2;">{p.get('numer_miejsca')}. {p.get('nazwa')}</div>
+<span style="background-color: {kolor_p}; color: #FAF8F2; font-size: 8pt; font-weight: 800; padding: 2px 8px; border-radius: 10px;">{kat_p}</span>
+</div>
+<div class="overview-card-text">{p.get('opis', '')}</div>
+</div>""", unsafe_allow_html=True)
 
-            st.markdown(f"""
-            <div class="overview-card">
-                <div class="overview-card-title"><span>📊</span> POZIOM TRUDNOŚCI</div>
-                <div class="overview-card-text">{p.get('trudnosc_adhd', 'Średni')}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div class="overview-card">
+<div class="overview-card-title"><span>ℹ️</span> INFORMACJE PRAKTYCZNE</div>
+<div class="logistics-grid">
+<div class="logistics-pill">
+<div class="logistics-pill-title">🚗 Czas dojazdu</div>
+<div class="logistics-pill-value" style="font-size: 9.5pt;">{p.get('czas_dojazdu', '—')}</div>
+</div>
+<div class="logistics-pill">
+<div class="logistics-pill-title">⏱️ Czas na miejscu</div>
+<div class="logistics-pill-value" style="font-size: 9.5pt;">{p.get('orientacyjny_czas', '—')}</div>
+</div>
+<div class="logistics-pill">
+<div class="logistics-pill-title">💶 Koszt (2+2)</div>
+<div class="logistics-pill-value" style="font-size: 9.5pt;">{p.get('koszt', '—')}</div>
+</div>
+<div class="logistics-pill">
+<div class="logistics-pill-title">🕒 Godziny otwarcia</div>
+<div class="logistics-pill-value" style="font-size: 9.5pt;">{p.get('godziny_otwarcia', '—')}</div>
+</div>
+</div>
+</div>""", unsafe_allow_html=True)
 
-            st.markdown(f"""
-            <div class="overview-card">
-                <div class="overview-card-title"><span>☀️</span> OCHRONA PRZED SŁOŃCEM</div>
-                <div class="overview-card-text">{p.get('ochrona_slonce', 'Standardowa')}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div class="overview-card">
+<div class="overview-card-title"><span>📊</span> POZIOM TRUDNOŚCI</div>
+<div class="overview-card-text">{p.get('trudnosc_adhd', 'Średni')}</div>
+</div>""", unsafe_allow_html=True)
 
-            st.markdown(f"""
-            <details class="overview-details-card">
-                <summary>🧠 SPECYFIKA AuDHD & SENSORYKA</summary>
-                <div style="margin-top: 8px; border-top: 1px solid #D1C7AE; padding-top: 6px;">
-                    <div style="font-size: 9pt; color: #2B2118; margin-bottom: 4px;"><b>Potencjał meltdownu:</b> {p.get('potencjal_meltdownu', 'Średni')}</div>
-                    <div style="font-size: 9pt; color: #2B2118;"><b>Strategia zaradcza:</b> {p.get('strategie_meltdown', 'Brak')}</div>
-                </div>
-            </details>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div class="overview-card">
+<div class="overview-card-title"><span>☀️</span> OCHRONA PRZED SŁOŃCEM</div>
+<div class="overview-card-text">{p.get('ochrona_slonce', 'Standardowa')}</div>
+</div>""", unsafe_allow_html=True)
+
+            st.markdown(f"""<details class="overview-details-card">
+<summary>🧠 SPECYFIKA AuDHD & SENSORYKA</summary>
+<div style="margin-top: 8px; border-top: 1px solid #D1C7AE; padding-top: 6px;">
+<div style="font-size: 9pt; color: #2B2118; margin-bottom: 4px;"><b>Potencjał meltdownu:</b> {p.get('potencjal_meltdownu', 'Średni')}</div>
+<div style="font-size: 9pt; color: #2B2118;"><b>Strategia zaradcza:</b> {p.get('strategie_meltdown', 'Brak')}</div>
+</div>
+</details>""", unsafe_allow_html=True)
 
             zadania_miejsca = sparsuj_liste_zadan(p.get('zadania_dla_dzieci', ''))
             if zadania_miejsca:
@@ -3321,5 +3284,40 @@ elif st.session_state.active_tab == "zabytek":
                 potwierdz_odwiedzenie_dialog(docelowy_nr, p.get('nazwa'), czy_odwiedzone)
 
             renderuj_sekcje_notatek(id_miejsca=str(docelowy_nr))
+
+    # --- AWARYJNY WYBÓR MIEJSCA Z LISTY (NA SAMYM DOLE STRONY) ---
+    miejsca_opcje_lista = [f"{str(r['numer_miejsca']).strip()}. {r['nazwa']}" for _, r in df_miejsca_filtrowane.iterrows()]
+    sb_key = f"place_selectbox_selector_bottom_{st.session_state.show_visited_places}"
+
+    def on_place_select_changed_bottom():
+        val = st.session_state.get(sb_key)
+        if val:
+            nowy_id = str(val).split(".")[0].strip()
+            st.session_state.active_place_id = nowy_id
+            st.query_params["place"] = nowy_id
+        else:
+            st.session_state.active_place_id = None
+            if "place" in st.query_params:
+                del st.query_params["place"]
+
+    domyslny_indeks = 0
+    if st.session_state.active_place_id:
+        target_prefix = f"{str(st.session_state.active_place_id).strip()}."
+        for idx, opt in enumerate(miejsca_opcje_lista):
+            if opt.startswith(target_prefix):
+                domyslny_indeks = idx + 1
+                break
+
+    st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
+    with st.expander("🔍 Awaryjny wybór miejsca z listy", expanded=False):
+        st.selectbox(
+            "Wybierz miejsce ręcznie",
+            options=[None] + miejsca_opcje_lista,
+            index=domyslny_indeks,
+            format_func=lambda x: "Wybierz miejsce..." if x is None else x,
+            key=sb_key,
+            on_change=on_place_select_changed_bottom,
+            label_visibility="collapsed"
+        )
 
     renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=pobierz_aktywna_wycieczke_id(), inline=False)
