@@ -1996,12 +1996,28 @@ def usun_krok_wycieczki(id_wycieczki, krok_wycieczki, pomin_ostrzezenie_posilku=
 def zarzadzaj_posilkiem_kroku(id_wycieczki, id_kroku, rodzaj_posilku, miejsce="restauracja", sugerowana_godzina="12:30", opis=""):
     with get_db() as conn:
         cursor = conn.cursor()
+        
+        # Bezpieczne rozwiązanie ID kroku (niezależnie czy model podał ID, czy nazwę)
+        k_info = znajdz_id_kroku_w_db(cursor, id_wycieczki, id_kroku)
+        if not k_info:
+            return {"success": False, "error": f"Nie znaleziono kroku wycieczki: {id_kroku}"}
+        
+        prawdziwe_id_kroku, nazwa_kroku = k_info
+
         cursor.execute('''
             INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
             VALUES (?, ?, ?, ?, ?)
-        ''', (int(id_kroku), rodzaj_posilku, miejsce, sugerowana_godzina, opis))
+        ''', (prawdziwe_id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis or nazwa_kroku))
         conn.commit()
-    return {"success": True, "action": "zarzadzaj_posilkiem_kroku", "message": f"Dodano posiłek {rodzaj_posilku}."}
+
+    # Synchronizujemy godziny posiłków z harmonogramem
+    przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
+
+    return {
+        "success": True, 
+        "action": "zarzadzaj_posilkiem_kroku", 
+        "message": f"Przypisano posiłek '{rodzaj_posilku}' do kroku '{nazwa_kroku}' (#{prawdziwe_id_kroku})."
+    }
 
 def usun_posilek(id_posilku):
     with get_db() as conn:
@@ -2556,7 +2572,7 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                 st.session_state["flash_toast"] = "🗑️ Wyczyszczono czat."
                 st.rerun()
 
-        chat_container = st.container(height=190)
+        chat_container = st.container(height=340)
         with chat_container:
             for message in chat_historia_z_db:
                 with st.chat_message(message["role"]):
@@ -2627,7 +2643,7 @@ ZASADY SYSTEMOWE:
                                 tools=[types.Tool(function_declarations=tools_definitions)],
                                 system_instruction=system_prompt,
                                 temperature=0.1,
-                                max_output_tokens=512
+                                max_output_tokens=2048
                             )
 
                             assistant_reply = ""
