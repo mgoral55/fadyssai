@@ -3025,22 +3025,34 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                             st.rerun()
         else:
             st.markdown("<div style='font-size: 8.5pt; color: #8C827A; font-style: italic; margin: 4px 0;'>Brak zadań dla tej wycieczki.</div>", unsafe_allow_html=True)
-
+    
     czy_odbyta = bool(w_gen.get('odbyta', 0))
     st.markdown('<div class="section-unified-header">⚙️ Zarządzanie Wycieczką</div>', unsafe_allow_html=True)
     
-    col_stat, col_dup = st.columns(2)
+    akt_id = pobierz_aktywna_wycieczke_id()
+    col_stat, col_dup, col_active = st.columns(3)
+    
     with col_stat:
-        btn_finish_label = "✓ Ukończona (przywróć)" if czy_odbyta else "🏁 Oznacz jako ukończoną"
+        btn_finish_label = "✓ Ukończona" if czy_odbyta else "🏁 Zakończ"
         if st.button(btn_finish_label, key=f"btn_finish_trip_{wycieczka_id}", use_container_width=True):
             potwierdz_zakonczenie_wycieczki_dialog(wycieczka_id, tytul_wycieczki, czy_odbyta)
+
     with col_dup:
-        if st.button("📋 Klonuj wycieczkę", key=f"btn_dup_trip_{wycieczka_id}", use_container_width=True):
+        if st.button("📋 Klonuj", key=f"btn_dup_trip_{wycieczka_id}", use_container_width=True):
             nowe_id = duplikuj_wycieczke(wycieczka_id)
             if nowe_id:
                 st.session_state["selected_trip_from_click"] = nowe_id
                 ustaw_aktywna_wycieczke_id(nowe_id)
                 st.session_state["flash_toast"] = f"📋 Skopiowano wycieczkę jako #{nowe_id}!"
+                st.rerun()
+
+    with col_active:
+        if str(wycieczka_id) == str(akt_id):
+            st.button("⭐ Aktywna", disabled=True, key=f"btn_is_active_{wycieczka_id}", use_container_width=True)
+        else:
+            if st.button("⭐ Aktywuj", key=f"btn_make_active_{wycieczka_id}", use_container_width=True):
+                ustaw_aktywna_wycieczke_id(wycieczka_id)
+                st.session_state["flash_toast"] = f"⭐ Ustawiono wycieczkę #{wycieczka_id} jako Trasę Dnia!"
                 st.rerun()
 
 # --- GŁÓWNY ROUTING ZAKŁADEK I PARAMETRÓW POWROTNYCH ---
@@ -3185,23 +3197,9 @@ elif st.session_state.active_tab == "map":
 
     if wybrana_mapa_sb is not None:
         wybrana_id = wybrana_mapa_sb.split(". ")[0]
-        akt_id = pobierz_aktywna_wycieczke_id()
-
-        col_act1, col_act2 = st.columns([3, 2])
-        with col_act1:
-            if str(wybrana_id) == str(akt_id):
-                st.info("⭐ To jest obecnie ustawiona **Trasa Dnia**")
-            else:
-                if st.button("⭐ Ustaw jako Trasę Dnia", key=f"btn_make_active_{wybrana_id}", use_container_width=True):
-                    ustaw_aktywna_wycieczke_id(wybrana_id)
-                    st.session_state["flash_toast"] = f"⭐ Ustawiono wycieczkę #{wybrana_id} jako Trasę Dnia!"
-                    st.rerun()
-
         renderuj_karte_wycieczki(wybrana_id, df_miejsca, pokaz_mape=True, pokaz_pogode=False)
         st.markdown('<div class="section-unified-header">🤖 Asystent AI</div>', unsafe_allow_html=True)
         renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=wybrana_id, inline=True)
-    else:
-        renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=pobierz_aktywna_wycieczke_id(), inline=False)
 
 elif st.session_state.active_tab == "zabytek":
     render_adventure_header("CretAi • Baza Miejsc")
