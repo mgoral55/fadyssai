@@ -122,7 +122,7 @@ CATEGORIES_CONFIG = {
     "Plaża": {"color": "#4A7C8F", "slug": "plaza", "icon": "🏖️"},
     "Activity": {"color": "#C6934B", "slug": "activity", "icon": "🧗"},
     "Shop": {"color": "#7D5871", "slug": "shop", "icon": "🛒"},
-    "Other": {"color": "#5D7A60", "slug": "other", "icon": None}
+    "Other": {"color": "#5D7A60", "slug": "other", "icon": "📍"}
 }
 
 def kategoryzuj_typ(typ_str):
@@ -2791,7 +2791,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 f'<div class="timeline-time"><span class="timeline-time-start">{godzina_start}</span>{time_end_html}</div>'
                 f'<div class="timeline-center-col"><div class="timeline-icon-badge-static {badge_class}">{badge_symbol}</div></div>'
                 f'<div class="timeline-content-col">'
-                f'<div class="timeline-item-title">{nazwa}</div>'
+                f'<div class="timeline-item-title">{tytul_kroku_display if "tytul_kroku_display" in locals() else nazwa}</div>'
                 f'<div class="timeline-item-desc">{posilki_tekst}</div>'
                 f'</div>'
                 f'{nav_btn_html}'
@@ -3197,6 +3197,27 @@ elif st.session_state.active_tab == "zabytek":
     all_cats = list(CATEGORIES_CONFIG.keys())
     active_cat = st.session_state.selected_category
 
+    # --- DYNAMICZNY CSS DLA PRZYCISKÓW KATEGORII W FILTRZE ---
+    category_button_css = []
+    for cat_name, cat_data in CATEGORIES_CONFIG.items():
+        c_slug = cat_data["slug"]
+        c_color = cat_data["color"]
+        category_button_css.append(f"""
+            div.st-key-pop_btn_cat_{c_slug} button {{
+                background-color: {c_color} !important;
+                color: #FFFFFF !important;
+                border: 2px solid rgba(255, 255, 255, 0.4) !important;
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15) !important;
+                transition: opacity 0.2s ease-in-out, transform 0.1s ease-in-out !important;
+            }}
+            div.st-key-pop_btn_cat_{c_slug} button:hover {{
+                opacity: 0.9 !important;
+                transform: scale(0.98) !important;
+                border-color: #FFFFFF !important;
+            }}
+        """)
+    st.markdown(f"<style>{''.join(category_button_css)}</style>", unsafe_allow_html=True)
+
     # --- ZWIĘZŁY PASEK FILTRÓW (POPOVER) OSZCZĘDZAJĄCY MIEJSCE ---
     filtr_label = f"🌪️ Filtr: {active_cat}" if active_cat else "🌪️ Filtry i opcje widoku"
     if st.session_state.show_visited_places:
@@ -3208,8 +3229,9 @@ elif st.session_state.active_tab == "zabytek":
         for idx, cat_name in enumerate(all_cats):
             col_target = col_c1 if idx % 2 == 0 else col_c2
             slug = CATEGORIES_CONFIG[cat_name]["slug"]
+            cat_icon = CATEGORIES_CONFIG[cat_name].get("icon") or "📍"
             with col_target:
-                btn_txt = f"✓ {cat_name}" if active_cat == cat_name else cat_name
+                btn_txt = f"✓ {cat_name}" if active_cat == cat_name else f"{cat_icon} {cat_name}"
                 if st.button(btn_txt, key=f"pop_btn_cat_{slug}", use_container_width=True):
                     st.session_state.selected_category = None if active_cat == cat_name else cat_name
                     st.rerun()
