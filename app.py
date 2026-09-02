@@ -49,7 +49,7 @@ def pobierz_geometrie_trasy_osrm(lat1, lon1, lat2, lon2):
     url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=full&geometries=geojson"
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
-        with urllib.request.urlopen(req, timeout=1.5) as response:
+        with urllib.request.urlopen(req, timeout=0.4) as response:
             data = json.loads(response.read().decode())
             if 'routes' in data and len(data['routes']) > 0:
                 coords = data['routes'][0]['geometry']['coordinates']
@@ -1782,11 +1782,13 @@ def usun_rynek_z_wycieczki_handler(id_wycieczki, pozycja=None):
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
     return {"success": True, "action": "usun_rynek_z_wycieczki", "message": "Pomyślnie usunięto rynek z wycieczki."}
 
-def edytuj_wycieczke(id, tytul_wycieczki=None, planowana_data=None, czas_wyjazdu=None, szacowany_czas_ogarniania_rano=None, calosciowa_taktyka_dnia=None):
+def edytuj_wycieczke(id, tytul_wycieczki=None, planowana_data=None, czas_wyjazdu=None, szacowany_czas_ogarniania_rano=None, calosciowa_taktyka_dnia=None, calosciowy_opis_wycieczki=None):
     with get_db() as conn:
         cursor = conn.cursor()
         if tytul_wycieczki:
             cursor.execute('UPDATE wycieczka SET tytul_wycieczki = ? WHERE id = ?', (tytul_wycieczki, str(id)))
+        if calosciowy_opis_wycieczki is not None:
+            cursor.execute('UPDATE wycieczka SET calosciowy_opis_wycieczki = ? WHERE id = ?', (calosciowy_opis_wycieczki, str(id)))
         if planowana_data:
             cursor.execute('UPDATE wycieczka SET planowana_data = ? WHERE id = ?', (planowana_data, str(id)))
         if czas_wyjazdu:
@@ -1822,6 +1824,18 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 -
             podsumowanie_taktyki=podsumowanie_taktyki,
             pozycja="koniec"
         )
+
+        # AUTOMATYCZNE WYKRYWANIE OBIADU / LUNCHBOXA
+        nazwa_l = nazwa_z_bazy.lower()
+        if any(w in nazwa_l for w in ["obiad", "tawerna", "lunch", "restauracja", "jedzenie", "lunchbox"]):
+            rodzaj = "lunchbox_duzy" if "duży" in nazwa_l else ("lunchbox_maly" if "mały" in nazwa_l or "lunchbox" in nazwa_l else "obiad")
+            miejsce_pos = "z domu (lunchbox)" if "lunchbox" in rodzaj else "restauracja"
+            godz_pos = okienko_zwiedzania.split("-")[0].strip() if "-" in okienko_zwiedzania else "13:00"
+            cursor.execute('''
+                INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (nowy_id, rodzaj, miejsce_pos, godz_pos, nazwa_z_bazy))
+
         conn.commit()
 
     if wzgledem_kroku is not None:
@@ -1946,13 +1960,32 @@ def zamien_kroki_miejscami(id_wycieczki, krok_a, krok_b):
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
     return {"success": True, "action": "zamien_kroki_miejscami", "message": f"Zamieniono miejscami kroki {krok_a} oraz {krok_b}."}
 
-def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
+def usun_krok_wycieczki(id_wycieczki, krok_wycieczki, pomin_ostrzezenie_posilku=False):
     with get_db() as conn:
         cursor = conn.cursor()
         k_info = znajdz_id_kroku_w_db(cursor, id_wycieczki, krok_wycieczki)
         if not k_info:
             return {"success": False, "error": f"Nie znaleziono kroku: {krok_wycieczki}"}
         k_id, k_nazwa = k_info
+
+        # Sprawdzenie, czy krok ma przypisany posiłek kotwiczący
+        cursor.execute('SELECT rodzaj_posilku, opis FROM posilki_kroku WHERE id_kroku = ?', (k_id,))
+        powiazane_posilki = cursor.fetchall()
+        
+        posilki_glowne = [p[0] for p in powiazane_posilki if str(p[0]).lower() in ['obiad', 'lunch', 'lunchbox_duzy', 'sniadanie', 'śniadanie', 'kolacja']]
+
+        if posilki_glowne and not pomin_ostrzezenie_posilku:
+            nazwy_pos = ", ".join(posilki_glowne)
+            return {
+                "success": False,
+                "blocked_by_guardrail": True,
+                "error": (
+                    f"⛔ ZATRZYMANO (AuDHD Hangry Guard): Krok '{k_nazwa}' ma przypisany kluczowy posiłek ({nazwy_pos}). "
+                    f"Usunięcie go spowoduje wielogodzinną przerwę w jedzeniu, co wywoła silny meltdown u dzieci. "
+                    f"Najpierw zaplanuj alternatywny posiłek (obiad w tawernie lub lunchbox z safe food), "
+                    f"albo potwierdź usunięcie z parametrem pomin_ostrzezenie_posilku=True."
+                )
+            }
 
         _usun_krok_z_wycieczki(cursor, k_id, id_wycieczki)
         conn.commit()
@@ -2244,16 +2277,17 @@ tools_definitions = [
     ),
     types.FunctionDeclaration(
         name="edytuj_wycieczke",
-        description="Aktualizuje parametry wycieczki, w tym całościową taktykę dnia.",
+        description="Aktualizuje parametry wycieczki. Służy do automatycznego odświeżania celu wycieczki oraz całościowej taktyki dnia po każdej modyfikacji planu kroków.",
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={
                 "id": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Tytuł"),
+                "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Nowy lub zaktualizowany tytuł"),
+                "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Zaktualizowany cel całej wycieczki, podsumowujący nowy przebieg dnia"),
+                "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Zaktualizowana taktyka całościowa dnia: bezpieczne strefy cienia w 11:30–15:30, ewakuacja, Safe Foods, regeneracja AuDHD"),
                 "planowana_data": types.Schema(type=types.Type.STRING, description="RRRR-MM-DD"),
                 "czas_wyjazdu": types.Schema(type=types.Type.STRING, description="Godzina np. '06:30'"),
                 "szacowany_czas_ogarniania_rano": types.Schema(type=types.Type.STRING, description="np. '0.5h' lub '45m'"),
-                "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Całościowa taktyka dnia (ochrona przed słońcem, regeneracja, posiłki)")
             },
             required=["id"]
         ),
@@ -2339,12 +2373,13 @@ tools_definitions = [
     ),
     types.FunctionDeclaration(
         name="usun_krok_wycieczki",
-        description="Usuwa wskazany krok z trasy wycieczki.",
+        description="Usuwa krok z trasy. Posiada strażnika posiłków – jeśli krok zawierał obiad/posiłek kotwiczący, funkcja zwróci błąd z ostrzeżeniem AuDHD.",
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={
                 "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
                 "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID lub nazwa kroku"),
+                "pomin_ostrzezenie_posilku": types.Schema(type=types.Type.BOOLEAN, description="Ustaw True TYLKO wtedy, gdy rodzic wyraźnie zażądał usunięcia mimo utraty posiłku lub gdy przeniesiono już obiad gdzie indziej"),
             },
             required=["id_wycieczki", "krok_wycieczki"]
         ),
@@ -2551,19 +2586,34 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                     dzisiaj_str = date.today().strftime("%Y-%m-%d")
                     zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny(akt_wyc_id)
                     
+                    rules_content = ""
+                    if os.path.exists("SYSTEM_RULES_KRETA_ADHD.md"):
+                        with open("SYSTEM_RULES_KRETA_ADHD.md", "r", encoding="utf-8") as rf:
+                            rules_content = rf.read()
+
+                    rules_content = ""
+                    if os.path.exists("SYSTEM_RULES_KRETA_ADHD.md"):
+                        with open("SYSTEM_RULES_KRETA_ADHD.md", "r", encoding="utf-8") as rf:
+                            rules_content = rf.read()
+
                     system_prompt = f"""Rola: Planer wycieczek AuDHD Kreta dla rodzica {uzytkownik}. Data: {dzisiaj_str}. Wycieczka ID: {akt_wyc_id}.
 {zewnetrzny_kontekst}
 
-ZASADY OPERACYJNE:
-1. Trasy buduj WYŁĄCZNIE z bazy miejsc. Do sprawdzania używaj `szukaj_miejsca_w_bazie`.
-2. Jeśli miejsca brak w bazie: wyszukaj koordynaty/ceny -> `utworz_nowe_miejsce` -> `dodaj_krok_wycieczki`.
-3. SJESTA (11:30–15:30): Zakaz pełnego słońca/patelni (wskazane: jaskinie, oceanarium, głęboki cień).
-4. ŻYWIENIE: Posiłek stabilizujący co max 4h (1x obiad na mieście 12:00–13:45 w cieniu, II śniadanie / Lunchbox mały 10:15–11:15, Safe Foods, ZERO wieprzowiny).
-5. TAKTYKA DNIA: Zawsze formułuj zwięzłą, uspokajającą taktykę całościową na dzień (ochrona przed słońcem, regeneracja, strefy buforowe) i aktualizuj ją przez `edytuj_wycieczke(calosciowa_taktyka_dnia=...)`.
-6. Zwracaj się po imieniu: {uzytkownik}."""
+ZASADY SYSTEMOWE:
+{rules_content}
+
+ŻELAZNA REGUŁA PO KAŻDEJ ZMIANIE KROKÓW:
+1. Jeżeli dodajesz, przesuwasz lub usuwasz JAKIKOLWIEK krok wycieczki, masz BEZWZGLĘDNY OBOWIĄZEK w tej samej serii wywołań uruchomić narzędzie:
+   `edytuj_wycieczke(id="{akt_wyc_id}", calosciowy_opis_wycieczki=..., calosciowa_taktyka_dnia=...)`.
+2. `calosciowy_opis_wycieczki` – zwięzły, zaktualizowany cel dnia uwzględniający nowe punkty.
+3. `calosciowa_taktyka_dnia` – zaktualizowana taktyka: ochrona przed upałem 11:30–15:30, gdzie zaplanowano regenerację/cień, gdzie i kiedy jest bezpieczny obiad oraz prowiant Safe Foods.
+4. Posiłki: Jeśli dodany krok to punkt gastronomiczny lub lunchbox, wywołaj też `zarzadzaj_posilkiem_kroku`.
+5. STRAŻNIK USUWANIA KROKÓW (AuDHD): Przed usunięciem kroku sprawdź, czy nie zawiera on posiłku kotwiczącego (obiad, lunchbox duży). Jeśli użytkownik prosi o usunięcie punktu z posiłkiem, NIE usuwaj go po cichu. Ostrzeż rodzica o ryzyku meltdownu z głodu (luka >4h) i zapytaj, gdzie najpierw przenieść posiłek.
+6. Zwracaj się do użytkownika po imieniu: {uzytkownik}."""
 
                     try:
-                        with st.status("🧭 Analizuję bezpieczeństwo i trasę AuDHD...", expanded=False) as status:
+                        with st.status("🧭 Przygotowuję plan AuDHD...", expanded=True) as status:
+                            st.write("🔌 Łączenie z API Gemini...")
                             client = get_gemini_client(api_key_input)
                             
                             contents = []
@@ -2583,22 +2633,13 @@ ZASADY OPERACYJNE:
                             assistant_reply = ""
                             executed_actions = []
 
-                            for loop_idx in range(3):
-                                response = None
-                                for attempt in range(3):
-                                    try:
-                                        response = client.models.generate_content(
-                                            model=wybrany_model,
-                                            contents=contents,
-                                            config=config
-                                        )
-                                        break
-                                    except Exception as api_err:
-                                        if ("429" in str(api_err) or "RESOURCE_EXHAUSTED" in str(api_err)) and attempt < 2:
-                                            wait_time = (2 ** attempt) + random.uniform(1.0, 2.5)
-                                            py_time.sleep(wait_time)
-                                        else:
-                                            raise api_err
+                            for loop_idx in range(4):
+                                st.write(f"🧠 Czekam na odpowiedź modelu (krok {loop_idx + 1})...")
+                                response = client.models.generate_content(
+                                    model=wybrany_model,
+                                    contents=contents,
+                                    config=config
+                                )
 
                                 candidate = response.candidates[0] if response and response.candidates else None
                                 calls = []
@@ -2616,8 +2657,13 @@ ZASADY OPERACYJNE:
                                     function_responses_parts = []
                                     for call in calls:
                                         call_name, args = call.name, call.args or {}
+                                        st.write(f"⚙️ Baza danych: `{call_name}`...")
+                                        
                                         wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
-                                        executed_actions.append(f"{call_name}: {wynik_bazy.get('message', wynik_bazy) if isinstance(wynik_bazy, dict) else str(wynik_bazy)}")
+                                        msg = wynik_bazy.get('message', wynik_bazy) if isinstance(wynik_bazy, dict) else str(wynik_bazy)
+                                        executed_actions.append(f"{call_name}: {msg}")
+                                        st.write(f"✅ Zrobione: {msg}")
+                                        
                                         function_responses_parts.append(
                                             types.Part.from_function_response(
                                                 name=call_name, 
@@ -2633,11 +2679,11 @@ ZASADY OPERACYJNE:
                                     break
 
                             if not assistant_reply.strip() and executed_actions:
-                                assistant_reply = f"✅ **Zaktualizowano plan w bazie dla Ciebie, {uzytkownik}:**\n* " + "\n* ".join(executed_actions)
+                                assistant_reply = f"✅ **Zaktualizowano plan dla Ciebie, {uzytkownik}:**\n* " + "\n* ".join(executed_actions)
                             elif not assistant_reply.strip():
                                 assistant_reply = f"✅ Zrealizowano, {uzytkownik}."
 
-                            status.update(label="✅ Gotowe!", state="complete")
+                            status.update(label="✅ Gotowe!", state="complete", expanded=False)
 
                         zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
                         st.markdown(assistant_reply)
