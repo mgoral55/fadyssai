@@ -3379,7 +3379,7 @@ elif st.session_state.active_tab == "zabytek":
                 break
 
     st.markdown("<div style='margin-top: 14px;'></div>", unsafe_allow_html=True)
-    with st.expander("🔍 Awaryjny wybór miejsca z listy", expanded=False):
+    with st.expander("🔍 Wybór miejsca z listy", expanded=False):
         st.selectbox(
             "Wybierz miejsce ręcznie",
             options=[None] + miejsca_opcje_lista,
