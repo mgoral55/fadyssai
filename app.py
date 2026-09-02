@@ -932,7 +932,13 @@ with st.sidebar:
     aktualny_uzytkownik = st.selectbox("Profil użytkownika", options=["Magda", "Michał", "Jurek", "Julia"], index=0)
     wybrany_model = st.selectbox(
         "Model Gemini", 
-        options=["gemini-3.1-flash-lite", "gemini-3.1-pro"], 
+        options=[
+            "gemini-3.1-flash-lite",
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-3.6-flash",
+            "gemini-3.1-pro-preview"
+        ], 
         index=0
     )
     env_gemini_key = os.environ.get("GEMINI_API_KEY", "")
@@ -2146,15 +2152,39 @@ def wykonaj_narzedzie_bazy(call_name, args):
 # --- ZOPTYMALIZOWANY KONTEKST ---
 def wczytaj_kontekst_zewnetrzny(id_wycieczki):
     with get_db() as conn:
-        wyc_df = pd.read_sql('SELECT id, tytul_wycieczki, planowana_data, czas_wyjazdu, szacowana_godzina_powrotu FROM wycieczka WHERE id = ?', conn, params=(str(id_wycieczki),))
-        kroki_df = pd.read_sql('SELECT krok_wycieczki, id, nazwa, okienko_zwiedzania FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn, params=(str(id_wycieczki),))
+        wyc_df = pd.read_sql(
+            'SELECT id, tytul_wycieczki, planowana_data, czas_wyjazdu, szacowana_godzina_powrotu, pobudka FROM wycieczka WHERE id = ?', 
+            conn, params=(str(id_wycieczki),)
+        )
+        query = '''
+            SELECT 
+                k.krok_wycieczki, 
+                k.id, 
+                k.nazwa, 
+                k.okienko_zwiedzania,
+                GROUP_CONCAT(
+                    p.rodzaj_posilku || ' (' || COALESCE(p.miejsce, '') || ', ' || COALESCE(p.sugerowana_godzina, '') || 
+                    CASE WHEN p.opis IS NOT NULL AND p.opis != '' THEN ': ' || p.opis ELSE '' END || ')',
+                    ' | '
+                ) AS posilki
+            FROM krok_wycieczki k
+            LEFT JOIN posilki_kroku p ON k.id = p.id_kroku
+            WHERE k.id_wycieczki = ?
+            GROUP BY k.id
+            ORDER BY CAST(k.krok_wycieczki AS INTEGER) ASC
+        '''
+        kroki_df = pd.read_sql(query, conn, params=(str(id_wycieczki),))
     
     opis = ""
     if not wyc_df.empty:
         w = wyc_df.iloc[0]
-        opis += f"Aktywna wycieczka #{w['id']}: {w.get('tytul_wycieczki')} (Wyjazd: {w.get('czas_wyjazdu')}, Powrót: {w.get('szacowana_godzina_powrotu')}).\n"
+        opis += f"Aktywna wycieczka #{w['id']}: {w.get('tytul_wycieczki')} (Pobudka: {w.get('pobudka')}, Wyjazd: {w.get('czas_wyjazdu')}, Powrót: {w.get('szacowana_godzina_powrotu')}).\n"
+    
     if not kroki_df.empty:
-        opis += "Kroki w planie:\n" + "\n".join([f"- #{r['krok_wycieczki']}: {r['nazwa']} ({r['okienko_zwiedzania']})" for _, r in kroki_df.iterrows()])
+        opis += "Kroki i zaplanowane posiłki w planie:\n"
+        for _, r in kroki_df.iterrows():
+            posilki_str = f" [Posiłki: {r['posilki']}]" if pd.notna(r['posilki']) and r['posilki'] else " [Posiłki: brak]"
+            opis += f"- #{r['krok_wycieczki']}: {r['nazwa']} ({r['okienko_zwiedzania']}){posilki_str}\n"
     
     return opis
 
