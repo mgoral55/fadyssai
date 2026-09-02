@@ -3334,6 +3334,308 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 ustaw_aktywna_wycieczke_id(wycieczka_id)
                 st.session_state["flash_toast"] = f"⭐ Ustawiono wycieczkę #{wycieczka_id} jako Trasę Dnia!"
                 st.rerun()
+                
+    # Przycisk otwarcia widoku offline dopasowany idealnie do szerokości kontenera
+    offline_html = generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_wszystkie_miejsca_ref)
+    if offline_html:
+        b64_dossier = base64.b64encode(offline_html.encode('utf-8')).decode('utf-8')
+        btn_offline_js = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta charset="utf-8">
+        <style>
+            html, body {{
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+                background: transparent !important;
+                overflow: hidden !important;
+            }}
+            #btn-open-dossier {{
+                width: 100% !important;
+                box-sizing: border-box !important;
+                background-color: #2E251E !important;
+                color: #FAF8F2 !important;
+                border: none !important;
+                border-radius: 18px !important;
+                padding: 0.4rem 0.8rem !important;
+                min-height: 40px !important;
+                font-size: 9.5pt !important;
+                font-weight: 800 !important;
+                cursor: pointer !important;
+                box-shadow: 0 3px 8px rgba(0,0,0,0.08) !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                gap: 8px !important;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+            }}
+            #btn-open-dossier:hover {{
+                opacity: 0.95 !important;
+            }}
+        </style>
+        </head>
+        <body>
+            <button id="btn-open-dossier">
+                <span>✈️</span><span>Otwórz wersję offline w nowej karcie</span>
+            </button>
+            <script>
+            document.getElementById('btn-open-dossier').addEventListener('click', function() {{
+                const b64 = "{b64_dossier}";
+                const binString = window.atob(b64);
+                const len = binString.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {{
+                    bytes[i] = binString.charCodeAt(i);
+                }}
+                const html = new TextDecoder().decode(bytes);
+                const blob = new Blob([html], {{ type: 'text/html;charset=utf-8' }});
+                const blobUrl = URL.createObjectURL(blob);
+                window.open(blobUrl, '_blank');
+            }});
+            </script>
+        </body>
+        </html>
+        """
+        st.components.v1.html(btn_offline_js, height=44)
+
+# --- PAKIET OFFLINE I PAMIĘĆ PODRĘCZNA W TELEFONIE ---
+def generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_miejsca_ref):
+    with get_db() as conn:
+        wyc = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
+        kroki = pd.read_sql('''
+            SELECT k.*, 
+                   GROUP_CONCAT(p.rodzaj_posilku || ' (' || COALESCE(p.sugerowana_godzina, '') || '): ' || COALESCE(p.opis, ''), ' | ') AS posilki_info
+            FROM krok_wycieczki k
+            LEFT JOIN posilki_kroku p ON k.id = p.id_kroku
+            WHERE k.id_wycieczki = ?
+            GROUP BY k.id
+            ORDER BY CAST(k.krok_wycieczki AS INTEGER) ASC
+        ''', conn, params=(str(wycieczka_id),))
+        zakupy = pd.read_sql('SELECT * FROM zakupy WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
+
+    if wyc.empty:
+        return None
+
+    w = wyc.iloc[0]
+    tytul = w.get('tytul_wycieczki', 'Trasa Dnia')
+    taktyka = w.get('calosciowa_taktyka_dnia', 'Brak szczegółów')
+    pobudka = w.get('pobudka', '06:00')
+    wyjazd = w.get('czas_wyjazdu', '06:30')
+    powrot = w.get('szacowana_godzina_powrotu', '17:30')
+    data_w = w.get('planowana_data', '')
+
+    with get_db() as conn:
+        wyc = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
+        kroki = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn, params=(str(wycieczka_id),))
+        posilki_wszystkie = pd.read_sql('SELECT * FROM posilki_kroku', conn)
+        zakupy = pd.read_sql('SELECT * FROM zakupy WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
+
+    if wyc.empty:
+        return None
+
+    w = wyc.iloc[0]
+    tytul = w.get('tytul_wycieczki', 'Trasa Dnia')
+    taktyka = w.get('calosciowa_taktyka_dnia', 'Brak szczegółów')
+    pobudka = w.get('pobudka', '06:00')
+    wyjazd = w.get('czas_wyjazdu', '06:30')
+    powrot = w.get('szacowana_godzina_powrotu', '17:30')
+    data_w = w.get('planowana_data', '')
+
+    kroki_cards_html = []
+    for _, k in kroki.iterrows():
+        k_id = int(k['id'])
+        nazwa = k.get('nazwa', '')
+        okno = k.get('okienko_zwiedzania', '')
+        wsp = str(k.get('wspolrzedne', '')).replace(' ', '')
+        opis = k.get('opis', '')
+        ewakuacja = str(k.get('godzina_ewakuacji', '')).strip()
+        ostrzezenie = str(k.get('czerwona_strefa_ostrzezenie', '')).strip()
+        taktyka_k = str(k.get('podsumowanie_taktyki', '')).strip()
+
+        # Formatowanie posiłków analogicznie do głównej aplikacji
+        df_p = posilki_wszystkie[posilki_wszystkie['id_kroku'] == k_id]
+        posilki_lista = []
+        for _, prow in df_p.iterrows():
+            p_rodz = str(prow.get('rodzaj_posilku', '')).strip().lower()
+            p_godz = str(prow.get('sugerowana_godzina', '')).strip()
+            p_opis = str(prow.get('opis', '')).strip()
+
+            if 'śniadan' in p_rodz or 'sniadan' in p_rodz:
+                label = "Śniadanie"
+            elif p_rodz == 'kolacja':
+                label = "Kolacja"
+            elif p_rodz in ['obiad', 'lunch']:
+                label = "Obiad"
+            elif p_rodz == 'lunchbox_maly':
+                label = "Mały lunchbox"
+            elif p_rodz == 'lunchbox_duzy':
+                label = "Duży lunchbox"
+            else:
+                label = p_opis.capitalize() if p_opis and p_opis not in ['-', 'nan', 'Brak'] else p_rodz.capitalize()
+
+            if p_godz and p_godz not in ['-', 'nan', 'Brak']:
+                posilki_lista.append(f"{label} - ok {p_godz}")
+            else:
+                posilki_lista.append(label)
+
+        posilki_badge = f'<div class="meal-badge">🍴 {" / ".join(posilki_lista)}</div>' if posilki_lista else ''
+        
+        # Filtrowanie pustych wartości "None" / "-"
+        evac_badge = f'<div class="evac-badge">🚨 Godzina ewakuacji: <b>{ewakuacja}</b></div>' if ewakuacja and ewakuacja not in ['None', '-', 'nan'] else ''
+        warn_box = f'<div class="warn-box">⚠️ <b>Czerwona Strefa:</b> {ostrzezenie}</div>' if ostrzezenie and ostrzezenie not in ['None', '-', 'nan'] else ''
+        taktyka_box = f'<div class="tactics-box">🎯 <b>Taktyka AuDHD:</b> {taktyka_k}</div>' if taktyka_k and taktyka_k not in ['None', '-', 'nan'] else ''
+        geo_btn = f'<a href="https://www.google.com/maps/search/?api=1&query={wsp}" target="_blank" class="btn-geo">🧭 Nawiguj w Google Maps</a>' if wsp and ',' in wsp else ''
+
+        kroki_cards_html.append(f"""
+        <div class="step-card">
+            <div class="step-header">
+                <span class="step-time">{okno}</span>
+                <span class="step-title">{nazwa}</span>
+            </div>
+            {posilki_badge}
+            {evac_badge}
+            {warn_box}
+            <div class="step-desc">{opis if opis and opis not in ['None', 'nan'] else ''}</div>
+            {taktyka_box}
+            {geo_btn}
+        </div>
+        """)
+
+    zakupy_items = []
+    for _, z in zakupy.iterrows():
+        z_id = z['id']
+        z_nazwa = z['nazwa_produktu']
+        z_ilosc = f" ({z['ilosc']})" if pd.notna(z['ilosc']) and str(z['ilosc']).strip() else ""
+        zakupy_items.append(f"""
+        <label class="check-item">
+            <input type="checkbox" id="zakup_{z_id}" onchange="saveCheck(this.id, this.checked)">
+            <span>{z_nazwa}{z_ilosc}</span>
+        </label>
+        """)
+
+    return f"""<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>OFFLINE: {tytul}</title>
+<style>
+  :root {{
+    --bg: #B4C29D;
+    --text: #2B2118;
+    --card: #F6F0DD;
+    --border: #2E251E;
+    --accent: #8C5338;
+  }}
+  * {{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }}
+  body {{
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0; padding: 12px;
+    max-width: 540px; margin: 0 auto;
+  }}
+  .sunlight-banner {{
+    background: #2E251E; color: #FFE600; font-weight: 900;
+    padding: 10px 14px; border-radius: 16px; margin-bottom: 12px;
+    font-size: 11pt; text-align: center; border: 2px solid #FFE600;
+  }}
+  .card {{
+    background: var(--card); border: 2px solid var(--border);
+    border-radius: 18px; padding: 14px; margin-bottom: 12px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+  }}
+  h1 {{ font-size: 16pt; margin: 0 0 6px 0; color: #2B2118; }}
+  .meta-grid {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin: 8px 0; }}
+  .meta-box {{ background: #FAF8F2; border: 1.5px solid #D6CEBA; border-radius: 12px; padding: 6px; text-align: center; font-weight: 900; font-size: 9pt; }}
+  .step-card {{
+    background: #F6F0DD; border: 2px solid var(--border);
+    border-radius: 16px; padding: 12px; margin-bottom: 10px;
+  }}
+  .step-header {{ display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; border-bottom: 1.5px solid #D6CEBA; padding-bottom: 4px; }}
+  .step-time {{ background: var(--accent); color: #FFF; font-weight: 900; font-size: 9.5pt; padding: 3px 8px; border-radius: 8px; white-space: nowrap; }}
+  .step-title {{ font-size: 11.5pt; font-weight: 900; color: #2B2118; }}
+  .meal-badge {{ background: #FAF8F2; color: #8C5338; font-weight: 800; font-size: 9pt; padding: 4px 8px; border-radius: 8px; margin: 4px 0; border: 1px solid #D6CEBA; }}
+  .evac-badge {{ background: rgba(220,80,80,0.12); color: #DC5050; font-weight: 900; font-size: 9pt; padding: 4px 8px; border-radius: 8px; margin: 4px 0; border: 1.5px solid #DC5050; }}
+  .warn-box {{ background: rgba(226,140,50,0.15); border: 1.5px solid #C06C4E; color: #2B2118; font-size: 8.5pt; padding: 6px 8px; border-radius: 8px; margin: 4px 0; font-weight: 700; }}
+  .tactics-box {{ background: #FAF8F2; border-left: 4px solid var(--accent); font-size: 9pt; padding: 8px 10px; margin: 6px 0; border-radius: 0 10px 10px 0; font-weight: 700; }}
+  .step-desc {{ font-size: 9.5pt; font-weight: 600; color: #2B2118; margin: 4px 0; }}
+  .btn-geo {{
+    display: block; width: 100%; text-align: center; background: #2E251E;
+    color: #FFFFFF !important; text-decoration: none; font-weight: 900;
+    font-size: 10pt; padding: 10px; border-radius: 12px; margin-top: 8px;
+  }}
+  .check-item {{ display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 10.5pt; font-weight: 700; border-bottom: 1px solid #D6CEBA; }}
+  .check-item input {{ width: 22px; height: 22px; accent-color: var(--accent); }}
+</style>
+</head>
+<body>
+
+<div class="sunlight-banner">✈️ TRYB SAMOLOTOWY • ODCZYT Z PAMIĘCI TELEFONU</div>
+
+<div class="card">
+  <h1>{tytul}</h1>
+  <div style="font-size: 9pt; font-weight: 800; color: var(--accent); margin-bottom: 6px;">📅 Data: {data_w}</div>
+  <div class="meta-grid">
+    <div class="meta-box">⏰ Pobudka<br>{pobudka}</div>
+    <div class="meta-box">🚗 Wyjazd<br>{wyjazd}</div>
+    <div class="meta-box">🏠 Powrót<br>{powrot}</div>
+  </div>
+  <div class="tactics-box">
+    <b>🎯 Taktyka Dnia:</b><br>{taktyka}
+  </div>
+</div>
+
+<div style="font-weight: 900; font-size: 12pt; margin: 14px 0 8px 4px; color: #2B2118;">🗺️ HARMONOGRAM TRASY</div>
+{"".join(kroki_cards_html)}
+
+<div class="card" style="margin-top: 14px;">
+  <div style="font-weight: 900; font-size: 11pt; margin-bottom: 8px; color: #8C5338;">🛒 ZAKUPY OFFLINE</div>
+  {"".join(zakupy_items) if zakupy_items else "<div style='font-size:9pt; color:#8C827A;'>Brak pozycji na liście.</div>"}
+</div>
+
+<script>
+  function saveCheck(id, val) {{
+    localStorage.setItem('cret_offline_' + id, val ? '1' : '0');
+  }}
+  document.querySelectorAll('input[type="checkbox"]').forEach(cb => {{
+    if (localStorage.getItem('cret_offline_' + cb.id) === '1') cb.checked = true;
+  }});
+</script>
+</body>
+</html>"""
+
+def wstrzyknij_automatyczny_cache_offline(wycieczka_id, df_wszystkie_miejsca_ref):
+    """Zapisuje pakiet offline w tle w localStorage przeglądarki."""
+    html_dossier = generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_wszystkie_miejsca_ref)
+    if not html_dossier:
+        return
+
+    b64_payload = base64.b64encode(html_dossier.encode('utf-8')).decode('utf-8')
+
+    js_code = f"""
+    <script>
+    (function() {{
+        const b64Data = "{b64_payload}";
+        try {{
+            const binString = window.atob(b64Data);
+            const len = binString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {{
+                bytes[i] = binString.charCodeAt(i);
+            }}
+            const decodedHtml = new TextDecoder().decode(bytes);
+            window.localStorage.setItem('cretai_active_route_html', decodedHtml);
+            window.localStorage.setItem('cretai_active_route_id', "{wycieczka_id}");
+        }} catch(e) {{
+            console.error("Błąd zapisu offline:", e);
+        }}
+    }})();
+    </script>
+    """
+    st.components.v1.html(js_code, height=0)
 
 # --- GŁÓWNY ROUTING ZAKŁADEK I PARAMETRÓW POWROTNYCH ---
 if "tab" in st.query_params:
@@ -3386,10 +3688,15 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 if st.session_state.active_tab == "route":
+    akt_id = pobierz_aktywna_wycieczke_id()
+    
+    # ⚡ AUTOMATYCZNE POBRANIE DO PAMIĘCI TELEFONU
+    wstrzyknij_automatyczny_cache_offline(akt_id, df_miejsca)
+
     render_adventure_header("CretAi • Aktualna Wycieczka")
-    renderuj_karte_wycieczki(pobierz_aktywna_wycieczke_id(), df_miejsca, pokaz_mape=True, pokaz_pogode=True)
+    renderuj_karte_wycieczki(akt_id, df_miejsca, pokaz_mape=True, pokaz_pogode=True)
     st.markdown('<div class="section-unified-header">🤖 Asystent AI</div>', unsafe_allow_html=True)
-    renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=pobierz_aktywna_wycieczke_id(), inline=True)
+    renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=akt_id, inline=True)
 
 elif st.session_state.active_tab == "map":
     render_adventure_header("CretAi • Nasze wycieczki")
