@@ -182,32 +182,102 @@ def dopasuj_krok_do_bazy_miejsc(nazwa_kroku, wspolrzedne_kroku, df_miejsca_ref):
 
     return None
 
-# --- POMOCNICZE FUNKCJE STRUKTURY KROKÓW (DRY) ---
+# --- POMOCNICZE FUNKCJE STRUKTURY KROKÓW (DRY & LOGIC PRESERVATION) ---
 def _reindex_kroki(cursor, id_wycieczki):
-    cursor.execute('SELECT id FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC, id ASC', (str(id_wycieczki),))
+    cursor.execute('''
+        SELECT id FROM krok_wycieczki 
+        WHERE id_wycieczki = ? 
+        ORDER BY CAST(krok_wycieczki AS REAL) ASC, id ASC
+    ''', (str(id_wycieczki),))
     kroki = cursor.fetchall()
     for idx, (k_id,) in enumerate(kroki):
         cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k_id))
 
 def _wstaw_krok_do_wycieczki(cursor, id_wycieczki, nazwa, wspolrzedne, okienko, opis, numer_miejsca=None, podsumowanie_taktyki=None, pozycja="koniec"):
-    cursor.execute('SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(id_wycieczki),))
+    cursor.execute('''
+        SELECT id, nazwa, CAST(krok_wycieczki AS INTEGER) as nr 
+        FROM krok_wycieczki 
+        WHERE id_wycieczki = ? 
+        ORDER BY nr ASC, id ASC
+    ''', (str(id_wycieczki),))
     rows = cursor.fetchall()
     
-    if pozycja == "start":
-        insert_idx = 1 if (len(rows) <= 1 or not any(w in str(rows[1][1]).lower() for w in ["sklep", "market"])) else 2
-    else:
-        if len(rows) > 0 and any(w in str(rows[-1][1]).lower() for w in ["domek", "powrót", "powrot"]):
-            insert_idx = max(len(rows) - 1, 0)
-        else:
-            insert_idx = len(rows)
+    nazwa_lower = nazwa.lower()
+    is_shop = any(w in nazwa_lower for w in ["sklep", "market"])
+    is_market = any(w in nazwa_lower for w in ["rynek", "targ", "laiki"])
 
+    # Wstawienie tymczasowego wiersza
     cursor.execute('''
         INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, numer_miejsca, nazwa, wspolrzedne, okienko_zwiedzania, podsumowanie_taktyki, opis)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (str(id_wycieczki), insert_idx, numer_miejsca, nazwa, wspolrzedne, okienko, podsumowanie_taktyki, opis))
+        VALUES (?, 9999, ?, ?, ?, ?, ?, ?)
+    ''', (str(id_wycieczki), numer_miejsca, nazwa, wspolrzedne, okienko, podsumowanie_taktyki, opis))
     nowy_id = cursor.lastrowid
 
-    _reindex_kroki(cursor, id_wycieczki)
+    start_cottage = []
+    morning_shops = []
+    morning_markets = []
+    middle_steps = []
+    evening_markets = []
+    evening_shops = []
+    end_cottage = []
+
+    total = len(rows)
+    for idx, (r_id, r_nazwa, _) in enumerate(rows):
+        r_low = str(r_nazwa).lower()
+        if idx == 0 and any(w in r_low for w in ["domek", "start", "wyjazd"]):
+            start_cottage.append((r_id, r_nazwa))
+        elif idx == total - 1 and any(w in r_low for w in ["domek", "powrót", "powrot"]):
+            end_cottage.append((r_id, r_nazwa))
+        elif any(w in r_low for w in ["sklep", "market"]):
+            if idx <= 2:
+                morning_shops.append((r_id, r_nazwa))
+            else:
+                evening_shops.append((r_id, r_nazwa))
+        elif any(w in r_low for w in ["rynek", "targ", "laiki"]):
+            if idx <= 2:
+                morning_markets.append((r_id, r_nazwa))
+            else:
+                evening_markets.append((r_id, r_nazwa))
+        else:
+            middle_steps.append((r_id, r_nazwa))
+
+    nowy_element = (nowy_id, nazwa)
+    if pozycja == "start":
+        if is_shop:
+            morning_shops.append(nowy_element)
+        elif is_market:
+            morning_markets.append(nowy_element)
+        else:
+            morning_shops.append(nowy_element)
+    else:
+        if is_shop:
+            evening_shops.append(nowy_element)
+        elif is_market:
+            evening_markets.append(nowy_element)
+        else:
+            evening_shops.append(nowy_element)
+
+    # Bezwzględnie pożądana kolejność:
+    # 1. Start w domku
+    # 2. Sklep rano (tuż po wyjeździe)
+    # 3. Rynek rano (po sklepie)
+    # 4. Atrakcje w ciągu dnia
+    # 5. Rynek wieczorem (przed sklepem)
+    # 6. Sklep wieczorem (tuż przed powrotem)
+    # 7. Powrót do domku
+    uporzadkowana_lista = (
+        start_cottage +
+        morning_shops +
+        morning_markets +
+        middle_steps +
+        evening_markets +
+        evening_shops +
+        end_cottage
+    )
+
+    for index_docelowy, (item_id, _) in enumerate(uporzadkowana_lista):
+        cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (index_docelowy, item_id))
+
     return nowy_id
 
 def _usun_krok_z_wycieczki(cursor, id_kroku, id_wycieczki):
@@ -940,7 +1010,20 @@ div[data-testid="stCheckbox"] label, div[data-testid="stCheckbox"] p, div[data-t
 .custom-nav-btn { flex: 1; background-color: #FAF8F2; border: 1.5px solid #D6D2C4; color: #2B2118; padding: 7px 3px; text-align: center; border-radius: 14px; font-size: 10.5px; font-weight: 800; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 2px; }
 
 .stButton > button { background-color: #2E251E !important; color: #FFFFFF !important; border: none !important; font-weight: 800 !important; border-radius: 18px !important; padding: 0.4rem 0.8rem !important; min-height: 40px !important; font-size: 9.5pt !important; box-shadow: 0 3px 8px rgba(0,0,0,0.08) !important; }
-div[class*="st-key-btn_add_shop_"] button, div[class*="st-key-btn_add_market_"] button { height: 40px !important; min-height: 40px !important; max-height: 40px !important; font-size: 8.5pt !important; font-weight: 800 !important; border-radius: 14px !important; margin-bottom: 4px !important; display: flex !important; align-items: center !important; justify-content: center !important; text-align: center !important; }
+div[class*="st-key-btn_add_shop_"] button, div[class*="st-key-btn_add_market_"] button,
+div[class*="st-key-btn_del_shop_"] button, div[class*="st-key-btn_del_market_"] button { 
+    height: 40px !important; 
+    min-height: 40px !important; 
+    max-height: 40px !important; 
+    font-size: 8.5pt !important; 
+    font-weight: 800 !important; 
+    border-radius: 14px !important; 
+    margin-bottom: 4px !important; 
+    display: flex !important; 
+    align-items: center !important; 
+    justify-content: center !important; 
+    text-align: center !important; 
+}
 div[class*="st-key-btn_add_shop_"] button:disabled, div[class*="st-key-btn_add_market_"] button:disabled { background-color: #D6CEBA !important; color: #73695F !important; border: 1.5px solid #C4BC9E !important; opacity: 0.85 !important; cursor: not-allowed !important; box-shadow: none !important; }
 .note-card { background-color: #F4EFE6; border: 1.5px solid #D8D2BC; border-radius: 16px; padding: 12px; margin-bottom: 8px; }
 
@@ -970,7 +1053,6 @@ with st.sidebar:
     env_gemini_key = os.environ.get("GEMINI_API_KEY", "")
     api_key_input = st.text_input("Gemini API Key", value=env_gemini_key, type="password")
 
-    # --- DYSKRETNY RESET (TYLKO W PROFILU MAGDY) ---
     if aktualny_uzytkownik == "Magda":
         st.markdown("<div style='margin-top: 50px;'></div>", unsafe_allow_html=True)
         with st.expander("🔒 Konsola deweloperska", expanded=False):
@@ -1975,7 +2057,7 @@ tools_definitions = [
         ),
     ),
     types.FunctionDeclaration(
-        name="sprawcz_pogode",
+        name="sprawdz_pogode",
         description="Pobiera prognozę pogody dla podanych współrzędnych i daty.",
         parameters=types.Schema(
             type=types.Type.OBJECT,
@@ -2651,7 +2733,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             for lat_c, lon_c, nazwa_c, krok_c in coords_list:
                 if "domek" in nazwa_c.lower():
                     continue
-                icon_html = f'<div style="background-color:#C06C4E;color:white;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.2);">{krok_c}</div>'
+                icon_html = f'<div style="background-color:#C06C4E;color:white;border-radius:50%;width:22px;height:22px;display:align-items;justify-content:center;font-size:10px;font-weight:900;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.2);">{krok_c}</div>'
                 folium.Marker([lat_c, lon_c], icon=folium.DivIcon(html=icon_html, icon_size=(22, 22), icon_anchor=(11, 11)), tooltip=nazwa_c).add_to(m_trip)
 
             st_folium(m_trip, width=None, height=260, returned_objects=[], key=f"trip_map_view_{wycieczka_id}")
@@ -2900,11 +2982,11 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         all_k_list = [r for _, r in kroki_df.iterrows()]
         total_k_count = len(all_k_list)
 
-        has_shop_start = (total_k_count > 1 and "sklep" in str(all_k_list[1]['nazwa']).lower())
-        has_shop_end = (total_k_count > 2 and "sklep" in str(all_k_list[-2]['nazwa']).lower())
+        has_shop_start = any("sklep" in str(r['nazwa']).lower() and int(r['krok_wycieczki']) in [1, 2] for r in all_k_list)
+        has_market_start = any(("rynek" in str(r['nazwa']).lower() or "targ" in str(r['nazwa']).lower()) and int(r['krok_wycieczki']) in [1, 2] for r in all_k_list)
 
-        has_market_start = any(("rynek" in str(r['nazwa']).lower() or "targ" in str(r['nazwa']).lower()) and int(r['krok_wycieczki']) <= 2 for r in all_k_list)
-        has_market_end = any(("rynek" in str(r['nazwa']).lower() or "targ" in str(r['nazwa']).lower()) and int(r['krok_wycieczki']) >= max(total_k_count-3, 1) for r in all_k_list)
+        has_shop_end = any("sklep" in str(r['nazwa']).lower() and int(r['krok_wycieczki']) >= max(total_k_count - 3, 1) for r in all_k_list)
+        has_market_end = any(("rynek" in str(r['nazwa']).lower() or "targ" in str(r['nazwa']).lower()) and int(r['krok_wycieczki']) >= max(total_k_count - 3, 1) for r in all_k_list)
 
         rynek_dla_daty, _ = pobierz_dane_rynku_dla_daty(planowana_data_val)
         rynek_czynny = (rynek_dla_daty is not None)
@@ -3131,7 +3213,7 @@ elif st.session_state.active_tab == "map":
             kolor = "#A8A29E" if bool(row.get('odwiedzone', 0)) else pobierz_kolor_kategorii(kategoryzuj_typ(row.get('typ')))
             map_coords_lookup[(round(lat, 4), round(lon, 4))] = (num, nazwa)
             
-            icon_html = f'<div style="background-color:{kolor};color:white;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;border:2px solid white;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">{num}</div>'
+            icon_html = f'<div style="background-color:{kolor};color:white;border-radius:50%;width:24px;height:24px;display:align-items;justify-content:center;font-size:10px;font-weight:900;border:2px solid white;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">{num}</div>'
             folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12)), tooltip=f"#{num} {nazwa}").add_to(m_all)
             
     map_out = st_folium(m_all, width=None, height=300, returned_objects=["last_object_clicked"], key="map_all_trips_view")
@@ -3240,7 +3322,6 @@ elif st.session_state.active_tab == "zabytek":
     all_cats = list(CATEGORIES_CONFIG.keys())
     active_cat = st.session_state.selected_category
 
-    # --- DYNAMICZNY CSS DLA PRZYCISKÓW KATEGORII W FILTRZE ---
     category_button_css = []
     for cat_name, cat_data in CATEGORIES_CONFIG.items():
         c_slug = cat_data["slug"]
@@ -3261,7 +3342,6 @@ elif st.session_state.active_tab == "zabytek":
         """)
     st.markdown(f"<style>{''.join(category_button_css)}</style>", unsafe_allow_html=True)
 
-    # --- ZWIĘZŁY PASEK FILTRÓW (POPOVER) OSZCZĘDZAJĄCY MIEJSCE ---
     filtr_label = f"🌪️ Filtr: {active_cat}" if active_cat else "🌪️ Filtry i opcje widoku"
     if st.session_state.show_visited_places:
         filtr_label += " (z odwiedzonymi)"
@@ -3297,7 +3377,6 @@ elif st.session_state.active_tab == "zabytek":
         df_miejsca_filtrowane['sort_num'] = pd.to_numeric(df_miejsca_filtrowane['numer_miejsca'], errors='coerce').fillna(9999)
         df_miejsca_filtrowane = df_miejsca_filtrowane.sort_values(by='sort_num').drop(columns=['sort_num'])
 
-    # --- KOMPAKTOWA MAPA DLA MOBILNYCH (230px) ---
     m_miejsca = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="CartoDB positron")
     dodaj_marker_domku(m_miejsca)
 
@@ -3310,7 +3389,7 @@ elif st.session_state.active_tab == "zabytek":
                 nazwa_p = str(row.get('nazwa', '')).strip()
                 kolor = "#A8A29E" if bool(row.get('odwiedzone', 0)) else pobierz_kolor_kategorii(row.get('kategoria_normalizowana', 'Other'))
                 marker_coords_dict[(round(lat, 4), round(lon, 4))] = (num, nazwa_p)
-                icon_html = f'<div style="background-color:{kolor};color:#FFFFFF;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;border:2px solid #FFFFFF;box-shadow:0 2px 5px rgba(0,0,0,0.25);">{num}</div>'
+                icon_html = f'<div style="background-color:{kolor};color:#FFFFFF;border-radius:50%;width:24px;height:24px;display:align-items;justify-content:center;font-size:10px;font-weight:900;border:2px solid #FFFFFF;box-shadow:0 2px 5px rgba(0,0,0,0.25);">{num}</div>'
                 folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12))).add_to(m_miejsca)
 
     map_output = st_folium(m_miejsca, width=None, height=230, returned_objects=["last_object_clicked"], key="map_places_view")
@@ -3336,7 +3415,6 @@ elif st.session_state.active_tab == "zabytek":
 
     docelowy_nr = str(st.session_state.active_place_id).strip() if st.session_state.active_place_id else None
 
-    # --- KARTA WYBRANEGO MIEJSCA WIDOCZNA BEZPOŚREDNIO POD MAPĄ ---
     if docelowy_nr:
         with get_db() as conn:
             p_df_fresh = pd.read_sql("SELECT * FROM miejsca WHERE TRIM(numer_miejsca) = ?", conn, params=(str(docelowy_nr).strip(),))
@@ -3420,7 +3498,6 @@ elif st.session_state.active_tab == "zabytek":
 
             renderuj_sekcje_notatek(id_miejsca=str(docelowy_nr))
             
-            # --- POWIĄZANE WYCIECZKI DLA TEGO MIEJSCA ---
             df_wycieczki_miejsca = pobierz_wycieczki_dla_miejsca(docelowy_nr, p.get('nazwa', ''))
             
             st.markdown(
@@ -3451,7 +3528,6 @@ elif st.session_state.active_tab == "zabytek":
                         st.session_state.active_place_id = None
                         st.rerun()
 
-    # --- AWARYJNY WYBÓR MIEJSCA Z LISTY (NA SAMYM DOLE STRONY) ---
     miejsca_opcje_lista = [f"{str(r['numer_miejsca']).strip()}. {r['nazwa']}" for _, r in df_miejsca_filtrowane.iterrows()]
     sb_key = f"place_selectbox_selector_bottom_{st.session_state.show_visited_places}"
 
