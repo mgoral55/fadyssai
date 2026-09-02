@@ -2353,7 +2353,7 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
         
         chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
         
-        col_h1, col_h2, col_h3, col_h4 = st.columns([2, 1, 1, 1])
+        col_h1, col_h2 = st.columns([5, 1])
         with col_h1:
             st.markdown(f"<div style='font-size: 8pt; font-weight: 800; padding-top: 6px;'>🧠 AuDHD • Wycieczka #{akt_wyc_id}</div>", unsafe_allow_html=True)
         with col_h2:
@@ -2361,27 +2361,6 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                 wyczysc_historie_czatu_w_db(uzytkownik)
                 st.session_state["flash_toast"] = "🗑️ Wyczyszczono czat."
                 st.rerun()
-        with col_h3:
-            ostatnia_odpowiedz = next((m["content"] for m in reversed(chat_historia_z_db) if m["role"] == "model"), None)
-            if st.button("📋", key=f"btn_copy_top_{uzytkownik}_{akt_wyc_id}_{'inline' if inline else 'float'}", use_container_width=True, disabled=not ostatnia_odpowiedz, help="Kopiuj ostatnią odpowiedź"):
-                if ostatnia_odpowiedz:
-                    safe_text = json.dumps(ostatnia_odpowiedz)
-                    st.components.v1.html(f"""
-                        <script>
-                            navigator.clipboard.writeText({safe_text});
-                        </script>
-                    """, height=0)
-                    st.session_state["flash_toast"] = "📋 Skopiowano odpowiedź do schowka!"
-                    st.rerun()
-        with col_h4:
-            if st.button("🔄", key=f"btn_retry_top_{uzytkownik}_{akt_wyc_id}_{'inline' if inline else 'float'}", use_container_width=True, disabled=not any(m["role"] == "user" for m in chat_historia_z_db), help="Ponów ostatnie zapytanie"):
-                ostatni_prompt = next((m["content"] for m in reversed(chat_historia_z_db) if m["role"] == "user"), None)
-                if ostatni_prompt:
-                    with get_db() as conn:
-                        conn.cursor().execute('DELETE FROM czat_historia WHERE uzytkownik = ? AND id = (SELECT MAX(id) FROM czat_historia WHERE uzytkownik = ?)', (uzytkownik, uzytkownik))
-                        conn.commit()
-                    st.session_state["flash_toast"] = f"🔄 Ponawiam wiadomość, {uzytkownik}..."
-                    st.rerun()
 
         chat_container = st.container(height=190)
         with chat_container:
