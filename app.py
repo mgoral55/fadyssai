@@ -3156,12 +3156,12 @@ if "selected_category" not in st.session_state:
     st.session_state.selected_category = None
 if "show_visited_places" not in st.session_state:
     st.session_state.show_visited_places = False
-if "show_completed_trips" not in st.session_state:
-    st.session_state.show_completed_trips = False
 if "last_map_click_place" not in st.session_state:
     st.session_state.last_map_click_place = None
 if "last_map_click_trips" not in st.session_state:
     st.session_state.last_map_click_trips = None
+if "filter_map_places" not in st.session_state:
+    st.session_state.filter_map_places = "Przypisane miejsca"
 
 df_miejsca = pobierz_wszystkie_miejsca()
 
@@ -3188,8 +3188,28 @@ if st.session_state.active_tab == "route":
 elif st.session_state.active_tab == "map":
     render_adventure_header("CretAi • Nasze wycieczki")
     
-    st.checkbox("Pokaż ukończone wycieczki", key="show_completed_trips")
-    wycieczki_options_filtrowane = pobierz_skrocone_opcje_wycieczek(pokaz_ukonczone=st.session_state.show_completed_trips)
+    # Zastąpienie checkboxa listą wyboru
+    filtr_miejsc = st.selectbox(
+        "Filtruj miejsca na mapie:",
+        options=["Wszystkie", "Przypisane miejsca", "Nieprzypisane miejsca"],
+        index=1,
+        key="filter_map_places"
+    )
+
+    with get_db() as conn:
+        przypisane_df = pd.read_sql("SELECT DISTINCT numer_miejsca FROM krok_wycieczki WHERE numer_miejsca IS NOT NULL AND numer_miejsca != ''", conn)
+        przypisane_ids = [str(x).strip() for x in przypisane_df['numer_miejsca'].tolist()]
+
+    df_miejsca_mapa = df_miejsca.copy()
+    if filtr_miejsc == "Przypisane miejsca":
+        df_miejsca_mapa = df_miejsca_mapa[df_miejsca_mapa['numer_miejsca'].astype(str).str.strip().isin(przypisane_ids)]
+        wycieczki_options_filtrowane = pobierz_skrocone_opcje_wycieczek(pokaz_ukonczone=True)
+    elif filtr_miejsc == "Nieprzypisane miejsca":
+        df_miejsca_mapa = df_miejsca_mapa[~df_miejsca_mapa['numer_miejsca'].astype(str).str.strip().isin(przypisane_ids)]
+        wycieczki_options_filtrowane = []
+    else:
+        wycieczki_options_filtrowane = pobierz_skrocone_opcje_wycieczek(pokaz_ukonczone=True)
+
     opcje_wycieczek_lista = [None] + wycieczki_options_filtrowane
 
     m_all = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="OpenStreetMap")
@@ -3197,7 +3217,7 @@ elif st.session_state.active_tab == "map":
     dodaj_marker_domku(m_all)
     
     map_coords_lookup = {}
-    for _, row in df_miejsca.iterrows():
+    for _, row in df_miejsca_mapa.iterrows():
         lat, lon = sparsuj_wspolrzedne(row.get('wspolrzedne'))
         if lat is not None and lon is not None:
             num = str(row.get('numer_miejsca', '')).strip()
@@ -3264,12 +3284,13 @@ elif st.session_state.active_tab == "map":
         "", 
         options=opcje_wycieczek_lista, 
         index=selected_idx, 
-        format_func=lambda x: "**Wybierz wycieczkę**" if x is None else x,
+        format_func=lambda x: "**Brak przypisanych wycieczek**" if (x is None and filtr_miejsc == "Nieprzypisane miejsca") else ("**Wybierz wycieczkę**" if x is None else x),
         key="map_wycieczka_select", 
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        disabled=(filtr_miejsc == "Nieprzypisane miejsca")
     )
 
-    if wybrana_mapa_sb is not None:
+    if wybrana_mapa_sb is not None and filtr_miejsc != "Nieprzypisane miejsca":
         wybrana_id = wybrana_mapa_sb.split(". ")[0]
         renderuj_karte_wycieczki(wybrana_id, df_miejsca, pokaz_mape=True, pokaz_pogode=False)
         st.markdown('<div class="section-unified-header">🤖 Asystent AI</div>', unsafe_allow_html=True)
@@ -3512,7 +3533,6 @@ elif st.session_state.active_tab == "zabytek":
                     
                     if st.button(btn_label, key=f"btn_place_to_trip_{docelowy_nr}_{w_id}", use_container_width=True):
                         st.session_state.active_tab = "map"
-                        st.session_state.show_completed_trips = True  # gwarantuje, że wycieczka będzie na liście wyboru
                         st.query_params["tab"] = "map"
                         st.query_params["trip"] = str(w_id)
                         if "place" in st.query_params:
