@@ -33,24 +33,14 @@ def zaokraglij_do_5_minut(minuty):
 
 @st.cache_data(ttl=86400)
 def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
-    url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
+    # Kreta: współczynnik krętości dróg 1.35x i średnia prędkość 42 km/h
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
-        with urllib.request.urlopen(req, timeout=0.3) as response:
-            data = json.loads(response.read().decode())
-            if 'routes' in data and len(data['routes']) > 0:
-                minuty = zaokraglij_do_5_minut(int(round(data['routes'][0]['duration'] / 60)))
-                if minuty < 60:
-                    return f"~{minuty} min", minuty
-                godziny, reszta = minuty // 60, minuty % 60
-                return (f"~{godziny}h", minuty) if reszta == 0 else (f"~{godziny}h {reszta}m", minuty)
-    except Exception:
-        pass
-    
-    try:
-        dist_km = math.sqrt(((lat2 - lat1) * 111.0)**2 + ((lon2 - lon1) * 85.0)**2) * 1.3
-        est_min = zaokraglij_do_5_minut(max(int(round((dist_km / 45.0) * 60)), 10))
-        return (f"~{est_min} min", est_min) if est_min < 60 else (f"~{est_min // 60}h {est_min % 60}m", est_min)
+        dist_km = math.sqrt(((lat2 - lat1) * 111.0)**2 + ((lon2 - lon1) * 85.0)**2) * 1.35
+        est_min = zaokraglij_do_5_minut(max(int(round((dist_km / 42.0) * 60)), 10))
+        if est_min < 60:
+            return f"~{est_min} min", est_min
+        godziny, reszta = est_min // 60, est_min % 60
+        return (f"~{godziny}h", est_min) if reszta == 0 else (f"~{godziny}h {reszta}m", est_min)
     except Exception:
         return "~25 min", 25
 
@@ -1065,7 +1055,7 @@ with st.sidebar:
             "gemini-3.5-flash-lite",
             "gemini-3.6-flash"
         ], 
-        index=0
+        index=2
     )
     env_gemini_key = os.environ.get("GEMINI_API_KEY", "")
     api_key_input = st.text_input("Gemini API Key", value=env_gemini_key, type="password")
@@ -1809,7 +1799,7 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, planowana_data=None, czas_wyjazdu
     przelicz_i_zsynchronizuj_wycieczke(id, force_wyjazd_str=czas_wyjazdu)
     return {"success": True, "action": "edytuj_wycieczke", "message": "Pomyślnie zaktualizowano parametry wycieczki."}
 
-def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 - 13:30", podsumowanie_taktyki=""):
+def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 - 13:30", podsumowanie_taktyki="", wzgledem_kroku=None, relacja="przed"):
     ok, err_msg = sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania)
     if not ok:
         return {"success": False, "blocked_by_guardrail": True, "error": err_msg}
@@ -1834,7 +1824,11 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 -
         )
         conn.commit()
 
-    przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
+    if wzgledem_kroku is not None:
+        przenies_krok_wycieczki(id_wycieczki, krok_identyfikator=nowy_id, wzgledem_kroku=wzgledem_kroku, relacja=relacja)
+    else:
+        przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
+
     return {"success": True, "action": "dodaj_krok_wycieczki", "id_kroku": nowy_id, "message": f"Dodano punkt {nazwa_z_bazy} (#{nr_miejsca})."}
 
 def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, okienko_zwiedzania):
@@ -1849,6 +1843,108 @@ def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, okienko_zwiedzania):
 
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
     return {"success": True, "action": "edytuj_krok_wycieczki", "message": f"Zaktualizowano okienko dla kroku {krok_wycieczki}."}
+    
+def pobierz_pelny_plan_wycieczki(id_wycieczki):
+    """Zwraca precyzyjną listę kroków z bazy z ID, godzinami i posiłkami."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, krok_wycieczki, numer_miejsca, nazwa, okienko_zwiedzania, opis
+            FROM krok_wycieczki 
+            WHERE id_wycieczki = ? 
+            ORDER BY CAST(krok_wycieczki AS INTEGER) ASC, id ASC
+        ''', (str(id_wycieczki),))
+        rows = cursor.fetchall()
+        
+        plan = []
+        for r in rows:
+            cursor.execute('SELECT id, rodzaj_posilku, sugerowana_godzina, opis FROM posilki_kroku WHERE id_kroku = ?', (r[0],))
+            posilki = cursor.fetchall()
+            plan.append({
+                "id_kroku": r[0],
+                "pozycja_kroku": r[1],
+                "numer_miejsca": r[2],
+                "nazwa": r[3],
+                "okienko": r[4],
+                "opis": r[5],
+                "posilki": [{"id": p[0], "typ": p[1], "godzina": p[2], "opis": p[3]} for p in posilki]
+            })
+    return {"id_wycieczki": str(id_wycieczki), "kroki": plan}
+
+
+def przenies_krok_wycieczki(id_wycieczki, krok_identyfikator, docelowa_pozycja=None, wzgledem_kroku=None, relacja="przed"):
+    """
+    Przenosi krok na podany indeks lub bezpośrednio przed/po innym kroku, 
+    a następnie przelicza bufory czasowe.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        k_info = znajdz_id_kroku_w_db(cursor, id_wycieczki, krok_identyfikator)
+        if not k_info:
+            return {"success": False, "error": f"Nie znaleziono kroku do przeniesienia: {krok_identyfikator}"}
+        krok_id, krok_nazwa = k_info
+
+        cursor.execute('''
+            SELECT id FROM krok_wycieczki 
+            WHERE id_wycieczki = ? 
+            ORDER BY CAST(krok_wycieczki AS INTEGER) ASC, id ASC
+        ''', (str(id_wycieczki),))
+        kroki_ids = [r[0] for r in cursor.fetchall()]
+
+        if krok_id not in kroki_ids:
+            return {"success": False, "error": "Błąd spójności bazy."}
+
+        kroki_ids.remove(krok_id)
+
+        if wzgledem_kroku is not None:
+            ref_info = znajdz_id_kroku_w_db(cursor, id_wycieczki, wzgledem_kroku)
+            if not ref_info:
+                return {"success": False, "error": f"Nie znaleziono punktu odniesienia: {wzgledem_kroku}"}
+            ref_id, _ = ref_info
+            idx_ref = kroki_ids.index(ref_id)
+            target_idx = idx_ref if relacja == "przed" else idx_ref + 1
+        elif docelowa_pozycja is not None:
+            target_idx = max(0, min(int(docelowa_pozycja), len(kroki_ids)))
+        else:
+            return {"success": False, "error": "Podaj docelową pozycję lub punkt odniesienia."}
+
+        kroki_ids.insert(target_idx, krok_id)
+
+        for new_pos, k_id in enumerate(kroki_ids):
+            cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (new_pos, k_id))
+        conn.commit()
+
+    przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
+    return {
+        "success": True, 
+        "action": "przenies_krok_wycieczki", 
+        "message": f"Krok '{krok_nazwa}' przestawiony na pozycję {target_idx}. Czasy przejazdów i bufory zostały przeliczone automatycznie."
+    }
+
+
+def zamien_kroki_miejscami(id_wycieczki, krok_a, krok_b):
+    """Zamienia kolejnością dwa punkty i automatycznie wyrównuje czasy."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        k_a = znajdz_id_kroku_w_db(cursor, id_wycieczki, krok_a)
+        k_b = znajdz_id_kroku_w_db(cursor, id_wycieczki, krok_b)
+        if not k_a or not k_b:
+            return {"success": False, "error": f"Nie znaleziono jednego z kroków ({krok_a} lub {krok_b})."}
+        
+        id_a, _ = k_a
+        id_b, _ = k_b
+
+        cursor.execute('SELECT krok_wycieczki FROM krok_wycieczki WHERE id = ?', (id_a,))
+        pos_a = cursor.fetchone()[0]
+        cursor.execute('SELECT krok_wycieczki FROM krok_wycieczki WHERE id = ?', (id_b,))
+        pos_b = cursor.fetchone()[0]
+
+        cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (pos_b, id_a))
+        cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (pos_a, id_b))
+        conn.commit()
+
+    przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
+    return {"success": True, "action": "zamien_kroki_miejscami", "message": f"Zamieniono miejscami kroki {krok_a} oraz {krok_b}."}
 
 def usun_krok_wycieczki(id_wycieczki, krok_wycieczki):
     with get_db() as conn:
@@ -2175,7 +2271,7 @@ tools_definitions = [
     ),
     types.FunctionDeclaration(
         name="dodaj_krok_wycieczki",
-        description="Dodaje miejsce z bazy jako krok wycieczki.",
+        description="Dodaje miejsce z bazy jako krok wycieczki, opcjonalnie bezpośrednio przed lub po wskazanym innym kroku.",
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={
@@ -2183,8 +2279,49 @@ tools_definitions = [
                 "nazwa_z_bazy": types.Schema(type=types.Type.STRING, description="Nazwa miejsca"),
                 "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Okienko np. '13:00 - 14:30'"),
                 "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
+                "wzgledem_kroku": types.Schema(type=types.Type.STRING, description="Nazwa lub ID kroku referencyjnego, jeśli chcesz wstawić przed/po nim"),
+                "relacja": types.Schema(type=types.Type.STRING, description="'przed' lub 'po' (domyślnie 'przed')"),
             },
             required=["id_wycieczki", "nazwa_z_bazy"]
+        ),
+    ),
+    types.FunctionDeclaration(
+        name="pobierz_pelny_plan_wycieczki",
+        description="Pobiera pełną listę kroków wycieczki po kolei z ich ID bazy, kolejnością, godzinami i posiłkami.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+            },
+            required=["id_wycieczki"]
+        ),
+    ),
+    types.FunctionDeclaration(
+        name="przenies_krok_wycieczki",
+        description="Przenosi istniejący krok przed lub po innym kroku (albo na podany indeks) i automatycznie przelicza godziny dojazdów i buforów.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                "krok_identyfikator": types.Schema(type=types.Type.STRING, description="ID lub nazwa kroku do przestawienia"),
+                "wzgledem_kroku": types.Schema(type=types.Type.STRING, description="Nazwa lub ID kroku punktu odniesienia"),
+                "relacja": types.Schema(type=types.Type.STRING, description="'przed' lub 'po'"),
+                "docelowa_pozycja": types.Schema(type=types.Type.INTEGER, description="Opcjonalny indeks liczbowy"),
+            },
+            required=["id_wycieczki", "krok_identyfikator"]
+        ),
+    ),
+    types.FunctionDeclaration(
+        name="zamien_kroki_miejscami",
+        description="Zamienia kolejnością dwa kroki w wycieczce i przelicza czasy.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+                "krok_a": types.Schema(type=types.Type.STRING, description="ID lub nazwa pierwszego kroku"),
+                "krok_b": types.Schema(type=types.Type.STRING, description="ID lub nazwa drugiego kroku"),
+            },
+            required=["id_wycieczki", "krok_a", "krok_b"]
         ),
     ),
     types.FunctionDeclaration(
@@ -2294,6 +2431,9 @@ NARZEDZIA_DISPATCHER = {
     "dodaj_krok_wycieczki": lambda args: dodaj_krok_wycieczki(**args),
     "edytuj_krok_wycieczki": lambda args: edytuj_krok_wycieczki(**args),
     "usun_krok_wycieczki": lambda args: usun_krok_wycieczki(**args),
+    "pobierz_pelny_plan_wycieczki": lambda args: pobierz_pelny_plan_wycieczki(**args),
+    "przenies_krok_wycieczki": lambda args: przenies_krok_wycieczki(**args),
+    "zamien_kroki_miejscami": lambda args: zamien_kroki_miejscami(**args),
     "zarzadzaj_posilkiem_kroku": lambda args: zarzadzaj_posilkiem_kroku(**args),
     "usun_posilek": lambda args: usun_posilek(**args),
     "dodaj_produkt_zakupow": lambda args: dodaj_produkt_zakupow(**args),
@@ -2356,6 +2496,11 @@ def sprobuj_wykonac_komende_lokalnie(prompt, id_wycieczki):
             dodaj_produkt_zakupow(id_wycieczki=id_wycieczki, nazwa_produktu=czysty)
             return f"✅ Dodano do listy zakupów: **{czysty}**"
     return None
+    
+# --- GŁÓWNY WIDOK CZATU AI ---
+@st.cache_resource
+def get_gemini_client(api_key):
+    return genai.Client(api_key=api_key)
 
 # --- GŁÓWNY WIDOK CZATU AI ---
 def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
@@ -2419,7 +2564,7 @@ ZASADY OPERACYJNE:
 
                     try:
                         with st.status("🧭 Analizuję bezpieczeństwo i trasę AuDHD...", expanded=False) as status:
-                            client = genai.Client(api_key=api_key_input)
+                            client = get_gemini_client(api_key_input)
                             
                             contents = []
                             for m in chat_historia_z_db[-2:]:
@@ -2480,7 +2625,6 @@ ZASADY OPERACYJNE:
                                             )
                                         )
                                     contents.append(types.Content(role="user", parts=function_responses_parts))
-                                    py_time.sleep(0.4)
                                 else:
                                     if candidate and candidate.content and candidate.content.parts:
                                         assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
