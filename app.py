@@ -3115,11 +3115,15 @@ elif st.session_state.active_tab == "map":
                         st.session_state.map_tab_selected_place = None
                         st.rerun()
 
-    if st.session_state.return_trip and not st.session_state.get("map_wycieczka_select"):
+    if st.session_state.return_trip:
+        target_prefix = f"{st.session_state.return_trip}."
         for opt in opcje_wycieczek_lista:
-            if opt and opt.startswith(f"{st.session_state.return_trip}."):
+            if opt and opt.startswith(target_prefix):
                 st.session_state["map_wycieczka_select"] = opt
                 break
+        st.session_state.return_trip = None
+        if "return_trip" in st.query_params:
+            del st.query_params["return_trip"]
 
     selected_idx = 0
     curr_sel = st.session_state.get("map_wycieczka_select")
@@ -3162,7 +3166,10 @@ elif st.session_state.active_tab == "zabytek":
     ret_trip = st.session_state.get("return_trip")
 
     if ret_tab and ret_trip:
-        powrot_url = f"?tab={ret_tab}"
+        if ret_tab == "map":
+            powrot_url = f"?tab=map&return_trip={ret_trip}"
+        else:
+            powrot_url = f"?tab={ret_tab}"
         nazwa_docelowa = "Trasy Dnia" if ret_tab == "route" else f"Wycieczki #{ret_trip}"
         
         st.markdown(f"""
