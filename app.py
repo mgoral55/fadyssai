@@ -1613,7 +1613,7 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
                     return False, (
                         f"⛔ ODMOWA: Od ostatniego posiłku stabilizującego ({ostatni_posilek[0]} w punkcie '{ostatni_posilek[3]}', ok. {pos_godz_str}) "
                         f"do planowanego punktu '{nazwa_nowego_miejsca}' ({planowane_okienko}) mija ponad 4.0 godziny. "
-                        f"Podgryzajki nie zastępują posiłku. Dzieci z AuDHD wejdą w stan silnego przebodźcowania i głodu. "
+                        f"Podgryzajki nie zastępują posiłku. Dzieci wejdą w stan silnego przebodźcowania i głodu. "
                         f"💡 PROPOZYCJA: Zaplanuj Lunchbox mały, ciepły obiad na mieście w cieniu lub Lunchbox duży przed '{nazwa_nowego_miejsca}'."
                     )
 
@@ -1980,7 +1980,7 @@ def usun_krok_wycieczki(id_wycieczki, krok_wycieczki, pomin_ostrzezenie_posilku=
                 "success": False,
                 "blocked_by_guardrail": True,
                 "error": (
-                    f"⛔ ZATRZYMANO (AuDHD Hangry Guard): Krok '{k_nazwa}' ma przypisany kluczowy posiłek ({nazwy_pos}). "
+                    f"⛔ ZATRZYMANO (Hangry Guard): Krok '{k_nazwa}' ma przypisany kluczowy posiłek ({nazwy_pos}). "
                     f"Usunięcie go spowoduje wielogodzinną przerwę w jedzeniu, co wywoła silny meltdown u dzieci. "
                     f"Najpierw zaplanuj alternatywny posiłek (obiad w tawernie lub lunchbox z safe food), "
                     f"albo potwierdź usunięcie z parametrem pomin_ostrzezenie_posilku=True."
@@ -2612,7 +2612,7 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                         with open("SYSTEM_RULES_KRETA_ADHD.md", "r", encoding="utf-8") as rf:
                             rules_content = rf.read()
 
-                    system_prompt = f"""Rola: Planer wycieczek AuDHD Kreta dla rodzica {uzytkownik}. Data: {dzisiaj_str}. Wycieczka ID: {akt_wyc_id}.
+                    system_prompt = f"""Rola: Planer wycieczek - Kreta dla rodzica {uzytkownik}. Data: {dzisiaj_str}. Wycieczka ID: {akt_wyc_id}.
 {zewnetrzny_kontekst}
 
 ZASADY SYSTEMOWE:
@@ -2628,7 +2628,7 @@ ZASADY SYSTEMOWE:
 6. Zwracaj się do użytkownika po imieniu: {uzytkownik}."""
 
                     try:
-                        with st.status("🧭 Przygotowuję plan AuDHD...", expanded=True) as status:
+                        with st.status("🧭 Przygotowuję plan...", expanded=True) as status:
                             st.write("🔌 Łączenie z API Gemini...")
                             client = get_gemini_client(api_key_input)
                             
@@ -3485,7 +3485,7 @@ def generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_miejsca_ref):
         # Filtrowanie pustych wartości "None" / "-"
         evac_badge = f'<div class="evac-badge">🚨 Godzina ewakuacji: <b>{ewakuacja}</b></div>' if ewakuacja and ewakuacja not in ['None', '-', 'nan'] else ''
         warn_box = f'<div class="warn-box">⚠️ <b>Czerwona Strefa:</b> {ostrzezenie}</div>' if ostrzezenie and ostrzezenie not in ['None', '-', 'nan'] else ''
-        taktyka_box = f'<div class="tactics-box">🎯 <b>Taktyka AuDHD:</b> {taktyka_k}</div>' if taktyka_k and taktyka_k not in ['None', '-', 'nan'] else ''
+        taktyka_box = f'<div class="tactics-box">🎯 <b>Taktyka:</b> {taktyka_k}</div>' if taktyka_k and taktyka_k not in ['None', '-', 'nan'] else ''
         geo_btn = f'<a href="https://www.google.com/maps/search/?api=1&query={wsp}" target="_blank" class="btn-geo">🧭 Nawiguj w Google Maps</a>' if wsp and ',' in wsp else ''
 
         kroki_cards_html.append(f"""
@@ -3808,6 +3808,18 @@ elif st.session_state.active_tab == "map":
         renderuj_karte_wycieczki(wybrana_id, df_miejsca, pokaz_mape=True, pokaz_pogode=False)
         st.markdown('<div class="section-unified-header">🤖 Asystent AI</div>', unsafe_allow_html=True)
         renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=wybrana_id, inline=True)
+    else:
+        st.markdown("""
+        <div class="overview-card" style="margin-top: 12px; border: 2px dashed #8C5338;">
+            <div class="overview-card-title">💡 Zaplanuj wycieczkę od zera</div>
+            <div class="overview-card-text">
+                Wybierz gotową trasę powyżej lub opisz w oknie czatu poniżej, na co macie ochotę 
+                (np. <i>"Dzieci mają gorszy dzień sensoryczny, zaplanuj plażę z cieniem blisko Stavros bez krętych dróg"</i>).
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown('<div class="section-unified-header">🤖 Asystent AI (Projektant tras)</div>', unsafe_allow_html=True)
+        renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=pobierz_aktywna_wycieczke_id(), inline=True)
 
 elif st.session_state.active_tab == "zabytek":
     render_adventure_header("CretAi • Baza Miejsc")
