@@ -824,6 +824,32 @@ div.st-key-btn_date_picker { margin-bottom: 10px !important; }
 .section-unified-header { font-size: 1.15rem !important; font-weight: 800 !important; color: #2B2118 !important; margin-top: 14px !important; margin-bottom: 6px !important; display: flex; align-items: center; gap: 6px; }
 .section-body-text { font-size: 9pt; color: #2B2118; font-weight: 600; line-height: 1.4; margin-bottom: 10px; }
 
+/* RAMKA TAKTYKI NA PEŁNE SŁOŃCE */
+.tactics-alert-box {
+    background-color: #FAF8F2;
+    border: 1.5px solid #D6D2C4;
+    border-radius: 20px;
+    padding: 14px;
+    margin-top: 4px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+}
+.tactics-alert-title {
+    font-size: 10pt;
+    font-weight: 900;
+    color: #2B2118;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.tactics-alert-text {
+    font-size: 9pt;
+    color: #4A3E36;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
 .overview-card { background-color: #F6F0DD; border: 1.5px solid #E2DEC8; border-radius: 20px; padding: 14px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
 .overview-card-title { font-size: 9.5pt; font-weight: 800; color: #2B2118; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
 .overview-card-text { font-size: 9pt; color: #2B2118; font-weight: 600; line-height: 1.4; }
@@ -934,11 +960,9 @@ with st.sidebar:
     wybrany_model = st.selectbox(
         "Model Gemini", 
         options=[
-            "gemini-3.1-flash-lite",
-            "gemini-3.5-flash-lite",
-            "gemini-3.5-flash",
-            "gemini-3.6-flash",
-            "gemini-3.1-pro-preview"
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-pro"
         ], 
         index=0
     )
@@ -1669,7 +1693,7 @@ def usun_rynek_z_wycieczki_handler(id_wycieczki, pozycja=None):
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
     return {"success": True, "action": "usun_rynek_z_wycieczki", "message": "Pomyślnie usunięto rynek z wycieczki."}
 
-def edytuj_wycieczke(id, tytul_wycieczki=None, planowana_data=None, czas_wyjazdu=None, szacowany_czas_ogarniania_rano=None):
+def edytuj_wycieczke(id, tytul_wycieczki=None, planowana_data=None, czas_wyjazdu=None, szacowany_czas_ogarniania_rano=None, calosciowa_taktyka_dnia=None):
     with get_db() as conn:
         cursor = conn.cursor()
         if tytul_wycieczki:
@@ -1680,6 +1704,8 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, planowana_data=None, czas_wyjazdu
             cursor.execute('UPDATE wycieczka SET czas_wyjazdu = ? WHERE id = ?', (czas_wyjazdu, str(id)))
         if szacowany_czas_ogarniania_rano:
             cursor.execute('UPDATE wycieczka SET szacowany_czas_ogarniania_rano = ? WHERE id = ?', (szacowany_czas_ogarniania_rano, str(id)))
+        if calosciowa_taktyka_dnia is not None:
+            cursor.execute('UPDATE wycieczka SET calosciowa_taktyka_dnia = ? WHERE id = ?', (calosciowa_taktyka_dnia, str(id)))
         conn.commit()
     przelicz_i_zsynchronizuj_wycieczke(id, force_wyjazd_str=czas_wyjazdu)
     return {"success": True, "action": "edytuj_wycieczke", "message": "Pomyślnie zaktualizowano parametry wycieczki."}
@@ -1942,13 +1968,13 @@ tools_definitions = [
                 "pobudka": types.Schema(type=types.Type.STRING, description="Godzina pobudki np. '06:00'"),
                 "czas_wyjazdu": types.Schema(type=types.Type.STRING, description="Godzina wyjazdu np. '06:30'"),
                 "opis": types.Schema(type=types.Type.STRING, description="Cel trasy"),
-                "taktyka_dnia": types.Schema(type=types.Type.STRING, description="Taktyka unikania meltdownu")
+                "taktyka_dnia": types.Schema(type=types.Type.STRING, description="Całościowa taktyka dnia (zarządzanie przebodźcowaniem, sjesta, strefy cienia)")
             },
             required=["tytul_wycieczki"]
         ),
     ),
     types.FunctionDeclaration(
-        name="sprawdz_pogode",
+        name="sprawcz_pogode",
         description="Pobiera prognozę pogody dla podanych współrzędnych i daty.",
         parameters=types.Schema(
             type=types.Type.OBJECT,
@@ -2025,7 +2051,7 @@ tools_definitions = [
     ),
     types.FunctionDeclaration(
         name="edytuj_wycieczke",
-        description="Aktualizuje parametry wycieczki.",
+        description="Aktualizuje parametry wycieczki, w tym całościową taktykę dnia.",
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={
@@ -2033,6 +2059,8 @@ tools_definitions = [
                 "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Tytuł"),
                 "planowana_data": types.Schema(type=types.Type.STRING, description="RRRR-MM-DD"),
                 "czas_wyjazdu": types.Schema(type=types.Type.STRING, description="Godzina np. '06:30'"),
+                "szacowany_czas_ogarniania_rano": types.Schema(type=types.Type.STRING, description="np. '0.5h' lub '45m'"),
+                "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Całościowa taktyka dnia (ochrona przed słońcem, regeneracja, posiłki)")
             },
             required=["id"]
         ),
@@ -2186,7 +2214,7 @@ def wykonaj_narzedzie_bazy(call_name, args):
 def wczytaj_kontekst_zewnetrzny(id_wycieczki):
     with get_db() as conn:
         wyc_df = pd.read_sql(
-            'SELECT id, tytul_wycieczki, planowana_data, czas_wyjazdu, szacowana_godzina_powrotu, pobudka FROM wycieczka WHERE id = ?', 
+            'SELECT id, tytul_wycieczki, planowana_data, czas_wyjazdu, szacowana_godzina_powrotu, pobudka, calosciowa_taktyka_dnia FROM wycieczka WHERE id = ?', 
             conn, params=(str(id_wycieczki),)
         )
         query = '''
@@ -2212,6 +2240,8 @@ def wczytaj_kontekst_zewnetrzny(id_wycieczki):
     if not wyc_df.empty:
         w = wyc_df.iloc[0]
         opis += f"Aktywna wycieczka #{w['id']}: {w.get('tytul_wycieczki')} (Pobudka: {w.get('pobudka')}, Wyjazd: {w.get('czas_wyjazdu')}, Powrót: {w.get('szacowana_godzina_powrotu')}).\n"
+        if pd.notna(w.get('calosciowa_taktyka_dnia')) and str(w.get('calosciowa_taktyka_dnia')).strip():
+            opis += f"Aktualna taktyka dnia: {w.get('calosciowa_taktyka_dnia')}\n"
     
     if not kroki_df.empty:
         opis += "Kroki i zaplanowane posiłki w planie:\n"
@@ -2276,7 +2306,7 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"] if isinstance(message["content"], str) else "")
 
-        prompt = st.chat_input(f"Napisz np. 'zaplanuj nową wycieczkę', 'dodaj Marathi do bazy'...", key=f"chat_input_{uzytkownik}_{akt_wyc_id}_{'inline' if inline else 'float'}")
+        prompt = st.chat_input(f"Napisz np. 'zaplanuj nową wycieczkę', 'zmień taktykę dnia'...", key=f"chat_input_{uzytkownik}_{akt_wyc_id}_{'inline' if inline else 'float'}")
         if prompt:
             zapisz_wiadomosc_w_db(uzytkownik, "user", prompt)
 
@@ -2308,7 +2338,8 @@ ZASADY OPERACYJNE:
 2. Jeśli miejsca brak w bazie: wyszukaj koordynaty/ceny -> `utworz_nowe_miejsce` -> `dodaj_krok_wycieczki`.
 3. SJESTA (11:30–15:30): Zakaz pełnego słońca/patelni (wskazane: jaskinie, oceanarium, głęboki cień).
 4. ŻYWIENIE: Posiłek stabilizujący co max 4h (1x obiad na mieście 12:00–13:45 w cieniu, II śniadanie / Lunchbox mały 10:15–11:15, Safe Foods, ZERO wieprzowiny).
-5. Zwracaj się po imieniu: {uzytkownik}."""
+5. TAKTYKA DNIA: Zawsze formułuj zwięzłą, uspokajającą taktykę całościową na dzień (ochrona przed słońcem, regeneracja, strefy buforowe) i aktualizuj ją przez `edytuj_wycieczke(calosciowa_taktyka_dnia=...)`.
+6. Zwracaj się po imieniu: {uzytkownik}."""
 
                     try:
                         with st.status("🧭 Analizuję bezpieczeństwo i trasę AuDHD...", expanded=False) as status:
@@ -2522,20 +2553,33 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
     planowana_data_val = w_gen.get('planowana_data', '')
     parsed_date, dzien_val, miesiac_val, dzien_tyg_val = sformatuj_date_pl(planowana_data_val)
     
-    st.markdown(f'<div class="trip-top-section"><div class="trip-main-title">{tytul_wycieczki}</div></div>', unsafe_allow_html=True)
     if st.button(f"📅 Planowana data: {dzien_val} {miesiac_val} ({dzien_tyg_val}) ▾", key=f"btn_date_picker_{wycieczka_id}", use_container_width=True):
         edit_date_dialog(wycieczka_id, parsed_date)
-
-    if pokaz_pogode:
-        renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data_val)
-
+        
+    st.markdown(f'<div class="trip-top-section"><div class="trip-main-title">{tytul_wycieczki}</div></div>', unsafe_allow_html=True)
+    
+    # Cel wycieczki
     if pd.notna(w_gen.get('calosciowy_opis_wycieczki')) and str(w_gen['calosciowy_opis_wycieczki']).strip():
         st.markdown(f"""
-        <div style="margin-top: 4px; margin-bottom: 10px;">
+        <div style="margin-top: 4px; margin-bottom: 8px;">
             <div class="section-unified-header">📝 Cel wycieczki</div>
             <div class="section-body-text">{w_gen['calosciowy_opis_wycieczki']}</div>
         </div>
         """, unsafe_allow_html=True)
+
+    if pokaz_pogode:
+        renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data_val)
+
+    # RAMKA: CAŁOŚCIOWA TAKTYKA NA DZIEŃ (WIDOCZNA W PEŁNYM SŁOŃCU)
+    taktyka_dnia_val = w_gen.get('calosciowa_taktyka_dnia')
+    taktyka_tekst = str(taktyka_dnia_val).strip() if (pd.notna(taktyka_dnia_val) and str(taktyka_dnia_val).strip() not in ['-', 'nan', 'None']) else "Brak zdefiniowanej taktyki. Zdefiniuj ją w asystencie AI."
+    
+    st.markdown(f"""
+    <div class="tactics-alert-box">
+        <div class="tactics-alert-title">🎯 Taktyka całościowa na dzień</div>
+        <div class="tactics-alert-text">{taktyka_tekst}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
     pobudka_val = w_gen.get('pobudka', '06:00') if pd.notna(w_gen.get('pobudka')) else '06:00'
     ogarnianie_val = w_gen.get('szacowany_czas_ogarniania_rano', '0.5h') if pd.notna(w_gen.get('szacowany_czas_ogarniania_rano')) else '0.5h'
