@@ -3418,6 +3418,37 @@ elif st.session_state.active_tab == "zabytek":
                 potwierdz_odwiedzenie_dialog(docelowy_nr, p.get('nazwa'), czy_odwiedzone)
 
             renderuj_sekcje_notatek(id_miejsca=str(docelowy_nr))
+            
+            # --- POWIĄZANE WYCIECZKI DLA TEGO MIEJSCA ---
+            df_wycieczki_miejsca = pobierz_wycieczki_dla_miejsca(docelowy_nr, p.get('nazwa', ''))
+            
+            st.markdown(
+                '<div class="section-unified-header" style="margin-top: 14px;">🗺️ Występuje w wycieczkach</div>', 
+                unsafe_allow_html=True
+            )
+            
+            if df_wycieczki_miejsca.empty:
+                st.markdown(
+                    "<div style='font-size: 8.5pt; color: #4A3E36; font-style: italic; margin-bottom: 6px; font-weight: 600;'>"
+                    "To miejsce nie jest obecnie przypisane do żadnej wycieczki.</div>", 
+                    unsafe_allow_html=True
+                )
+            else:
+                for _, row_trip in df_wycieczki_miejsca.iterrows():
+                    w_id = str(row_trip['id'])
+                    w_tytul = str(row_trip['tytul_wycieczki'])
+                    skrocony = w_tytul.split(':')[0] if ':' in w_tytul else w_tytul
+                    btn_label = f"🧭 #{w_id} • {skrocony}"
+                    
+                    if st.button(btn_label, key=f"btn_place_to_trip_{docelowy_nr}_{w_id}", use_container_width=True):
+                        st.session_state.active_tab = "map"
+                        st.session_state.return_trip = w_id
+                        st.query_params["tab"] = "map"
+                        st.query_params["return_trip"] = w_id
+                        if "place" in st.query_params:
+                            del st.query_params["place"]
+                        st.session_state.active_place_id = None
+                        st.rerun()
 
     # --- AWARYJNY WYBÓR MIEJSCA Z LISTY (NA SAMYM DOLE STRONY) ---
     miejsca_opcje_lista = [f"{str(r['numer_miejsca']).strip()}. {r['nazwa']}" for _, r in df_miejsca_filtrowane.iterrows()]
