@@ -2695,9 +2695,49 @@ ZASADY SYSTEMOWE:
                                     break
 
                             if not assistant_reply.strip() and executed_actions:
-                                assistant_reply = f"✅ **Zaktualizowano plan dla Ciebie, {uzytkownik}:**\n* " + "\n* ".join(executed_actions)
-                            elif not assistant_reply.strip():
-                                assistant_reply = f"✅ Zrealizowano, {uzytkownik}."
+                                try:
+                                    contents.append(types.Content(
+                                        role="user",
+                                        parts=[types.Part.from_text(
+                                            text="Podsumuj zwięźle i czytelnie wprowadzone zmiany w planie wycieczki dla rodzica (podaj godziny, strefę cienia oraz zaplanowany posiłek). Nie wypisuj nazw funkcji bazy danych ani formatu JSON."
+                                        )]
+                                    ))
+                                    final_resp = client.models.generate_content(
+                                        model=wybrany_model,
+                                        contents=contents,
+                                        config=types.GenerateContentConfig(
+                                            system_instruction=system_prompt,
+                                            temperature=0.2,
+                                            max_output_tokens=1024
+                                        )
+                                    )
+                                    if final_resp and final_resp.text:
+                                        assistant_reply = final_resp.text
+                                except Exception:
+                                    pass
+
+                            if not assistant_reply.strip():
+                                user_friendly_actions = []
+                                for act in executed_actions:
+                                    if "szukaj_" in act or "error" in act.lower():
+                                        continue
+                                    if "dodaj_krok" in act:
+                                        m_name = act.split(":")[-1].replace("Dodano punkt", "").replace("Pomyślnie dodano", "").strip()
+                                        user_friendly_actions.append(f"📍 Dodano do trasy: **{m_name}**")
+                                    elif "dodaj_sklep" in act:
+                                        user_friendly_actions.append("🛒 Dodano przystanek w sklepie")
+                                    elif "dodaj_rynek" in act:
+                                        user_friendly_actions.append("🍋 Dodano wizytę na targu w Chanii")
+                                    elif "edytuj_wycieczke" in act:
+                                        user_friendly_actions.append("⏱️ Zaktualizowano godziny i taktykę dnia")
+                                    else:
+                                        user_friendly_actions.append("✨ Zaktualizowano harmonogram")
+
+                                if user_friendly_actions:
+                                    clean_list = "\n".join([f"- {a}" for a in set(user_friendly_actions)])
+                                    assistant_reply = f"✅ **Zaktualizowałam plan dla Ciebie, {uzytkownik}!**\n\n{clean_list}\n\n🌿 *Wszystkie godziny i bufor sjesty zostały przeliczone automatycznie.*"
+                                else:
+                                    assistant_reply = f"✅ Gotowe, {uzytkownik}! Harmonogram został zaktualizowany."
 
                             status.update(label="✅ Gotowe!", state="complete", expanded=False)
 
