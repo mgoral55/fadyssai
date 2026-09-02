@@ -4,6 +4,7 @@ import streamlit as st
 from google import genai
 from google.genai import types
 import folium
+from branca.element import Element
 from streamlit_folium import st_folium
 import os
 import urllib.request
@@ -142,6 +143,32 @@ def pobierz_kolor_kategorii(kategoria):
 def pobierz_ikonke_kategorii(kategoria):
     return CATEGORIES_CONFIG.get(kategoria, CATEGORIES_CONFIG["Other"]).get("icon")
 
+# --- WSTRZYKIWANIE CSS BEZPOŚREDNIO DO IFRAME LEAFLETA ---
+def zaaplikuj_style_mapy(folium_map):
+    style_element = Element("""
+        <style>
+            .leaflet-div-icon, .custom-map-pin {
+                background: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
+            }
+            .pin-inner-content {
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                width: 100% !important;
+                height: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-sizing: border-box !important;
+            }
+        </style>
+    """)
+    folium_map.get_root().header.add_child(style_element)
+
+def stworz_znacznik_html(tekst, kolor_tla, rozmiar=24):
+    return f"""<div style="background-color:{kolor_tla}; color:#FFFFFF; border-radius:50%; width:{rozmiar}px; height:{rozmiar}px; line-height:{rozmiar-4}px; text-align:center; font-size:10px; font-weight:900; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; border:2px solid #FFFFFF; box-shadow:0 2px 5px rgba(0,0,0,0.3); box-sizing:border-box; display:flex; align-items:center; justify-content:center; margin:0; padding:0;"><span style="display:block; transform:translateY(-0.5px);">{tekst}</span></div>"""
+
 # --- UNIWERSALNA FUNKCJA DOPASOWYWANIA KROKU DO BAZY MIEJSC (DRY) ---
 def _wyczysc_nazwe_miejsca(nazwa):
     if not nazwa: return ""
@@ -182,7 +209,7 @@ def dopasuj_krok_do_bazy_miejsc(nazwa_kroku, wspolrzedne_kroku, df_miejsca_ref):
 
     return None
 
-# --- POMOCNICZE FUNKCJE STRUKTURY KROKÓW (DRY & LOGIC PRESERVATION) ---
+# --- POMOCNICZE FUNKCJE STRUKTURY KROKÓW ---
 def _reindex_kroki(cursor, id_wycieczki):
     cursor.execute('''
         SELECT id FROM krok_wycieczki 
@@ -206,7 +233,6 @@ def _wstaw_krok_do_wycieczki(cursor, id_wycieczki, nazwa, wspolrzedne, okienko, 
     is_shop = any(w in nazwa_lower for w in ["sklep", "market"])
     is_market = any(w in nazwa_lower for w in ["rynek", "targ", "laiki"])
 
-    # Wstawienie tymczasowego wiersza
     cursor.execute('''
         INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, numer_miejsca, nazwa, wspolrzedne, okienko_zwiedzania, podsumowanie_taktyki, opis)
         VALUES (?, 9999, ?, ?, ?, ?, ?, ?)
@@ -257,14 +283,6 @@ def _wstaw_krok_do_wycieczki(cursor, id_wycieczki, nazwa, wspolrzedne, okienko, 
         else:
             evening_shops.append(nowy_element)
 
-    # Bezwzględnie pożądana kolejność:
-    # 1. Start w domku
-    # 2. Sklep rano (tuż po wyjeździe)
-    # 3. Rynek rano (po sklepie)
-    # 4. Atrakcje w ciągu dnia
-    # 5. Rynek wieczorem (przed sklepem)
-    # 6. Sklep wieczorem (tuż przed powrotem)
-    # 7. Powrót do domku
     uporzadkowana_lista = (
         start_cottage +
         morning_shops +
@@ -894,7 +912,6 @@ div.st-key-btn_date_picker { margin-bottom: 10px !important; }
 .section-unified-header { font-size: 1.15rem !important; font-weight: 800 !important; color: #2B2118 !important; margin-top: 14px !important; margin-bottom: 6px !important; display: flex; align-items: center; gap: 6px; }
 .section-body-text { font-size: 9pt; color: #2B2118; font-weight: 600; line-height: 1.4; margin-bottom: 10px; }
 
-/* RAMKA TAKTYKI NA PEŁNE SŁOŃCE */
 .tactics-alert-box {
     background-color: #FAF8F2;
     border: 1.5px solid #D6D2C4;
@@ -1325,7 +1342,7 @@ def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
 
     st.markdown(f"""
     <div class="overview-card" style="margin-top: 4px; margin-bottom: 12px; background-color: #FAF8F2; border: 1.5px solid #D6D2C4;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+        <div style="display: space-between; align-items: center; margin-bottom: 4px; display: flex;">
             <div style="font-size: 10pt; font-weight: 900; color: #2B2118;">🌤️ Podsumowanie pogody</div>
             <div style="font-size: 9.5pt; font-weight: 900; color: #8C5338;">{min_temp}°C – {max_temp}°C</div>
         </div>
@@ -1496,7 +1513,6 @@ def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df, df_wszystkie_miejs
 
     return grupy
 
-# --- ULEPSZONY PARSER DOPASOWANIA KROKÓW ---
 def znajdz_id_kroku_w_db(cursor, id_wycieczki, identyfikator):
     ident_str = str(identyfikator).strip().lower()
     cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
@@ -1567,7 +1583,7 @@ def szukaj_miejsca_w_bazie(nazwa_zapytania):
             }
     return None
 
-# --- STRAŻNIK AuDHD: WALIDATOR PRZED MUTACJĄ W BAZIE ---
+# --- STRAŻNIK AuDHD ---
 def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane_okienko):
     miejsce_info = szukaj_miejsca_w_bazie(nazwa_nowego_miejsca)
     nazwa_l = str(nazwa_nowego_miejsca).lower()
@@ -1607,8 +1623,8 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
                     return False, (
                         f"⛔ ODMOWA: Od ostatniego posiłku stabilizującego ({ostatni_posilek[0]} w punkcie '{ostatni_posilek[3]}', ok. {pos_godz_str}) "
                         f"do planowanego punktu '{nazwa_nowego_miejsca}' ({planowane_okienko}) mija ponad 4.0 godziny. "
-                        f"Podgryzajki (chrupki/musy) nie zastępują posiłku. Dzieci z AuDHD wejdą w stan silnego przebodźcowania i głodu (Hangry). "
-                        f"💡 PROPOZYCJA: Zaplanuj Lunchbox mały (10:15–11:15), ciepły obiad na mieście w cieniu (12:00–13:45) lub Lunchbox duży przed '{nazwa_nowego_miejsca}'."
+                        f"Podgryzajki nie zastępują posiłku. Dzieci z AuDHD wejdą w stan silnego przebodźcowania i głodu. "
+                        f"💡 PROPOZYCJA: Zaplanuj Lunchbox mały, ciepły obiad na mieście w cieniu lub Lunchbox duży przed '{nazwa_nowego_miejsca}'."
                     )
 
     return True, ""
@@ -1865,7 +1881,6 @@ def usun_posilek(id_posilku):
         conn.commit()
     return {"success": True, "action": "usun_posilek", "message": "Pomyślnie usunięto posiłek."}
 
-# --- MODUŁ DUPLIKACJI WYCIECZKI ---
 def duplikuj_wycieczke(id_zrodlowe):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -1968,7 +1983,6 @@ def duplikuj_wycieczke(id_zrodlowe):
     przelicz_i_zsynchronizuj_wycieczke(nowe_id)
     return nowe_id
 
-# --- MODUŁ USUWANIA WYCIECZKI ---
 def usun_wycieczke(id_wycieczki):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -2575,8 +2589,8 @@ def pobierz_wycieczki_dla_miejsca(numer_miejsca, nazwa_miejsca):
     return pd.DataFrame(rows, columns=['id', 'tytul_wycieczki'])
 
 def dodaj_marker_domku(m):
-    icon_domek = f'<div style="background-color:#2E251E;color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:12px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);">🏠</div>'
-    folium.Marker([DOMEK_LAT, DOMEK_LON], icon=folium.DivIcon(html=icon_domek, icon_size=(26, 26), icon_anchor=(13, 13)), tooltip="Nasz domek w Stavros").add_to(m)
+    icon_domek = f'<div style="background-color:#2E251E;color:white;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:12px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);margin:0;padding:0;box-sizing:border-box;">🏠</div>'
+    folium.Marker([DOMEK_LAT, DOMEK_LON], icon=folium.DivIcon(html=icon_domek, icon_size=(26, 26), icon_anchor=(13, 13), class_name="custom-map-pin"), tooltip="Nasz domek w Stavros").add_to(m)
 
 # --- RENDEROWANIE KARTY WYCIECZKI ---
 def render_timeline_row_simple(time_start, badge_icon, badge_class, title, desc, nav_btn_html="", time_end="", extra_box_class=""):
@@ -2620,7 +2634,6 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         
     st.markdown(f'<div class="trip-top-section"><div class="trip-main-title">{tytul_wycieczki}</div></div>', unsafe_allow_html=True)
     
-    # Cel wycieczki
     if pd.notna(w_gen.get('calosciowy_opis_wycieczki')) and str(w_gen['calosciowy_opis_wycieczki']).strip():
         st.markdown(f"""
         <div style="margin-top: 4px; margin-bottom: 8px;">
@@ -2632,7 +2645,6 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
     if pokaz_pogode:
         renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data_val)
 
-    # RAMKA: CAŁOŚCIOWA TAKTYKA NA DZIEŃ (WIDOCZNA W PEŁNYM SŁOŃCU)
     taktyka_dnia_val = w_gen.get('calosciowa_taktyka_dnia')
     taktyka_tekst = str(taktyka_dnia_val).strip() if (pd.notna(taktyka_dnia_val) and str(taktyka_dnia_val).strip() not in ['-', 'nan', 'None']) else "Brak zdefiniowanej taktyki. Zdefiniuj ją w asystencie AI."
     
@@ -2691,7 +2703,8 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         if coords_list:
             avg_lat = sum(c[0] for c in coords_list) / len(coords_list)
             avg_lon = sum(c[1] for c in coords_list) / len(coords_list)
-            m_trip = folium.Map(location=[avg_lat, avg_lon], zoom_start=9, tiles="CartoDB positron")
+            m_trip = folium.Map(location=[avg_lat, avg_lon], zoom_start=9, tiles="OpenStreetMap")
+            zaaplikuj_style_mapy(m_trip)
             dodaj_marker_domku(m_trip)
 
             detailed_route_points = []
@@ -2712,8 +2725,8 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             for lat_c, lon_c, nazwa_c, krok_c in coords_list:
                 if "domek" in nazwa_c.lower():
                     continue
-                icon_html = f'<div style="background-color:#C06C4E;color:white;border-radius:50%;width:22px;height:22px;display:align-items;justify-content:center;font-size:10px;font-weight:900;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.2);">{krok_c}</div>'
-                folium.Marker([lat_c, lon_c], icon=folium.DivIcon(html=icon_html, icon_size=(22, 22), icon_anchor=(11, 11)), tooltip=nazwa_c).add_to(m_trip)
+                icon_html = stworz_znacznik_html(krok_c, "#C06C4E", 24)
+                folium.Marker([lat_c, lon_c], icon=folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12), class_name="custom-map-pin"), tooltip=nazwa_c).add_to(m_trip)
 
             st_folium(m_trip, width=None, height=260, returned_objects=[], key=f"trip_map_view_{wycieczka_id}")
 
@@ -3068,7 +3081,6 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
     renderuj_sekcje_notatek(id_wycieczki=wycieczka_id)
     
-    # --- ZADANIA DLA DZIECI (DWUPOZIOMOWY AKORDEON) ---
     st.markdown('<div class="section-unified-header">🎯 Zadania dla dzieci</div>', unsafe_allow_html=True)
     grupy_zadan = pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df, df_wszystkie_miejsca_ref)
     
@@ -3180,7 +3192,8 @@ elif st.session_state.active_tab == "map":
     wycieczki_options_filtrowane = pobierz_skrocone_opcje_wycieczek(pokaz_ukonczone=st.session_state.show_completed_trips)
     opcje_wycieczek_lista = [None] + wycieczki_options_filtrowane
 
-    m_all = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="CartoDB positron")
+    m_all = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="OpenStreetMap")
+    zaaplikuj_style_mapy(m_all)
     dodaj_marker_domku(m_all)
     
     map_coords_lookup = {}
@@ -3192,8 +3205,8 @@ elif st.session_state.active_tab == "map":
             kolor = "#A8A29E" if bool(row.get('odwiedzone', 0)) else pobierz_kolor_kategorii(kategoryzuj_typ(row.get('typ')))
             map_coords_lookup[(round(lat, 4), round(lon, 4))] = (num, nazwa)
             
-            icon_html = f'<div style="background-color:{kolor};color:white;border-radius:50%;width:24px;height:24px;display:align-items;justify-content:center;font-size:10px;font-weight:900;border:2px solid white;cursor:pointer;box-shadow:0 2px 5px rgba(0,0,0,0.2);">{num}</div>'
-            folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12)), tooltip=f"#{num} {nazwa}").add_to(m_all)
+            icon_html = stworz_znacznik_html(num, kolor, 24)
+            folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12), class_name="custom-map-pin"), tooltip=f"#{num} {nazwa}").add_to(m_all)
             
     map_out = st_folium(m_all, width=None, height=300, returned_objects=["last_object_clicked"], key="map_all_trips_view")
     if map_out and map_out.get("last_object_clicked"):
@@ -3233,15 +3246,14 @@ elif st.session_state.active_tab == "map":
                         st.session_state.map_tab_selected_place = None
                         st.rerun()
 
-    if st.session_state.return_trip:
-        target_prefix = f"{st.session_state.return_trip}."
+    # Obsługa wyboru z parametru URL lub przycisku ze szczegółów miejsca
+    target_tid = st.query_params.get("trip") or st.session_state.get("target_trip_id")
+    if target_tid:
         for opt in opcje_wycieczek_lista:
-            if opt and opt.startswith(target_prefix):
+            if opt and opt.startswith(f"{target_tid}."):
                 st.session_state["map_wycieczka_select"] = opt
                 break
-        st.session_state.return_trip = None
-        if "return_trip" in st.query_params:
-            del st.query_params["return_trip"]
+        st.session_state.target_trip_id = None
 
     selected_idx = 0
     curr_sel = st.session_state.get("map_wycieczka_select")
@@ -3356,7 +3368,8 @@ elif st.session_state.active_tab == "zabytek":
         df_miejsca_filtrowane['sort_num'] = pd.to_numeric(df_miejsca_filtrowane['numer_miejsca'], errors='coerce').fillna(9999)
         df_miejsca_filtrowane = df_miejsca_filtrowane.sort_values(by='sort_num').drop(columns=['sort_num'])
 
-    m_miejsca = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="CartoDB positron")
+    m_miejsca = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="OpenStreetMap")
+    zaaplikuj_style_mapy(m_miejsca)
     dodaj_marker_domku(m_miejsca)
 
     marker_coords_dict = {}
@@ -3368,8 +3381,8 @@ elif st.session_state.active_tab == "zabytek":
                 nazwa_p = str(row.get('nazwa', '')).strip()
                 kolor = "#A8A29E" if bool(row.get('odwiedzone', 0)) else pobierz_kolor_kategorii(row.get('kategoria_normalizowana', 'Other'))
                 marker_coords_dict[(round(lat, 4), round(lon, 4))] = (num, nazwa_p)
-                icon_html = f'<div style="background-color:{kolor};color:#FFFFFF;border-radius:50%;width:24px;height:24px;display:align-items;justify-content:center;font-size:10px;font-weight:900;border:2px solid #FFFFFF;box-shadow:0 2px 5px rgba(0,0,0,0.25);">{num}</div>'
-                folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12))).add_to(m_miejsca)
+                icon_html = stworz_znacznik_html(num, kolor, 24)
+                folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12), class_name="custom-map-pin"), tooltip=f"#{num} {nazwa_p}").add_to(m_miejsca)
 
     map_output = st_folium(m_miejsca, width=None, height=230, returned_objects=["last_object_clicked"], key="map_places_view")
 
@@ -3499,12 +3512,13 @@ elif st.session_state.active_tab == "zabytek":
                     
                     if st.button(btn_label, key=f"btn_place_to_trip_{docelowy_nr}_{w_id}", use_container_width=True):
                         st.session_state.active_tab = "map"
-                        st.session_state.return_trip = w_id
+                        st.session_state.show_completed_trips = True  # gwarantuje, że wycieczka będzie na liście wyboru
                         st.query_params["tab"] = "map"
-                        st.query_params["return_trip"] = w_id
+                        st.query_params["trip"] = str(w_id)
                         if "place" in st.query_params:
                             del st.query_params["place"]
                         st.session_state.active_place_id = None
+                        st.session_state.target_trip_id = str(w_id)
                         st.rerun()
 
     miejsca_opcje_lista = [f"{str(r['numer_miejsca']).strip()}. {r['nazwa']}" for _, r in df_miejsca_filtrowane.iterrows()]
