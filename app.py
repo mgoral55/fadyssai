@@ -12,6 +12,7 @@ import re
 import math
 import base64
 import random
+import unicodedata
 import time as py_time
 from datetime import datetime, date, time, timedelta
 
@@ -965,28 +966,60 @@ def pobierz_logo_b64(sciezka_pliku="logo.png"):
             return None
     return None
 
+_PL_MAP = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
+
+def generuj_slug_miejsca(nazwa):
+    if not nazwa:
+        return ""
+    s = _wyczysc_nazwe_miejsca(nazwa)
+    s = str(s).translate(_PL_MAP)
+    s = unicodedata.normalize('NFKD', s)
+    s = "".join([c for c in s if not unicodedata.combining(c)])
+    return re.sub(r'[^a-zA-Z0-9]+', '_', s).strip('_').lower()
+
 @st.cache_data
-def pobierz_zdjecie_miejsca_b64(numer_miejsca):
-    if not numer_miejsca:
-        return None
-    nr_clean = str(numer_miejsca).strip()
-    katalogi = ["zdjęcia", "zdjecia", "assets/zdjecia", "assets/places"]
+def pobierz_zdjecie_miejsca_b64(numer_miejsca, nazwa_miejsca=None):
+    katalogi = ["zdjęcia", "zdjecia", "assets/zdjecia", "assets/places", "."]
     rozszerzenia = [
+        ("webp", "image/webp"),
         ("jpg", "image/jpeg"), 
         ("jpeg", "image/jpeg"), 
-        ("webp", "image/webp"), 
         ("png", "image/png")
     ]
+    
+    kandydaci_plikow = []
+
+    if nazwa_miejsca:
+        slug = generuj_slug_miejsca(nazwa_miejsca)
+        if slug:
+            for ext, _ in rozszerzenia:
+                kandydaci_plikow.append(f"{slug}.{ext}")
+
+    if numer_miejsca:
+        nr_clean = str(numer_miejsca).strip()
+        for ext, _ in rozszerzenia:
+            kandydaci_plikow.append(f"{nr_clean}.{ext}")
+
     for kat in katalogi:
-        for ext, mime in rozszerzenia:
-            sciezka = os.path.join(kat, f"{nr_clean}.{ext}")
+        if not os.path.isdir(kat):
+            continue
+        for nazwa_pliku in kandydaci_plikow:
+            sciezka = os.path.join(kat, nazwa_pliku)
             if os.path.exists(sciezka):
                 try:
+                    ext = sciezka.rsplit('.', 1)[-1].lower()
+                    mime_map = {
+                        "webp": "image/webp",
+                        "jpg": "image/jpeg",
+                        "jpeg": "image/jpeg",
+                        "png": "image/png"
+                    }
+                    mime = mime_map.get(ext, "image/jpeg")
                     with open(sciezka, "rb") as img_file:
                         encoded = base64.b64encode(img_file.read()).decode()
                         return f"data:{mime};base64,{encoded}"
                 except Exception:
-                    pass
+                    continue
     return None
 
 def render_adventure_header(tytul_belki):
@@ -3243,7 +3276,7 @@ elif st.session_state.active_tab == "zabytek":
             coords_p = str(p.get('wspolrzedne', '')).replace(" ", "")
             czy_odwiedzone = bool(p.get('odwiedzone', 0))
 
-            zdjecie_b64 = pobierz_zdjecie_miejsca_b64(docelowy_nr)
+            zdjecie_b64 = pobierz_zdjecie_miejsca_b64(numer_miejsca=docelowy_nr, nazwa_miejsca=p.get('nazwa'))
             zdjecie_html = f"""<div style="width: calc(100% + 28px); height: 185px; margin: -14px -14px 12px -14px; overflow: hidden; border-radius: 18px 18px 0 0; background-color: #EDE8D6;"><img src="{zdjecie_b64}" style="width: 100%; height: 100%; object-fit: cover; display: block;" alt="{p.get('nazwa')}" /></div>""" if zdjecie_b64 else ""
 
             st.markdown(f"""<div class="overview-card" style="margin-top: 6px; overflow: hidden;">
