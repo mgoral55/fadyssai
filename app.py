@@ -1061,16 +1061,27 @@ div[class*="st-key-btn_del_shop_"] button, div[class*="st-key-btn_del_market_"] 
 div[class*="st-key-btn_add_shop_"] button:disabled, div[class*="st-key-btn_add_market_"] button:disabled { background-color: #D6CEBA !important; color: #73695F !important; border: 1.5px solid #C4BC9E !important; opacity: 0.85 !important; cursor: not-allowed !important; box-shadow: none !important; }
 .note-card { background-color: #F4EFE6; border: 1.5px solid #D8D2BC; border-radius: 16px; padding: 12px; margin-bottom: 8px; }
 
+# ZMIANA: Dodanie bufora padding-bottom i overflow: visible zapobiegających wystawaniu pytania decyzyjnego poza biały dymek
 [data-testid="stChatMessage"] { 
-    padding: 8px 10px !important; 
-    margin-bottom: 6px !important; 
+    padding: 10px 12px 14px 12px !important; 
+    margin-bottom: 10px !important; 
     border-radius: 14px !important; 
     font-size: 9.5pt !important; 
     color: #2B2118 !important; 
     background-color: #FAF8F2 !important; 
     border: 1px solid #D6D2C4 !important;
+    overflow: visible !important;
 }
 [data-testid="stChatMessage"] * { 
+    color: #2B2118 !important; 
+}
+[data-testid="stChatMessageContent"] {
+    overflow: visible !important;
+}
+[data-testid="stChatMessageContent"] p { 
+    font-size: 9.5pt !important; 
+    line-height: 1.4 !important; 
+    margin-bottom: 4px !important; 
     color: #2B2118 !important; 
 }
 [data-testid="stChatMessageContent"] p { 
