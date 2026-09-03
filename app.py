@@ -2558,13 +2558,14 @@ tools_definitions = [
     ),
     types.FunctionDeclaration(
         name="usun_krok_wycieczki",
-        description="Usuwa krok z trasy. Posiada strażnika posiłków – jeśli krok zawierał obiad/posiłek kotwiczący, funkcja zwróci błąd z ostrzeżeniem AuDHD.",
+        description="Usuwa krok z trasy. Jeśli krok zawierał posiłek kotwiczący (obiad/lunchbox), domyślnie zwróci błąd strażnika (Hangry Guard).",
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={
                 "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
                 "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID lub nazwa kroku"),
-                "pomin_ostrzezenie_posilku": types.Schema(type=types.Type.BOOLEAN, description="Ustaw True TYLKO wtedy, gdy rodzic wyraźnie zażądał usunięcia mimo utraty posiłku lub gdy przeniesiono już obiad gdzie indziej"),
+                # ZMIANA: Twarda blokada samowolnego używania flagi pominięcia w pierwszej turze dialogu
+                "pomin_ostrzezenie_posilku": types.Schema(type=types.Type.BOOLEAN, description="KRYTYCZNE: Domyślnie ZAWSZE False. Ustaw True WYŁĄCZNIE wtedy, gdy rodzic w kolejnej turze bezpośrednio potwierdził: 'usuń mimo ryzyka' lub 'wiem o luce 4h, usuń'."),
             },
             required=["id_wycieczki", "krok_wycieczki"]
         ),
@@ -2820,7 +2821,12 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
      2) `dodaj_krok_wycieczki(id_wycieczki=..., nazwa_z_bazy='Główna Atrakcja', ...)`
      3) `dodaj_krok_wycieczki(id_wycieczki=..., nazwa_z_bazy='Obiad w tawernie / restauracji', ...)`
    - KATEGORYCZNY ZAKAZ wspominania o obiedzie lub regeneracji w podsumowaniu, jeśli w wykonanych akcjach nie ma osobnego wywołania `dodaj_krok_wycieczki` dla tego posiłku!
-4. STRAŻNIK USUWANIA KROKÓW (AuDHD): Przed usunięciem kroku sprawdź, czy nie zawiera on posiłku kotwiczącego (obiad, lunchbox duży). Ostrzeż rodzica o ryzyku meltdownu z głodu (luka >4h) i zapytaj, gdzie najpierw przenieść posiłek.
+# ZMIANA: Bezwzględny zakaz samowolnego przekazywania pomin_ostrzezenie_posilku=True przy pierwszej prośbie o usunięcie
+4. STRAŻNIK USUWANIA KROKÓW (Hangry Prevention):
+   - Gdy rodzic pisze „usuń obiad”, ZAKAZ przekazywania parametru pomin_ostrzezenie_posilku=True.
+   - Wywołaj usuniecie z pomin_ostrzezenie_posilku=False – baza automatycznie zablokuje operację.
+   - Zwróć rodzicowi odmowę: wyjaśnij powstanie luki >4h, ryzyko meltdownu i zapytaj: „Gdzie indziej zaplanować posiłek lub mały lunchbox, aby zabezpieczyć dzieci?”.
+   - Dopiero po ponownym, świadomym potwierdzeniu przez rodzica wolno wymusić usunięcie.
 # ZMIANA: Ograniczenie używania imienia użytkownika wyłącznie do opiniowania i oceniania pomysłów
 5. UŻYWANIE IMIENIA: Zakaz zwracania się do użytkownika po imieniu w zwykłych propozycjach, powitaniach czy listach opcji. Zwracaj się po imieniu ({uzytkownik}) WYŁĄCZNIE wtedy, gdy wyrażasz bezpośrednią opinię lub oceniasz czy dany pomysł jest dobry, czy zły/ryzykowny (np. „{uzytkownik}, to bardzo dobry wybór...”, „{uzytkownik}, to ryzykowny pomysł na tę porę dnia...”)."""
 
