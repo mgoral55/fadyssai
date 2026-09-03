@@ -1123,7 +1123,7 @@ with st.sidebar:
             "gemini-3.5-flash-lite",
             "gemini-3.6-flash"
         ], 
-        index=2
+        index=0
     )
     # ZMIANA: Odczyt klucza powiązanego z użytkownikiem z bazy SQLite lub fallback do env
     zapisany_klucz_db = pobierz_api_key_uzytkownika(aktualny_uzytkownik)
@@ -1786,6 +1786,7 @@ def utworz_nowa_wycieczke(tytul_wycieczki, planowana_data=None, pobudka="06:00",
             ) VALUES (?, ?, ?, ?, '0', '17:00', ?, ?, ?, NULL, '0.5h', 0)
         ''', (nowe_id, tytul_wycieczki, opis, taktyka_dnia, pobudka, czas_wyjazdu, data_val))
 
+        # ZMIANA: Automatyczne tworzenie szkieletu zamkniętej pętli (Start + Powrót) zapobiegające urwanym trasom
         cursor.execute('''
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, numer_miejsca, nazwa, wspolrzedne, okienko_zwiedzania, opis)
             VALUES (?, 0, NULL, 'Nasz Domek (Start)', ?, ?, 'Poranne przygotowanie i bezpieczne śniadanie')
@@ -1797,7 +1798,18 @@ def utworz_nowa_wycieczke(tytul_wycieczki, planowana_data=None, pobudka="06:00",
             VALUES (?, 'śniadanie', 'w domku', ?, 'Śniadanie')
         ''', (id_start, pobudka))
 
-        # ZMIANA: Nowa wycieczka nie nadpisuje automatycznie aktywnej trasy dnia (aktywna_wycieczka)
+        # ZMIANA: Punkt powrotny z kolacją na stałe zamykający dzień w domku
+        cursor.execute('''
+            INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, numer_miejsca, nazwa, wspolrzedne, okienko_zwiedzania, opis)
+            VALUES (?, 999, NULL, 'Nasz Domek (Powrót)', ?, '17:00 - 18:00', 'Wypoczynek, regeneracja i bezpieczna kolacja')
+        ''', (nowe_id, f"{DOMEK_LAT}, {DOMEK_LON}"))
+        id_end = cursor.lastrowid
+
+        cursor.execute('''
+            INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
+            VALUES (?, 'kolacja', 'w domku', '18:00', 'Kolacja')
+        ''', (id_end,))
+
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(nowe_id)
@@ -1929,12 +1941,12 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 -
             pozycja="koniec"
         )
 
-        # AUTOMATYCZNE WYKRYWANIE OBIADU / LUNCHBOXA
+        # ZMIANA: Dokładne linkowanie do bazy miejsc i gwarantowany wpis posiłku w bazie
         nazwa_l = nazwa_z_bazy.lower()
         if any(w in nazwa_l for w in ["obiad", "tawerna", "lunch", "restauracja", "jedzenie", "lunchbox"]):
-            rodzaj = "lunchbox_duzy" if "duży" in nazwa_l else ("lunchbox_maly" if "mały" in nazwa_l or "lunchbox" in nazwa_l else "obiad")
+            rodzaj = "lunchbox_duzy" if "duży" in nazwa_l else ("lunchbox_maly" if ("mały" in nazwa_l or "lunchbox" in nazwa_l) else "obiad")
             miejsce_pos = "z domu (lunchbox)" if "lunchbox" in rodzaj else "restauracja"
-            godz_pos = okienko_zwiedzania.split("-")[0].strip() if "-" in okienko_zwiedzania else "13:00"
+            godz_pos = okienko_zwiedzania.split("-")[0].strip() if "-" in okienko_zwiedzania else "12:30"
             cursor.execute('''
                 INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
                 VALUES (?, ?, ?, ?, ?)
@@ -1947,7 +1959,13 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 -
     else:
         przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
 
-    return {"success": True, "action": "dodaj_krok_wycieczki", "id_kroku": nowy_id, "message": f"Dodano punkt {nazwa_z_bazy} (#{nr_miejsca})."}
+    return {
+        "success": True, 
+        "action": "dodaj_krok_wycieczki", 
+        "id_kroku": nowy_id, 
+        "numer_miejsca": nr_miejsca,
+        "message": f"Dodano krok '{nazwa_z_bazy}' (ID #{nowy_id}, Miejsce ref: #{nr_miejsca or 'BRAK'})."
+    }
 
 def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, okienko_zwiedzania):
     with get_db() as conn:
@@ -2754,7 +2772,13 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
      `edytuj_wycieczke(id="{akt_wyc_id}", calosciowy_opis_wycieczki=..., calosciowa_taktyka_dnia=...)`.
    - `calosciowy_opis_wycieczki` – zwięzły, zaktualizowany cel dnia uwzględniający nowe punkty.
    - `calosciowa_taktyka_dnia` – zaktualizowana taktyka: ochrona przed upałem 11:30–15:30, gdzie zaplanowano regenerację/cień, gdzie i kiedy jest bezpieczny obiad oraz prowiant Safe Foods.
-3. Posiłki: Jeśli dodany krok to punkt gastronomiczny lub lunchbox, wywołaj też `zarzadzaj_posilkiem_kroku`.
+# ZMIANA: Bezwzględny rygor atomowego wywoływania kroków pośrednich (atrakcja + obiad) przy tworzeniu nowej trasy
+3. ZAKAZ OBIADU-WIDMA I SEKWENCJA TWORZENIA TRASY:
+   - Gdy rodzic zaakceptuje plan trasy zawierającej obiad/tawernę (np. Spinalonga + obiad w Eloundzie), masz OBOWIĄZEK wykonać pełną sekwencję w JEDNEJ turze:
+     1) `utworz_nowa_wycieczke(...)` -> pobierz ID nowej wycieczki,
+     2) `dodaj_krok_wycieczki(id_wycieczki=..., nazwa_z_bazy='Główna Atrakcja', ...)`
+     3) `dodaj_krok_wycieczki(id_wycieczki=..., nazwa_z_bazy='Obiad w tawernie / restauracji', ...)`
+   - KATEGORYCZNY ZAKAZ wspominania o obiedzie lub regeneracji w podsumowaniu, jeśli w wykonanych akcjach nie ma osobnego wywołania `dodaj_krok_wycieczki` dla tego posiłku!
 4. STRAŻNIK USUWANIA KROKÓW (AuDHD): Przed usunięciem kroku sprawdź, czy nie zawiera on posiłku kotwiczącego (obiad, lunchbox duży). Ostrzeż rodzica o ryzyku meltdownu z głodu (luka >4h) i zapytaj, gdzie najpierw przenieść posiłek.
 # ZMIANA: Ograniczenie używania imienia użytkownika wyłącznie do opiniowania i oceniania pomysłów
 5. UŻYWANIE IMIENIA: Zakaz zwracania się do użytkownika po imieniu w zwykłych propozycjach, powitaniach czy listach opcji. Zwracaj się po imieniu ({uzytkownik}) WYŁĄCZNIE wtedy, gdy wyrażasz bezpośrednią opinię lub oceniasz czy dany pomysł jest dobry, czy zły/ryzykowny (np. „{uzytkownik}, to bardzo dobry wybór...”, „{uzytkownik}, to ryzykowny pomysł na tę porę dnia...”)."""
@@ -2843,6 +2867,74 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                 "dodałem do bazy",
                                 "dodałam do bazy"
                             ]
+                            
+                            # ZMIANA: Weryfikacja spójności bazy – jeśli stworzono nową wycieczkę, sprawdzamy czy nie ma w niej tylko 2 kroków (start i powrót)
+                            created_trip_id = None
+                            for act in executed_actions:
+                                if "utworz_nowa_wycieczke" in act:
+                                    m_id = re.search(r'#(\d+)', act)
+                                    if m_id:
+                                        created_trip_id = m_id.group(1)
+
+                            # ZMIANA: Weryfikacja kompletności nowo utworzonej trasy (wykrywanie braku obiadu zadeklarowanego w planie)
+                            if created_trip_id:
+                                with get_db() as conn:
+                                    c_cur = conn.cursor()
+                                    c_cur.execute("SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?", (str(created_trip_id),))
+                                    istniejace_kroki = c_cur.fetchall()
+                                    c_cur.execute("SELECT COUNT(*) FROM posilki_kroku WHERE id_kroku IN (SELECT id FROM krok_wycieczki WHERE id_wycieczki = ?) AND rodzaj_posilku IN ('obiad', 'lunch', 'lunchbox_duzy')", (str(created_trip_id),))
+                                    ma_obiad_w_bazie = (c_cur.fetchone()[0] > 0)
+
+                                count_krokow = len(istniejace_kroki)
+                                # ZMIANA: Zabezpieczenie przed pustym szkieletem wycieczki i synchronizacja aktywnej trasy
+                                if count_krokow <= 2:
+                                    ustaw_aktywna_wycieczke_id(created_trip_id)
+                                    c_cur.execute("SELECT tytul_wycieczki FROM wycieczka WHERE id = ?", (str(created_trip_id),))
+                                    tytul_row = c_cur.fetchone()
+                                    nazwa_atrakcji = tytul_row[0] if tytul_row else "Główna atrakcja"
+
+                                    # Dopasowanie lub wyszukanie nowo zarejestrowanych miejsc
+                                    c_cur.execute("""
+                                        SELECT numer_miejsca, nazwa, wspolrzedne, opis 
+                                        FROM miejsca 
+                                        WHERE (LOWER(?) LIKE ('%' || LOWER(nazwa) || '%') 
+                                           OR LOWER(nazwa) LIKE ('%' || LOWER(?) || '%'))
+                                           AND LOWER(nazwa) NOT LIKE '%tawerna%'
+                                        ORDER BY CAST(numer_miejsca AS INTEGER) DESC LIMIT 1
+                                    """, (nazwa_atrakcji, nazwa_atrakcji))
+                                    m_istniejace = c_cur.fetchone()
+
+                                    if m_istniejace:
+                                        nr_m, nazwa_m, wsp_m, opis_m = m_istniejace
+                                        dodaj_krok_wycieczki(
+                                            id_wycieczki=created_trip_id,
+                                            nazwa_z_bazy=nazwa_m,
+                                            okienko_zwiedzania="10:00 - 11:30",
+                                            podsumowanie_taktyki="Zwiedzanie w porannym chłodzie, mobilny cień"
+                                        )
+                                        executed_actions.append(f"dodaj_krok_wycieczki: Dodano punkt {nazwa_m} (#{nr_m})")
+
+                                    # Pobranie tawerny powiązanej z celem
+                                    c_cur.execute("""
+                                        SELECT numer_miejsca, nazwa, wspolrzedne, opis 
+                                        FROM miejsca 
+                                        WHERE LOWER(nazwa) LIKE '%tawerna%' OR LOWER(nazwa) LIKE '%obiad%'
+                                        ORDER BY CAST(numer_miejsca AS INTEGER) DESC LIMIT 1
+                                    """)
+                                    tawerna_row = c_cur.fetchone()
+                                    if tawerna_row:
+                                        t_nr, t_nazwa, t_wsp, t_opis = tawerna_row
+                                        dodaj_krok_wycieczki(
+                                            id_wycieczki=created_trip_id,
+                                            nazwa_z_bazy=t_nazwa,
+                                            okienko_zwiedzania="11:45 - 13:15",
+                                            podsumowanie_taktyki="Posiłek w cieniu, stabilizacja sensoryczna, Safe Foods"
+                                        )
+                                        executed_actions.append(f"dodaj_krok_wycieczki: Dodano punkt {t_nazwa} (#{t_nr})")
+
+                                    przelicz_i_zsynchronizuj_wycieczke(created_trip_id, force_wyjazd_str="06:30")
+                                    has_db_mutations = True
+
                             if not has_db_mutations:
                                 reply_lower = assistant_reply.lower()
                                 if any(zwrot in reply_lower for zwrot in zakazane_zwroty_bez_mutacji) or re.search(r'wycieczka\s*#\d+', reply_lower):
