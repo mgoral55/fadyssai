@@ -1683,6 +1683,33 @@ def pobierz_liste_dostepnych_wycieczek():
                 "cel": r[4]
             })
     return {"wycieczki": wycieczki}
+    
+def pobierz_nieprzypisane_miejsca():
+    """Zwraca listę miejsc z tabeli miejsca, które nie występują w żadnej wycieczce."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT m.numer_miejsca, m.nazwa, m.typ, m.czas_dojazdu, m.ochrona_slonce, m.trudnosc_adhd
+            FROM miejsca m
+            WHERE m.numer_miejsca NOT IN (
+                SELECT DISTINCT numer_miejsca 
+                FROM krok_wycieczki 
+                WHERE numer_miejsca IS NOT NULL AND numer_miejsca != ''
+            )
+            ORDER BY CAST(m.numer_miejsca AS INTEGER) ASC
+        ''')
+        rows = cursor.fetchall()
+        nieprzypisane = []
+        for r in rows:
+            nieprzypisane.append({
+                "numer_miejsca": str(r[0]),
+                "nazwa": r[1],
+                "typ": r[2],
+                "czas_dojazdu": r[3],
+                "ochrona_slonce": r[4],
+                "trudnosc_adhd": r[5]
+            })
+    return {"nieprzypisane_miejsca": nieprzypisane, "liczba": len(nieprzypisane)}
 
 def szukaj_miejsca_w_bazie(nazwa_zapytania):
     with get_db() as conn:
@@ -2003,6 +2030,14 @@ def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, okienko_zwiedzania):
         k_info = znajdz_id_kroku_w_db(cursor, id_wycieczki, krok_wycieczki)
         if not k_info:
             return {"success": False, "error": f"Nie znaleziono kroku: {krok_wycieczki}"}
+        k_id, k_nazwa = k_info
+
+        # ZMIANA: Strażnik upału i posiłków również podczas edycji okienka istniejącego kroku
+        ok, err_msg = sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, k_nazwa, okienko_zwiedzania)
+        if not ok:
+            return {"success": False, "blocked_by_guardrail": True, "error": err_msg}
+
+        cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (okienko_zwiedzania, k_id))
         k_id, _ = k_info
         cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (okienko_zwiedzania, k_id))
         conn.commit()
@@ -2510,6 +2545,15 @@ tools_definitions = [
     types.FunctionDeclaration(
         name="pobierz_liste_dostepnych_wycieczek",
         description="Zwraca kompletną listę wszystkich zarejestrowanych w bazie wycieczek wraz z ich ID, dokładnymi tytułami i szacowaną godziną powrotu.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={},
+        ),
+    ),
+    # ZMIANA: Deklaracja narzędzia pozwalającego modelowi sprawdzić nieprzypisane atrakcje
+    types.FunctionDeclaration(
+        name="pobierz_nieprzypisane_miejsca",
+        description="Zwraca listę wszystkich miejsc z bazy, które nie zostały jeszcze przypisane do żadnej zaplanowanej wycieczki.",
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={},
@@ -3118,7 +3162,20 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                     przelicz_i_zsynchronizuj_wycieczke(created_trip_id, force_wyjazd_str="06:30")
                                     has_db_mutations = True
 
-                            # ZMIANA: Zamiast wysyłać kolejne zapytania do API generujące 429, formatujemy odpowiedź w Pythonie
+                            # ZMIANA: Zabezpieczenie przed fałszywym potwierdzeniem - blokada zwrotów o aktualizacji przy braku mutacji DB
+                            if not has_db_mutations:
+                                zakazane_frazy = [
+                                    "zaktualizowałem plan", "zaktualizowałam plan", "zaktualizowano plan",
+                                    "jest teraz zaplanowany", "zmieniłem godziny", "zmieniłam godziny",
+                                    "przesunąłem", "przesunęłam", "zapisano w bazie"
+                                ]
+                                if any(fraz in assistant_reply.lower() for fraz in zakazane_frazy):
+                                    assistant_reply = (
+                                        "⛔ Nie wprowadziłem zmian w bazie. Planowanie tego miejsca w oknie 11:30–15:30 "
+                                        "narusza zasadę ochrony przed pełnym słońcem i grozi przebodźcowaniem. "
+                                        "Pozostajemy przy pierwotnym, bezpiecznym harmonogramie z porannym zwiedzaniem."
+                                    )
+
                             if not assistant_reply.strip() or has_db_mutations:
                                 user_friendly_actions = []
                                 for act in executed_actions:
@@ -3127,6 +3184,10 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                     if "dodaj_krok" in act:
                                         m_name = act.split(":")[-1].replace("Dodano punkt", "").replace("Pomyślnie dodano", "").strip()
                                         user_friendly_actions.append(f"📍 Dodano do trasy: **{m_name}**")
+                                    elif "edytuj_krok" in act:
+                                        user_friendly_actions.append("⏱️ Zaktualizowano okienko zwiedzania")
+                                    elif "przenies_krok" in act or "zamien_kroki" in act:
+                                        user_friendly_actions.append("🔄 Zmieniono kolejność punktów w planie")
                                     elif "utworz_nowa_wycieczke" in act:
                                         user_friendly_actions.append("🧭 Utworzono nową wycieczkę w bazie")
                                     elif "utworz_nowe_miejsce" in act:
@@ -3140,7 +3201,7 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                     clean_list = "\n".join([f"- {a}" for a in set(user_friendly_actions)])
                                     assistant_reply = f"✅ **Plan zaktualizowany!**\n\n{clean_list}\n\n🌿 *Wszystkie godziny, posiłki i dojazdy zostały przeliczone.*"
                                 elif not assistant_reply.strip():
-                                    assistant_reply = "Plan został przygotowany i zweryfikowany pod kątem buforów sensorycznych."
+                                    assistant_reply = "Harmonogram trasy pozostał bez zmian."
 
                             status.update(label="✅ Gotowe!", state="complete", expanded=False)
 
