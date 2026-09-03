@@ -2612,20 +2612,26 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                         with open("SYSTEM_RULES_KRETA_ADHD.md", "r", encoding="utf-8") as rf:
                             rules_content = rf.read()
 
-                    system_prompt = f"""Rola: Planer wycieczek - Kreta dla rodzica {uzytkownik}. Data: {dzisiaj_str}. Wycieczka ID: {akt_wyc_id}.
+# ZMIANA: Dodano instrukcję rozróżniania zapytań o rekomendacje ("wybierz coś z listy") od edycji bieżącego planu
+                    system_prompt = f"""Rola: Planer wycieczek - Kreta dla rodzica {uzytkownik}. Data: {dzisiaj_str}. Aktywna wycieczka w tle ID: {akt_wyc_id}.
 {zewnetrzny_kontekst}
 
 ZASADY SYSTEMOWE:
 {rules_content}
 
-ŻELAZNA REGUŁA PO KAŻDEJ ZMIANIE KROKÓW:
-1. Jeżeli dodajesz, przesuwasz lub usuwasz JAKIKOLWIEK krok wycieczki, masz BEZWZGLĘDNY OBOWIĄZEK w tej samej serii wywołań uruchomić narzędzie:
-   `edytuj_wycieczke(id="{akt_wyc_id}", calosciowy_opis_wycieczki=..., calosciowa_taktyka_dnia=...)`.
-2. `calosciowy_opis_wycieczki` – zwięzły, zaktualizowany cel dnia uwzględniający nowe punkty.
-3. `calosciowa_taktyka_dnia` – zaktualizowana taktyka: ochrona przed upałem 11:30–15:30, gdzie zaplanowano regenerację/cień, gdzie i kiedy jest bezpieczny obiad oraz prowiant Safe Foods.
-4. Posiłki: Jeśli dodany krok to punkt gastronomiczny lub lunchbox, wywołaj też `zarzadzaj_posilkiem_kroku`.
-5. STRAŻNIK USUWANIA KROKÓW (AuDHD): Przed usunięciem kroku sprawdź, czy nie zawiera on posiłku kotwiczącego (obiad, lunchbox duży). Jeśli użytkownik prosi o usunięcie punktu z posiłkiem, NIE usuwaj go po cichu. Ostrzeż rodzica o ryzyku meltdownu z głodu (luka >4h) i zapytaj, gdzie najpierw przenieść posiłek.
-6. Zwracaj się do użytkownika po imieniu: {uzytkownik}."""
+PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
+1. Zapytania typu: „wybierz coś z mojej listy”, „zaproponuj lekką wycieczkę”, „gdzie jechać, żeby wrócić przed X”:
+   - To zapytanie doradcze o NOWY wybór trasy/miejsca, a NIE polecenie obcinania kroków aktywnej wycieczki w tle!
+   - Nie wmawiaj rodzicowi, że modyfikujesz jego obecną trasę, chyba że wyraźnie padnie słowo „skróć dzisiejszą wycieczkę” lub „usuń punkty z obecnego planu”.
+   - Zaproponuj 1-2 konkretne propozycje z bedy spełniające limit czasowy (uwzględniając czas dojazdu ze Stavros i bezpieczny powrót przed wskazaną godziną).
+2. ŻELAZNA REGUŁA PO KAŻDEJ ZMIANIE KROKÓW (CRUD):
+   - Jeśli dodajesz, przesuwasz lub usuwasz JAKIKOLWIEK krok wycieczki, masz BEZWZGLĘDNY OBOWIĄZEK w tej samej serii wywołań uruchomić narzędzie:
+     `edytuj_wycieczke(id="{akt_wyc_id}", calosciowy_opis_wycieczki=..., calosciowa_taktyka_dnia=...)`.
+   - `calosciowy_opis_wycieczki` – zwięzły, zaktualizowany cel dnia uwzględniający nowe punkty.
+   - `calosciowa_taktyka_dnia` – zaktualizowana taktyka: ochrona przed upałem 11:30–15:30, gdzie zaplanowano regenerację/cień, gdzie i kiedy jest bezpieczny obiad oraz prowiant Safe Foods.
+3. Posiłki: Jeśli dodany krok to punkt gastronomiczny lub lunchbox, wywołaj też `zarzadzaj_posilkiem_kroku`.
+4. STRAŻNIK USUWANIA KROKÓW (AuDHD): Przed usunięciem kroku sprawdź, czy nie zawiera on posiłku kotwiczącego (obiad, lunchbox duży). Ostrzeż rodzica o ryzyku meltdownu z głodu (luka >4h) i zapytaj, gdzie najpierw przenieść posiłek.
+5. Zwracaj się do użytkownika po imieniu: {uzytkownik}."""
 
                     try:
                         with st.status("🧭 Przygotowuję plan...", expanded=True) as status:
@@ -2649,6 +2655,8 @@ ZASADY SYSTEMOWE:
                             assistant_reply = ""
                             executed_actions = []
 
+                            # ZMIANA: Ścisła kontrola mutacji CRUD i blokada fałszywych podsumowań
+                            has_db_mutations = False
                             for loop_idx in range(4):
                                 st.write(f"🧠 Czekam na odpowiedź modelu (krok {loop_idx + 1})...")
                                 response = client.models.generate_content(
@@ -2678,6 +2686,8 @@ ZASADY SYSTEMOWE:
                                         wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
                                         msg = wynik_bazy.get('message', wynik_bazy) if isinstance(wynik_bazy, dict) else str(wynik_bazy)
                                         executed_actions.append(f"{call_name}: {msg}")
+                                        if not call_name.startswith("szukaj_") and not call_name.startswith("sprawdz_"):
+                                            has_db_mutations = True
                                         st.write(f"✅ Zrobione: {msg}")
                                         
                                         function_responses_parts.append(
@@ -2693,6 +2703,32 @@ ZASADY SYSTEMOWE:
                                     elif hasattr(response, 'text') and response.text:
                                         assistant_reply = response.text
                                     break
+
+                            # ZMIANA: Jeśli brak realnych mutacji bazy, wymuś usunięcie z odpowiedzi halucynacji o zapisaniu planu
+                            if not has_db_mutations and any(zwrot in assistant_reply.lower() for zwrot in ["podsumowanie naszej dzisiejszej wycieczki", "zaktualizowałam plan", "zapisano w bazie"]):
+                                assistant_reply = ""
+
+                            if not assistant_reply.strip() and executed_actions and has_db_mutations:
+                                try:
+                                    contents.append(types.Content(
+                                        role="user",
+                                        parts=[types.Part.from_text(
+                                            text="Podsumuj zwięźle i czytelnie wprowadzone zmiany w planie wycieczki dla rodzica (podaj godziny, strefę cienia oraz zaplanowany posiłek). Nie wypisuj nazw funkcji bazy danych ani formatu JSON."
+                                        )]
+                                    ))
+                                    final_resp = client.models.generate_content(
+                                        model=wybrany_model,
+                                        contents=contents,
+                                        config=types.GenerateContentConfig(
+                                            system_instruction=system_prompt,
+                                            temperature=0.2,
+                                            max_output_tokens=1024
+                                        )
+                                    )
+                                    if final_resp and final_resp.text:
+                                        assistant_reply = final_resp.text
+                                except Exception:
+                                    pass
 
                             if not assistant_reply.strip() and executed_actions:
                                 try:
@@ -2716,6 +2752,7 @@ ZASADY SYSTEMOWE:
                                 except Exception:
                                     pass
 
+                            # ZMIANA: Zabezpieczenie przed halucynacją CRUD – rozróżnienie realnych zmian od trybu doradczego
                             if not assistant_reply.strip():
                                 user_friendly_actions = []
                                 for act in executed_actions:
@@ -2730,14 +2767,41 @@ ZASADY SYSTEMOWE:
                                         user_friendly_actions.append("🍋 Dodano wizytę na targu w Chanii")
                                     elif "edytuj_wycieczke" in act:
                                         user_friendly_actions.append("⏱️ Zaktualizowano godziny i taktykę dnia")
+                                    elif "przenies_krok" in act or "zamien_kroki" in act:
+                                        user_friendly_actions.append("🔄 Zmieniono kolejność punktów")
+                                    elif "usun_krok" in act:
+                                        user_friendly_actions.append("🗑️ Usunięto punkt z harmonogramu")
                                     else:
-                                        user_friendly_actions.append("✨ Zaktualizowano harmonogram")
+                                        user_friendly_actions.append("✨ Zaktualizowano parametry wycieczki")
 
                                 if user_friendly_actions:
                                     clean_list = "\n".join([f"- {a}" for a in set(user_friendly_actions)])
                                     assistant_reply = f"✅ **Zaktualizowałam plan dla Ciebie, {uzytkownik}!**\n\n{clean_list}\n\n🌿 *Wszystkie godziny i bufor sjesty zostały przeliczone automatycznie.*"
                                 else:
-                                    assistant_reply = f"✅ Gotowe, {uzytkownik}! Harmonogram został zaktualizowany."
+                                    # ZMIANA: Gdy brak fizycznych zmian w bazie, nie wysyłaj potwierdzenia CRUD – ponów próbę czystej odpowiedzi dialogowej
+                                    try:
+                                        contents.append(types.Content(
+                                            role="user",
+                                            parts=[types.Part.from_text(
+                                                text="Odpowiedz rodzicowi konkretnie i zwięźle w trybie doradcy na jego pytanie. Jeśli pytał o propozycję, podaj konkretne rekomendacje z uwzględnieniem godzin i dzieci AuDHD. Pod żadnym pozorem nie pisz, że cokolwiek zaktualizowano w bazie."
+                                            )]
+                                        ))
+                                        conversational_resp = client.models.generate_content(
+                                            model=wybrany_model,
+                                            contents=contents,
+                                            config=types.GenerateContentConfig(
+                                                system_instruction=system_prompt,
+                                                temperature=0.3,
+                                                max_output_tokens=1024
+                                            )
+                                        )
+                                        if conversational_resp and conversational_resp.text:
+                                            assistant_reply = conversational_resp.text
+                                    except Exception:
+                                        pass
+
+                                    if not assistant_reply.strip():
+                                        assistant_reply = f"Jasne, {uzytkownik}! Sprawdzam listę pod kątem powrotu przed 15:00. O jakich atrakcjach myślicie – łagodna plaża blisko domu czy krótki spacer w cieniu?"
 
                             status.update(label="✅ Gotowe!", state="complete", expanded=False)
 
