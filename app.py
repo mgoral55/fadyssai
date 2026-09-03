@@ -545,6 +545,14 @@ def init_db():
             )
         ''')
         cursor.execute('INSERT OR IGNORE INTO aktywna_wycieczka (id, aktualne_id_wycieczki) VALUES (1, "1")')
+        
+        # ZMIANA: Tabela przechowująca klucz API dla konkretnego użytkownika (per user)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS konfiguracja_uzytkownika (
+                uzytkownik TEXT PRIMARY KEY,
+                gemini_api_key TEXT
+            )
+        ''')
 
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_krok_wyc ON krok_wycieczki(id_wycieczki)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_krok_miejsce ON krok_wycieczki(numer_miejsca)')
@@ -745,6 +753,25 @@ def init_db():
         conn.commit()
 
 init_db()
+
+# ZMIANA: Pobieranie zapisanego klucza API dla danego profilu z bazy danych
+def pobierz_api_key_uzytkownika(uzytkownik):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT gemini_api_key FROM konfiguracja_uzytkownika WHERE uzytkownik = ?", (str(uzytkownik),))
+        row = cursor.fetchone()
+        return str(row[0]).strip() if row and row[0] else ""
+
+# ZMIANA: Zapis lub aktualizacja klucza API dla danego profilu w bazie danych
+def zapisz_api_key_uzytkownika(uzytkownik, key_val):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO konfiguracja_uzytkownika (uzytkownik, gemini_api_key)
+            VALUES (?, ?)
+            ON CONFLICT(uzytkownik) DO UPDATE SET gemini_api_key = excluded.gemini_api_key
+        ''', (str(uzytkownik), str(key_val).strip()))
+        conn.commit()
 
 # --- MODUŁ PRZYWRACANIA BAZY Z PLIKÓW CSV ---
 def resetuj_i_przywroc_baze_z_csv():
@@ -1057,8 +1084,20 @@ with st.sidebar:
         ], 
         index=2
     )
-    env_gemini_key = os.environ.get("GEMINI_API_KEY", "")
-    api_key_input = st.text_input("Gemini API Key", value=env_gemini_key, type="password")
+    # ZMIANA: Odczyt klucza powiązanego z użytkownikiem z bazy SQLite lub fallback do env
+    zapisany_klucz_db = pobierz_api_key_uzytkownika(aktualny_uzytkownik)
+    domyslny_klucz = zapisany_klucz_db if zapisany_klucz_db else os.environ.get("GEMINI_API_KEY", "")
+
+    api_key_input = st.text_input(
+        "Gemini API Key", 
+        value=domyslny_klucz, 
+        type="password", 
+        key=f"api_key_field_{aktualny_uzytkownik}"
+    )
+
+    # ZMIANA: Automatyczny zapis nowego klucza w bazie dla aktywnego profilu
+    if api_key_input != zapisany_klucz_db and api_key_input.strip():
+        zapisz_api_key_uzytkownika(aktualny_uzytkownik, api_key_input)
 
     if aktualny_uzytkownik == "Magda":
         st.markdown("<div style='margin-top: 50px;'></div>", unsafe_allow_html=True)
