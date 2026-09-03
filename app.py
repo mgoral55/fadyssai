@@ -2794,13 +2794,15 @@ ZASADY SYSTEMOWE:
 PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
 # ZMIANA: Rozróżnienie zapytań ogólnych (2 opcje z bazy) od zapytań o konkretny cel (np. Spinalonga)
 1. OBSŁUGA ZAPYTAŃ I REKOMENDACJI:
-   a) Zapytania ogólne („zaproponuj coś”, „gdzie jechać przed 16:00”, „wybierz coś z listy”):
-      - Działasz w 100% doradczo. ZAKAZ wywoływania narzędzi CRUD.
+   # ZMIANA: Obsługa pytań o konkretną kategorię miejsc (np. plaże) bez mylenia ich z całymi trasami
+   a) Zapytania doradcze i rekomendacje:
+      - Działasz w 100% doradczo. ZAKAZ wywoływania narzędzi CRUD i zerowy zapis przed akceptacją.
       - Zakaz proponowania wycieczek odbytych (odbyta=1) i miejsc odwiedzonych (odwiedzone=1).
-      - Podaj DOKŁADNIE 2 pozycje z bazy w zwięzłym formacie:
-        * **Wycieczka #[ID]: [Tytuł z bazy]**
-        * 🚗 [Dojazd ze Stavros] | ☀️ [Strefa cienia] | 🏠 Powrót: [godzina]
-      - Pytanie końcowe: „Wybieramy którąś z nich czy szukamy dalej?”.
+      - Gdy rodzic pyta o WYCIECZKĘ: podaj dokładnie 2 pozycje z bazy wycieczek (**Wycieczka #[ID]: [Tytuł]**).
+      - Gdy rodzic pyta o MIEJSCE / PLAŻĘ / ATRAKCJĘ (np. „jaka plaża w okolicy?”, „co blisko domku?”): przeszukaj bazę i podaj dokładnie 2 konkretne pozycje z bazy miejsc:
+        * **Miejsce #[ID]: [Nazwa z bazy miejsc]**
+        * 🚗 Dojazd ze Stavros: [czas] | ☀️ Cień: [ochrona] | 🌊 [specyfika AuDHD / zejście do wody]
+      - Zawsze zakończ jednym krótkim pytaniem decyzyjnym dopasowanym do kontekstu.
    b) Prośba o konkretny cel / nowe miejsce (np. „utwórz wycieczkę na Spinalongę”, „chcę jechać na Balos”):
       - KATEGORYCZNY ZAKAZ ignorowania celu rodzica i zakaz wklejania dwóch niepowiązanych wycieczek z bazy!
       - KATEGORYCZNY ZAKAZ tworzenia pustego rekordu w bazie w pierwszym kroku.
@@ -2901,21 +2903,13 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                         else:
                                             st.write("⚙️ Sprawdzam dane w bazie...")
                                         
+                                        # ZMIANA: Usunięcie zduplikowanego bloku append i pojedyncza rejestracja odpowiedzi narzędzi
                                         function_responses_parts.append(
                                             types.Part.from_function_response(
                                                 name=call_name, 
                                                 response={"result": wynik_bazy}
                                             )
                                         )
-                                    contents.append(types.Content(role="user", parts=function_responses_parts))
-                                        
-                                    # ZMIANA: Poprawione wcięcie function_responses_parts.append w pętli for call in calls
-                                    function_responses_parts.append(
-                                        types.Part.from_function_response(
-                                            name=call_name, 
-                                            response={"result": wynik_bazy}
-                                        )
-                                    )
                                     contents.append(types.Content(role="user", parts=function_responses_parts))
                                 else:
                                     if candidate and candidate.content and candidate.content.parts:
