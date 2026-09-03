@@ -1061,8 +1061,24 @@ div[class*="st-key-btn_del_shop_"] button, div[class*="st-key-btn_del_market_"] 
 div[class*="st-key-btn_add_shop_"] button:disabled, div[class*="st-key-btn_add_market_"] button:disabled { background-color: #D6CEBA !important; color: #73695F !important; border: 1.5px solid #C4BC9E !important; opacity: 0.85 !important; cursor: not-allowed !important; box-shadow: none !important; }
 .note-card { background-color: #F4EFE6; border: 1.5px solid #D8D2BC; border-radius: 16px; padding: 12px; margin-bottom: 8px; }
 
-[data-testid="stChatMessage"] { padding: 8px 10px !important; margin-bottom: 6px !important; border-radius: 14px !important; font-size: 9.5pt !important; }
-[data-testid="stChatMessageContent"] p { font-size: 9.5pt !important; line-height: 1.35 !important; margin-bottom: 0 !important; }
+[data-testid="stChatMessage"] { 
+    padding: 8px 10px !important; 
+    margin-bottom: 6px !important; 
+    border-radius: 14px !important; 
+    font-size: 9.5pt !important; 
+    color: #2B2118 !important; 
+    background-color: #FAF8F2 !important; 
+    border: 1px solid #D6D2C4 !important;
+}
+[data-testid="stChatMessage"] * { 
+    color: #2B2118 !important; 
+}
+[data-testid="stChatMessageContent"] p { 
+    font-size: 9.5pt !important; 
+    line-height: 1.35 !important; 
+    margin-bottom: 0 !important; 
+    color: #2B2118 !important; 
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -2698,12 +2714,14 @@ ZASADY SYSTEMOWE:
 {rules_content}
 
 PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
+# ZMIANA: Twardy rygor zwięzłości odpowiedzi – eliminacja ucinania tekstu przez scroll okna czatu
 1. Zapytania typu: „wybierz coś z mojej listy”, „zaproponuj lekką wycieczkę”, „gdzie jechać, żeby wrócić przed X”:
-   - To zapytanie doradcze o NOWY wybór trasy/miejsca, a NIE polecenie obcinania kroków aktywnej wycieczki w tle!
-   - Nie wmawiaj rodzicowi, że modyfikujesz jego obecną trasę, chyba że wyraźnie padnie słowo „skróć dzisiejszą wycieczkę” lub „usuń punkty z obecnego planu”.
-   - Zaproponuj 1-2 konkretne propozycje z bazy spełniające limit czasowy (uwzględniając czas dojazdu ze Stavros i bezpieczny powrót przed wskazaną godziną).
-   # ZMIANA: Bezwzględny wymóg podawania numeru ID oraz oficjalnego tytułu z bazy dla natychmiastowej identyfikacji
-   - KRYTYCZNE: Każdą propozycję MUSISZ zacząć od dokładnego numeru i tytułu z bazy: **Wycieczka #[ID]: [Tytuł z bazy]** lub **Miejsce #[numer]: [Nazwa z bazy]** (np. `**Wycieczka #3: Półwysep Akrotiri i Moni Gouverneto**`), aby rodzic mógł błyskawicznie wybrać tę pozycję z listy rozwijanej w aplikacji.
+   - Działasz w 100% doradczo. ZAKAZ wywoływania narzędzi zapisu CRUD i ZAKAZ jakichkolwiek wstępów powitalnych.
+   - RYGOR JEDNEGO EKRANU: Cała odpowiedź MUSI mieć poniżej 100 słów, aby nie wyjeżdżać poza okno czatu.
+   - Podaj DOKŁADNIE 2 opcje z bazy (nigdy więcej). Format każdej z nich:
+     * **Wycieczka #[ID]: [Tytuł z bazy]** (lub **Miejsce #[numer]: [Nazwa z bazy]**)
+     * 🚗 [Czas dojazdu ze Stavros] | ☀️ [Strefa cienia/sjesta] | 🏠 Powrót: [godzina]
+   - Krótkie pytanie końcowe: „Wybieramy którąś z nich czy szukamy dalej?”. `**Wycieczka #3: Półwysep Akrotiri i Moni Gouverneto**`), aby rodzic mógł błyskawicznie wybrać tę pozycję z listy rozwijanej w aplikacji.
 2. ŻELAZNA REGUŁA PO KAŻDEJ ZMIANIE KROKÓW (CRUD):
    - Jeśli dodajesz, przesuwasz lub usuwasz JAKIKOLWIEK krok wycieczki, masz BEZWZGLĘDNY OBOWIĄZEK w tej samej serii wywołań uruchomić narzędzie:
      `edytuj_wycieczke(id="{akt_wyc_id}", calosciowy_opis_wycieczki=..., calosciowa_taktyka_dnia=...)`.
