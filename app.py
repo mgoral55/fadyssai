@@ -1616,6 +1616,7 @@ def pobierz_liste_dostepnych_wycieczek():
             SELECT id, tytul_wycieczki, calkowity_czas_wycieczki_godziny, 
                    szacowana_godzina_powrotu, calosciowy_opis_wycieczki 
             FROM wycieczka 
+            WHERE odbyta = 0
             ORDER BY CAST(id AS INTEGER) ASC
         ''')
         rows = cursor.fetchall()
@@ -1634,12 +1635,21 @@ def szukaj_miejsca_w_bazie(nazwa_zapytania):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('''
+            # ZMIANA: Dodanie pola odwiedzone do zwracanego słownika, by model wiedział, czy miejsce zostało już zaliczone
             SELECT numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas, 
                    godziny_otwarcia, konieczna_akcja, ochrona_slonce, potencjal_meltdownu, 
-                   strategie_meltdown, opis
+                   strategie_meltdown, opis, odwiedzone
             FROM miejsca 
             WHERE nazwa LIKE ? OR numer_miejsca = ?
         ''', (f"%{nazwa_zapytania}%", str(nazwa_zapytania)))
+        row = cursor.fetchone()
+        if row:
+            return {
+                "numer_miejsca": row[0], "nazwa": row[1], "typ": row[2], "wspolrzedne": row[3], 
+                "czas_dojazdu": row[4], "orientacyjny_czas": row[5], "godziny_otwarcia": row[6], 
+                "konieczna_akcja": row[7], "ochrona_slonce": row[8], "potencjal_meltdownu": row[9], 
+                "strategie_meltdown": row[10], "opis": row[11], "odwiedzone": bool(row[12])
+            }
         row = cursor.fetchone()
         if row:
             return {
@@ -2609,8 +2619,8 @@ def wczytaj_kontekst_zewnetrzny(id_wycieczki):
         '''
         kroki_df = pd.read_sql(query, conn, params=(str(id_wycieczki),))
 
-        # ZMIANA: Pobranie spisu wszystkich tras, aby model nigdy nie zmyślał tytułów
-        wszystkie_wyc_df = pd.read_sql('SELECT id, tytul_wycieczki, szacowana_godzina_powrotu FROM wycieczka ORDER BY CAST(id AS INTEGER) ASC', conn)
+        # ZMIANA: Pobranie spisu wyłącznie tras nieukończonych (odbyta = 0), aby model nie proponował odbytych wycieczek
+        wszystkie_wyc_df = pd.read_sql('SELECT id, tytul_wycieczki, szacowana_godzina_powrotu FROM wycieczka WHERE odbyta = 0 ORDER BY CAST(id AS INTEGER) ASC', conn)
 
     opis = ""
     if not wyc_df.empty:
@@ -2716,7 +2726,9 @@ ZASADY SYSTEMOWE:
 PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
 # ZMIANA: Twardy rygor zwięzłości odpowiedzi – eliminacja ucinania tekstu przez scroll okna czatu
 1. Zapytania typu: „wybierz coś z mojej listy”, „zaproponuj lekką wycieczkę”, „gdzie jechać, żeby wrócić przed X”:
+   # ZMIANA: Blokada rekomendowania ukończonych wycieczek (odbyta = 1) oraz odwiedzonych miejsc (odwiedzone = 1)
    - Działasz w 100% doradczo. ZAKAZ wywoływania narzędzi zapisu CRUD i ZAKAZ jakichkolwiek wstępów powitalnych.
+   - KATEGORYCZNY ZAKAZ proponowania wycieczek ukończonych (odbyta=1) oraz miejsc już odwiedzonych (odwiedzone=1). Proponuj wyłącznie pozycje aktywne/nieodwiedzone.
    - RYGOR JEDNEGO EKRANU: Cała odpowiedź MUSI mieć poniżej 100 słów, aby nie wyjeżdżać poza okno czatu.
    - Podaj DOKŁADNIE 2 opcje z bazy (nigdy więcej). Format każdej z nich:
      * **Wycieczka #[ID]: [Tytuł z bazy]** (lub **Miejsce #[numer]: [Nazwa z bazy]**)
