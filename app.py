@@ -46,16 +46,30 @@ def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
 
 @st.cache_data(ttl=86400)
 def pobierz_geometrie_trasy_osrm(lat1, lon1, lat2, lon2):
+    # ZMIANA: Zwiększenie limitu timeout do 2.0s dla długich tras (np. Stavros -> Knossos) oraz fallback na serwer z overview=simplified
     url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=full&geometries=geojson"
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
-        with urllib.request.urlopen(req, timeout=0.4) as response:
+        with urllib.request.urlopen(req, timeout=2.0) as response:
             data = json.loads(response.read().decode())
             if 'routes' in data and len(data['routes']) > 0:
                 coords = data['routes'][0]['geometry']['coordinates']
                 return [[c[1], c[0]] for c in coords]
     except Exception:
         pass
+
+    # ZMIANA: Dodatkowy fallback z niższym narzutem obliczeniowym dla OSRM (overview=simplified) przed ostateczną prostą linią
+    try:
+        url_simplified = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=simplified&geometries=geojson"
+        req_simp = urllib.request.Request(url_simplified, headers={'User-Agent': 'CretAiApp/1.0'})
+        with urllib.request.urlopen(req_simp, timeout=2.0) as response:
+            data = json.loads(response.read().decode())
+            if 'routes' in data and len(data['routes']) > 0:
+                coords = data['routes'][0]['geometry']['coordinates']
+                return [[c[1], c[0]] for c in coords]
+    except Exception:
+        pass
+
     return [[lat1, lon1], [lat2, lon2]]
 
 def sparsuj_wspolrzedne(wsp_str):
@@ -1645,8 +1659,8 @@ def pobierz_liste_dostepnych_wycieczek():
 def szukaj_miejsca_w_bazie(nazwa_zapytania):
     with get_db() as conn:
         cursor = conn.cursor()
+        # ZMIANA: Usunięcie błędnych wcięć (IndentationError) i czyste formatowanie zapytania SQL
         cursor.execute('''
-            # ZMIANA: Dodanie pola odwiedzone do zwracanego słownika, by model wiedział, czy miejsce zostało już zaliczone
             SELECT numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas, 
                    godziny_otwarcia, konieczna_akcja, ochrona_slonce, potencjal_meltdownu, 
                    strategie_meltdown, opis, odwiedzone
@@ -1660,14 +1674,6 @@ def szukaj_miejsca_w_bazie(nazwa_zapytania):
                 "czas_dojazdu": row[4], "orientacyjny_czas": row[5], "godziny_otwarcia": row[6], 
                 "konieczna_akcja": row[7], "ochrona_slonce": row[8], "potencjal_meltdownu": row[9], 
                 "strategie_meltdown": row[10], "opis": row[11], "odwiedzone": bool(row[12])
-            }
-        row = cursor.fetchone()
-        if row:
-            return {
-                "numer_miejsca": row[0], "nazwa": row[1], "typ": row[2], "wspolrzedne": row[3], 
-                "czas_dojazdu": row[4], "orientacyjny_czas": row[5], "godziny_otwarcia": row[6], 
-                "konieczna_akcja": row[7], "ochrona_slonce": row[8], "potencjal_meltdownu": row[9], 
-                "strategie_meltdown": row[10], "opis": row[11]
             }
     return None
 
@@ -1791,7 +1797,7 @@ def utworz_nowa_wycieczke(tytul_wycieczki, planowana_data=None, pobudka="06:00",
             VALUES (?, 'śniadanie', 'w domku', ?, 'Śniadanie')
         ''', (id_start, pobudka))
 
-        cursor.execute('UPDATE aktywna_wycieczka SET aktualne_id_wycieczki = ? WHERE id = 1', (nowe_id,))
+        # ZMIANA: Nowa wycieczka nie nadpisuje automatycznie aktywnej trasy dnia (aktywna_wycieczka)
         conn.commit()
 
     przelicz_i_zsynchronizuj_wycieczke(nowe_id)
@@ -1799,7 +1805,7 @@ def utworz_nowa_wycieczke(tytul_wycieczki, planowana_data=None, pobudka="06:00",
         "success": True, 
         "action": "utworz_nowa_wycieczke", 
         "id_wycieczki": nowe_id, 
-        "message": f"Utworzono nową wycieczkę #{nowe_id}: '{tytul_wycieczki}' i ustawiono ją jako aktywną."
+        "message": f"Utworzono nową wycieczkę #{nowe_id}: '{tytul_wycieczki}' w bazie planów."
     }
 
 def dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki, pozycja="koniec"):
@@ -2722,12 +2728,6 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                         with open("SYSTEM_RULES_KRETA_ADHD.md", "r", encoding="utf-8") as rf:
                             rules_content = rf.read()
 
-                    rules_content = ""
-                    if os.path.exists("SYSTEM_RULES_KRETA_ADHD.md"):
-                        with open("SYSTEM_RULES_KRETA_ADHD.md", "r", encoding="utf-8") as rf:
-                            rules_content = rf.read()
-
-# ZMIANA: Dodano instrukcję rozróżniania zapytań o rekomendacje ("wybierz coś z listy") od edycji bieżącego planu
                     system_prompt = f"""Rola: Planer wycieczek - Kreta dla rodzica {uzytkownik}. Data: {dzisiaj_str}. Aktywna wycieczka w tle ID: {akt_wyc_id}.
 {zewnetrzny_kontekst}
 
@@ -2735,16 +2735,20 @@ ZASADY SYSTEMOWE:
 {rules_content}
 
 PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
-# ZMIANA: Twardy rygor zwięzłości odpowiedzi – eliminacja ucinania tekstu przez scroll okna czatu
-1. Zapytania typu: „wybierz coś z mojej listy”, „zaproponuj lekką wycieczkę”, „gdzie jechać, żeby wrócić przed X”:
-   # ZMIANA: Blokada rekomendowania ukończonych wycieczek (odbyta = 1) oraz odwiedzonych miejsc (odwiedzone = 1)
-   - Działasz w 100% doradczo. ZAKAZ wywoływania narzędzi zapisu CRUD i ZAKAZ jakichkolwiek wstępów powitalnych.
-   - KATEGORYCZNY ZAKAZ proponowania wycieczek ukończonych (odbyta=1) oraz miejsc już odwiedzonych (odwiedzone=1). Proponuj wyłącznie pozycje aktywne/nieodwiedzone.
-   - RYGOR JEDNEGO EKRANU: Cała odpowiedź MUSI mieć poniżej 100 słów, aby nie wyjeżdżać poza okno czatu.
-   - Podaj DOKŁADNIE 2 opcje z bazy (nigdy więcej). Format każdej z nich:
-     * **Wycieczka #[ID]: [Tytuł z bazy]** (lub **Miejsce #[numer]: [Nazwa z bazy]**)
-     * 🚗 [Czas dojazdu ze Stavros] | ☀️ [Strefa cienia/sjesta] | 🏠 Powrót: [godzina]
-   - Krótkie pytanie końcowe: „Wybieramy którąś z nich czy szukamy dalej?”. `**Wycieczka #3: Półwysep Akrotiri i Moni Gouverneto**`), aby rodzic mógł błyskawicznie wybrać tę pozycję z listy rozwijanej w aplikacji.
+# ZMIANA: Rozróżnienie zapytań ogólnych (2 opcje z bazy) od zapytań o konkretny cel (np. Spinalonga)
+1. OBSŁUGA ZAPYTAŃ I REKOMENDACJI:
+   a) Zapytania ogólne („zaproponuj coś”, „gdzie jechać przed 16:00”, „wybierz coś z listy”):
+      - Działasz w 100% doradczo. ZAKAZ wywoływania narzędzi CRUD.
+      - Zakaz proponowania wycieczek odbytych (odbyta=1) i miejsc odwiedzonych (odwiedzone=1).
+      - Podaj DOKŁADNIE 2 pozycje z bazy w zwięzłym formacie:
+        * **Wycieczka #[ID]: [Tytuł z bazy]**
+        * 🚗 [Dojazd ze Stavros] | ☀️ [Strefa cienia] | 🏠 Powrót: [godzina]
+      - Pytanie końcowe: „Wybieramy którąś z nich czy szukamy dalej?”.
+   b) Prośba o konkretny cel / nowe miejsce (np. „utwórz wycieczkę na Spinalongę”, „chcę jechać na Balos”):
+      - KATEGORYCZNY ZAKAZ ignorowania celu rodzica i zakaz wklejania dwóch niepowiązanych wycieczek z bazy!
+      - KATEGORYCZNY ZAKAZ tworzenia pustego rekordu w bazie w pierwszym kroku.
+      - Oceń wskazany cel pod kątem AuDHD (długość trasy ze Stavros, ryzyko meltdownu, brak cienia w 11:30–15:30).
+      - Zapytaj rodzica o preferencje do projektu trasy (np. „Możemy to zaplanować z przerwą na obiad w Eloundzie i rejsem z samego rana. Czy taki plan dopracować i przygotować do zapisu?”).
 2. ŻELAZNA REGUŁA PO KAŻDEJ ZMIANIE KROKÓW (CRUD):
    - Jeśli dodajesz, przesuwasz lub usuwasz JAKIKOLWIEK krok wycieczki, masz BEZWZGLĘDNY OBOWIĄZEK w tej samej serii wywołań uruchomić narzędzie:
      `edytuj_wycieczke(id="{akt_wyc_id}", calosciowy_opis_wycieczki=..., calosciowa_taktyka_dnia=...)`.
@@ -2826,9 +2830,23 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                         assistant_reply = response.text
                                     break
 
-                            # ZMIANA: Jeśli brak realnych mutacji bazy, wymuś usunięcie z odpowiedzi halucynacji o zapisaniu planu
-                            if not has_db_mutations and any(zwrot in assistant_reply.lower() for zwrot in ["podsumowanie naszej dzisiejszej wycieczki", "zaktualizowałam plan", "zapisano w bazie"]):
-                                assistant_reply = ""
+                            # ZMIANA: Ścisła blokada halucynacji CRUD i zmyślonych numerów ID wycieczek przy braku fizycznej mutacji bazy
+                            zakazane_zwroty_bez_mutacji = [
+                                "podsumowanie naszej dzisiejszej wycieczki", 
+                                "zaktualizowałam plan", 
+                                "zaktualizowano plan",
+                                "zapisano w bazie", 
+                                "zdefiniowałem ją w bazie",
+                                "zdefiniowałam ją w bazie",
+                                "utworzyłem w bazie",
+                                "utworzyłam w bazie",
+                                "dodałem do bazy",
+                                "dodałam do bazy"
+                            ]
+                            if not has_db_mutations:
+                                reply_lower = assistant_reply.lower()
+                                if any(zwrot in reply_lower for zwrot in zakazane_zwroty_bez_mutacji) or re.search(r'wycieczka\s*#\d+', reply_lower):
+                                    assistant_reply = ""
 
                             if not assistant_reply.strip() and executed_actions and has_db_mutations:
                                 try:
@@ -2927,10 +2945,15 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
 
                             status.update(label="✅ Gotowe!", state="complete", expanded=False)
 
+                        # ZMIANA: Zapis odpowiedzi i odświeżenie UI zależne od faktycznego wykonania akcji w bazie
                         zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
                         st.markdown(assistant_reply)
-                        st.session_state["flash_toast"] = "🧭 Zaktualizowano harmonogram!"
-                        st.rerun()
+                        if has_db_mutations:
+                            st.session_state["flash_toast"] = "🧭 Zaktualizowano bazę wycieczek!"
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.rerun()
 
                     except Exception as e:
                         naglowek_bledu, komunikat = formatuj_komunikat_bledu_ai(e)
