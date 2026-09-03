@@ -1371,8 +1371,8 @@ def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
 
     st.markdown(f"""
     <div class="overview-card" style="margin-top: 4px; margin-bottom: 12px; background-color: #FAF8F2; border: 1.5px solid #D6D2C4;">
-        <div style="display: space-between; align-items: center; margin-bottom: 4px; display: flex;">
-            <div style="font-size: 10pt; font-weight: 900; color: #2B2118;">🌤️ Podsumowanie pogody</div>
+        <div style="display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px;">
+            <div style="font-size: 10pt; font-weight: 900; color: #2B2118;">🌤️ Podsumowanie pogody:</div>
             <div style="font-size: 9.5pt; font-weight: 900; color: #8C5338;">{min_temp}°C – {max_temp}°C</div>
         </div>
         <div style="font-size: 9pt; color: #4A3E36; font-weight: 700; margin-bottom: 2px;">
@@ -1591,6 +1591,28 @@ def ustaw_aktywna_wycieczke_id(nowe_id):
         cursor = conn.cursor()
         cursor.execute('UPDATE aktywna_wycieczka SET aktualne_id_wycieczki = ? WHERE id = 1', (str(nowe_id),))
         conn.commit()
+        
+def pobierz_liste_dostepnych_wycieczek():
+    """Zwraca listę wszystkich zarejestrowanych wycieczek w bazie z ich ID, tytułami i godzinami."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, tytul_wycieczki, calkowity_czas_wycieczki_godziny, 
+                   szacowana_godzina_powrotu, calosciowy_opis_wycieczki 
+            FROM wycieczka 
+            ORDER BY CAST(id AS INTEGER) ASC
+        ''')
+        rows = cursor.fetchall()
+        wycieczki = []
+        for r in rows:
+            wycieczki.append({
+                "id": str(r[0]),
+                "tytul": r[1],
+                "czas_trwania_h": r[2],
+                "godzina_powrotu": r[3],
+                "cel": r[4]
+            })
+    return {"wycieczki": wycieczki}
 
 def szukaj_miejsca_w_bazie(nazwa_zapytania):
     with get_db() as conn:
@@ -2386,6 +2408,14 @@ tools_definitions = [
         ),
     ),
     types.FunctionDeclaration(
+        name="pobierz_liste_dostepnych_wycieczek",
+        description="Zwraca kompletną listę wszystkich zarejestrowanych w bazie wycieczek wraz z ich ID, dokładnymi tytułami i szacowaną godziną powrotu.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={},
+        ),
+    ),
+    types.FunctionDeclaration(
         name="przenies_krok_wycieczki",
         description="Przenosi istniejący krok przed lub po innym kroku (albo na podany indeks) i automatycznie przelicza godziny dojazdów i buforów.",
         parameters=types.Schema(
@@ -2523,6 +2553,7 @@ NARZEDZIA_DISPATCHER = {
     "usun_krok_wycieczki": lambda args: usun_krok_wycieczki(**args),
     "pobierz_pelny_plan_wycieczki": lambda args: pobierz_pelny_plan_wycieczki(**args),
     "przenies_krok_wycieczki": lambda args: przenies_krok_wycieczki(**args),
+    "pobierz_liste_dostepnych_wycieczek": lambda args: pobierz_liste_dostepnych_wycieczek(),
     "zamien_kroki_miejscami": lambda args: zamien_kroki_miejscami(**args),
     "zarzadzaj_posilkiem_kroku": lambda args: zarzadzaj_posilkiem_kroku(**args),
     "usun_posilek": lambda args: usun_posilek(**args),
@@ -2537,7 +2568,6 @@ def wykonaj_narzedzie_bazy(call_name, args):
     res = handler(args)
     return res if isinstance(res, dict) else {"success": True, "result": str(res)}
 
-# --- ZOPTYMALIZOWANY KONTEKST ---
 def wczytaj_kontekst_zewnetrzny(id_wycieczki):
     with get_db() as conn:
         wyc_df = pd.read_sql(
@@ -2562,20 +2592,29 @@ def wczytaj_kontekst_zewnetrzny(id_wycieczki):
             ORDER BY CAST(k.krok_wycieczki AS INTEGER) ASC
         '''
         kroki_df = pd.read_sql(query, conn, params=(str(id_wycieczki),))
-    
+
+        # ZMIANA: Pobranie spisu wszystkich tras, aby model nigdy nie zmyślał tytułów
+        wszystkie_wyc_df = pd.read_sql('SELECT id, tytul_wycieczki, szacowana_godzina_powrotu FROM wycieczka ORDER BY CAST(id AS INTEGER) ASC', conn)
+
     opis = ""
     if not wyc_df.empty:
         w = wyc_df.iloc[0]
         opis += f"Aktywna wycieczka #{w['id']}: {w.get('tytul_wycieczki')} (Pobudka: {w.get('pobudka')}, Wyjazd: {w.get('czas_wyjazdu')}, Powrót: {w.get('szacowana_godzina_powrotu')}).\n"
         if pd.notna(w.get('calosciowa_taktyka_dnia')) and str(w.get('calosciowa_taktyka_dnia')).strip():
             opis += f"Aktualna taktyka dnia: {w.get('calosciowa_taktyka_dnia')}\n"
-    
+
     if not kroki_df.empty:
         opis += "Kroki i zaplanowane posiłki w planie:\n"
         for _, r in kroki_df.iterrows():
             posilki_str = f" [Posiłki: {r['posilki']}]" if pd.notna(r['posilki']) and r['posilki'] else " [Posiłki: brak]"
             opis += f"- #{r['krok_wycieczki']}: {r['nazwa']} ({r['okienko_zwiedzania']}){posilki_str}\n"
-    
+
+    if not wszystkie_wyc_df.empty:
+        opis += "\nISTNIEJĄCE WYCIECZKI W BAZIE (UŻYWAJ WYŁĄCZNIE TYCH TYTUŁÓW I ID):\n"
+        for _, rw in wszystkie_wyc_df.iterrows():
+            powrot_info = f" (planowany powrót: {rw['szacowana_godzina_powrotu']})" if pd.notna(rw.get('szacowana_godzina_powrotu')) else ""
+            opis += f"- Wycieczka #{rw['id']}: {rw['tytul_wycieczki']}{powrot_info}\n"
+
     return opis
 
 def sprobuj_wykonac_komende_lokalnie(prompt, id_wycieczki):
