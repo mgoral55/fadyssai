@@ -2752,7 +2752,8 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
    - `calosciowa_taktyka_dnia` – zaktualizowana taktyka: ochrona przed upałem 11:30–15:30, gdzie zaplanowano regenerację/cień, gdzie i kiedy jest bezpieczny obiad oraz prowiant Safe Foods.
 3. Posiłki: Jeśli dodany krok to punkt gastronomiczny lub lunchbox, wywołaj też `zarzadzaj_posilkiem_kroku`.
 4. STRAŻNIK USUWANIA KROKÓW (AuDHD): Przed usunięciem kroku sprawdź, czy nie zawiera on posiłku kotwiczącego (obiad, lunchbox duży). Ostrzeż rodzica o ryzyku meltdownu z głodu (luka >4h) i zapytaj, gdzie najpierw przenieść posiłek.
-5. Zwracaj się do użytkownika po imieniu: {uzytkownik}."""
+# ZMIANA: Ograniczenie używania imienia użytkownika wyłącznie do opiniowania i oceniania pomysłów
+5. UŻYWANIE IMIENIA: Zakaz zwracania się do użytkownika po imieniu w zwykłych propozycjach, powitaniach czy listach opcji. Zwracaj się po imieniu ({uzytkownik}) WYŁĄCZNIE wtedy, gdy wyrażasz bezpośrednią opinię lub oceniasz czy dany pomysł jest dobry, czy zły/ryzykowny (np. „{uzytkownik}, to bardzo dobry wybór...”, „{uzytkownik}, to ryzykowny pomysł na tę porę dnia...”)."""
 
                     try:
                         with st.status("🧭 Przygotowuję plan...", expanded=True) as status:
