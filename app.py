@@ -2550,7 +2550,6 @@ tools_definitions = [
             properties={},
         ),
     ),
-    # ZMIANA: Deklaracja narzędzia pozwalającego modelowi sprawdzić nieprzypisane atrakcje
     types.FunctionDeclaration(
         name="pobierz_nieprzypisane_miejsca",
         description="Zwraca listę wszystkich miejsc z bazy, które nie zostały jeszcze przypisane do żadnej zaplanowanej wycieczki.",
@@ -2700,6 +2699,7 @@ NARZEDZIA_DISPATCHER = {
     "przenies_krok_wycieczki": lambda args: przenies_krok_wycieczki(**args),
     "pobierz_liste_dostepnych_wycieczek": lambda args: pobierz_liste_dostepnych_wycieczek(),
     "zamien_kroki_miejscami": lambda args: zamien_kroki_miejscami(**args),
+    "pobierz_nieprzypisane_miejsca": lambda args: pobierz_nieprzypisane_miejsca(),
     "zarzadzaj_posilkiem_kroku": lambda args: zarzadzaj_posilkiem_kroku(**args),
     "usun_posilek": lambda args: usun_posilek(**args),
     "dodaj_produkt_zakupow": lambda args: dodaj_produkt_zakupow(**args),
@@ -4178,7 +4178,7 @@ if "last_map_click_place" not in st.session_state:
 if "last_map_click_trips" not in st.session_state:
     st.session_state.last_map_click_trips = None
 if "filter_map_places" not in st.session_state:
-    st.session_state.filter_map_places = "Przypisane miejsca"
+    st.session_state.filter_map_places = "Miejsca przypisane do wycieczek"
 
 df_miejsca = pobierz_wszystkie_miejsca()
 
@@ -4213,7 +4213,7 @@ elif st.session_state.active_tab == "map":
     # Zastąpienie checkboxa listą wyboru
     filtr_miejsc = st.selectbox(
         "Filtruj miejsca na mapie:",
-        options=["Wszystkie", "Przypisane miejsca", "Nieprzypisane miejsca"],
+        options=["Wszystkie miejsca", "Miejsca przypisane do wycieczek", "Miejsca bez wycieczek w bazie"],
         index=1,
         key="filter_map_places"
     )
@@ -4223,10 +4223,10 @@ elif st.session_state.active_tab == "map":
         przypisane_ids = [str(x).strip() for x in przypisane_df['numer_miejsca'].tolist()]
 
     df_miejsca_mapa = df_miejsca.copy()
-    if filtr_miejsc == "Przypisane miejsca":
+    if filtr_miejsc == "Miejsca przypisane do wycieczek":
         df_miejsca_mapa = df_miejsca_mapa[df_miejsca_mapa['numer_miejsca'].astype(str).str.strip().isin(przypisane_ids)]
         wycieczki_options_filtrowane = pobierz_skrocone_opcje_wycieczek(pokaz_ukonczone=True)
-    elif filtr_miejsc == "Nieprzypisane miejsca":
+    elif filtr_miejsc == "Miejsca bez wycieczek w bazie":
         df_miejsca_mapa = df_miejsca_mapa[~df_miejsca_mapa['numer_miejsca'].astype(str).str.strip().isin(przypisane_ids)]
         wycieczki_options_filtrowane = []
     else:
@@ -4306,13 +4306,13 @@ elif st.session_state.active_tab == "map":
         "", 
         options=opcje_wycieczek_lista, 
         index=selected_idx, 
-        format_func=lambda x: "**Brak przypisanych wycieczek**" if (x is None and filtr_miejsc == "Nieprzypisane miejsca") else ("**Wybierz wycieczkę**" if x is None else x),
+        format_func=lambda x: "**Brak przypisanych wycieczek**" if (x is None and filtr_miejsc == "Miejsca bez wycieczek w bazie") else ("**Wybierz wycieczkę**" if x is None else x),
         key="map_wycieczka_select", 
         label_visibility="collapsed",
-        disabled=(filtr_miejsc == "Nieprzypisane miejsca")
+        disabled=(filtr_miejsc == "Miejsca bez wycieczek w bazie")
     )
 
-    if wybrana_mapa_sb is not None and filtr_miejsc != "Nieprzypisane miejsca":
+    if wybrana_mapa_sb is not None and filtr_miejsc != "Miejsca bez wycieczek w bazie":
         wybrana_id = wybrana_mapa_sb.split(". ")[0]
         renderuj_karte_wycieczki(wybrana_id, df_miejsca, pokaz_mape=True, pokaz_pogode=False)
         st.markdown('<div class="section-unified-header">🤖 Asystent AI</div>', unsafe_allow_html=True)
