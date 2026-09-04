@@ -1236,6 +1236,21 @@ with st.sidebar:
     # ZMIANA: Automatyczny zapis nowego klucza w bazie dla aktywnego profilu
     if api_key_input != zapisany_klucz_db and api_key_input.strip():
         zapisz_api_key_uzytkownika(aktualny_uzytkownik, api_key_input)
+        
+    # ZMIANA: Stałe przyciski szybkiej nawigacji do domku i sklepu w panelu bocznym
+    st.markdown("<div style='margin-top: 14px; border-top: 1.5px solid #D6D2C4; padding-top: 10px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 6px;'>🧭 Szybka nawigacja</div>", unsafe_allow_html=True)
+    
+    st.link_button(
+        "🏠 Domek", 
+        f"https://www.google.com/maps/search/?api=1&query={DOMEK_LAT},{DOMEK_LON}",
+        use_container_width=True
+    )
+    st.link_button(
+        "🛒 Sklep", 
+        f"https://www.google.com/maps/search/?api=1&query={SKLEP_LAT},{SKLEP_LON}",
+        use_container_width=True
+    )    
 
     if aktualny_uzytkownik == "Magda":
         st.markdown("<div style='margin-top: 50px;'></div>", unsafe_allow_html=True)
