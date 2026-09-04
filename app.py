@@ -1763,27 +1763,28 @@ def szukaj_miejsca_w_bazie(nazwa_zapytania):
             }
     return None
 
-## ZMIANA: Zezwolenie na tawerny, restauracje i klimatyzowane obiekty w oknie 11:30-15:30 oraz obsługa pomin_ostrzezenie_slonce
 def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane_okienko, pomin_ostrzezenie_slonce=False):
     miejsce_info = szukaj_miejsca_w_bazie(nazwa_nowego_miejsca)
     nazwa_l = str(nazwa_nowego_miejsca).lower()
     
     g_start = sparsuj_godzine_minuty(planowane_okienko.split("-")[0].strip()) if "-" in str(planowane_okienko) else sparsuj_godzine_minuty(str(planowane_okienko))
-    if g_start and not pomin_ostrzezenie_slonce:
-        godz_dec = g_start[0] + g_start[1] / 60.0
-        if 11.5 <= godz_dec <= 15.5:
-            jest_gastronomia = any(w in nazwa_l for w in ['tawerna', 'tavern', 'restauracja', 'obiad', 'lunch', 'cafe', 'kawiarnia', 'cretaquarium'])
-            ochrona = str(miejsce_info.get('ochrona_slonce', '')).lower() if miejsce_info else ""
-            jest_odkryte = any(w in ochrona for w in ['brak', 'niska', 'odkryte', 'pełne słońce', 'patelnia']) or \
-                           any(w in nazwa_l for w in ['knossos', 'phaistos', 'ruiny', 'gortyna', 'falasarna', 'elafonisi'])
-            
-            if jest_odkryte and not jest_gastronomia:
-                return False, (
-                    f"⛔ OSTRZEŻENIE: Planowanie '{nazwa_nowego_miejsca}' w oknie {planowane_okienko} narusza regułę sjesty i ochrony przed słońcem (11:30–15:30). "
-                    f"Jest to teren otwarty bez cienia. Ryzyko meltdownu i udaru cieplnego."
-                )
-
     if g_start:
+        # ZMIANA: Zmienna godz_dec zadeklarowana bezwarunkowo na poziomie g_start, zapobiegając UnboundLocalError
+        godz_dec = g_start[0] + g_start[1] / 60.0
+
+        if not pomin_ostrzezenie_slonce:
+            if 11.5 <= godz_dec <= 15.5:
+                jest_gastronomia = any(w in nazwa_l for w in ['tawerna', 'tavern', 'restauracja', 'obiad', 'lunch', 'cafe', 'kawiarnia', 'cretaquarium'])
+                ochrona = str(miejsce_info.get('ochrona_slonce', '')).lower() if miejsce_info else ""
+                jest_odkryte = any(w in ochrona for w in ['brak', 'niska', 'odkryte', 'pełne słońce', 'patelnia']) or \
+                               any(w in nazwa_l for w in ['knossos', 'phaistos', 'ruiny', 'gortyna', 'falasarna', 'elafonisi'])
+                
+                if jest_odkryte and not jest_gastronomia:
+                    return False, (
+                        f"⛔ OSTRZEŻENIE: Planowanie '{nazwa_nowego_miejsca}' w oknie {planowane_okienko} narusza regułę sjesty i ochrony przed słońcem (11:30–15:30). "
+                        f"Jest to teren otwarty bez cienia. Ryzyko meltdownu i udaru cieplnego."
+                    )
+
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute('''
@@ -2131,12 +2132,20 @@ def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, okienko_zwiedzania, pomi
             return {"success": False, "error": f"Nie znaleziono kroku: {krok_wycieczki}"}
         k_id, k_nazwa = k_info
 
+        # ZMIANA: Automatyczna konwersja pojedynczej godziny (np. "14:30") na pełne okienko czasowe z zachowaniem domyślnego czasu pobytu
+        okienko_str = str(okienko_zwiedzania).strip()
+        if "-" not in okienko_str:
+            g_parsed = sparsuj_godzine_minuty(okienko_str)
+            if g_parsed:
+                czas_trwania = 60 if any(w in k_nazwa.lower() for w in ["tawerna", "restauracja", "obiad", "lunch"]) else 45
+                dt_s = datetime(2026, 1, 1, g_parsed[0], g_parsed[1])
+                dt_e = dt_s + timedelta(minutes=czas_trwania)
+                okienko_zwiedzania = f"{dt_s.strftime('%H:%M')} - {dt_e.strftime('%H:%M')}"
+
         ok, err_msg = sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, k_nazwa, okienko_zwiedzania, pomin_ostrzezenie_slonce=pomin_ostrzezenie_slonce)
         if not ok:
             return {"success": False, "blocked_by_guardrail": True, "error": err_msg}
 
-        cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (okienko_zwiedzania, k_id))
-        k_id, _ = k_info
         cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (okienko_zwiedzania, k_id))
         conn.commit()
 
@@ -2965,6 +2974,13 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
      2) `dodaj_krok_wycieczki(id_wycieczki=..., nazwa_z_bazy='Główna Atrakcja', ...)`
      3) `dodaj_krok_wycieczki(id_wycieczki=..., nazwa_z_bazy='Obiad w tawernie / restauracji', ...)`
    - KATEGORYCZNY ZAKAZ wspominania o obiedzie lub regeneracji w podsumowaniu, jeśli w wykonanych akcjach nie ma osobnego wywołania `dodaj_krok_wycieczki` dla tego posiłku!
+   # ZMIANA: Ścisła reguła dialogowa dla przesuwania godzin posiłków i tawern na późniejsze okna
+   - PRZESUWANIE GODZIN POSIŁKÓW / TAWERN (np. dojazd na 15:00):
+     * Tawerny i restauracje są zacienione i DOZWOLONE w godzinach 11:30–15:30. Nie odrzucaj ich z powodu zakazu słońca.
+     * Jeśli przesunięcie obiadu na 15:00 tworzy lukę >4h bez jedzenia po porannym śniadaniu/lunchboxie, MASZ ZAKAZ natychmiastowej zmiany w bazie oraz ZAKAZ kategorycznej odmowy.
+     * Zwróć się po imieniu ({uzytkownik}), wyjaśnij dlaczego to ryzykowny pomysł (np. 15:00 to bardzo późny obiad, minie za dużo czasu od plaży, dzieci dopadnie wilczy głód i meltdown) i zapytaj decyzyjnie:
+       "Czy mimo to przesunąć godzinę w bazie na 15:00, czy wstawiamy mały lunchbox w aucie/na plaży około 12:00?".
+     * Dopiero po potwierdzeniu rodzica („tak, zmień na 15:00”) wywołaj edycję z flagą pomin_ostrzezenie_slonce=True.
 # ZMIANA: Bezwzględny zakaz samowolnego przekazywania pomin_ostrzezenie_posilku=True przy pierwszej prośbie o usunięcie
 4. STRAŻNIK USUWANIA KROKÓW (Hangry Prevention):
    - Gdy rodzic pisze „usuń obiad”, ZAKAZ przekazywania parametru pomin_ostrzezenie_posilku=True.
@@ -3012,27 +3028,33 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                             has_db_mutations = False
                             executed_tool_signatures = set()
 
-                            # ZMIANA: W trybie ratunkowym tylko 1 krok; w trybie planowania max 3 kroki
-                            max_loops = 1 if is_emergency else 3
+                            # ZMIANA: Zastąpienie 3 zduplikowanych pętli for jedną zwięzłą pętlą (max 2 tury)
+                            max_loops = 1 if is_emergency else 2
+                            assistant_reply = ""
+                            executed_actions = []
+                            has_db_mutations = False
+                            executed_tool_signatures = set()
 
                             for loop_idx in range(max_loops):
                                 st.write(f"🧠 Analizuję sytuację (krok {loop_idx + 1})...")
                                 
                                 response = None
-                                for retry_attempt in range(2):
-                                    try:
+                                try:
+                                    response = client.models.generate_content(
+                                        model=wybrany_model,
+                                        contents=contents,
+                                        config=config
+                                    )
+                                except Exception as api_err:
+                                    err_str = str(api_err).lower()
+                                    if "503" in err_str or "unavailable" in err_str or "429" in err_str:
+                                        py_time.sleep(1.5)
                                         response = client.models.generate_content(
                                             model=wybrany_model,
                                             contents=contents,
                                             config=config
                                         )
-                                        break
-                                    except Exception as api_err:
-                                        err_str = str(api_err).lower()
-                                        if ("503" in err_str or "unavailable" in err_str or "429" in err_str) and retry_attempt < 1:
-                                            # ZMIANA: Zwiększony bufor do 3.5s przy błędzie 429
-                                            py_time.sleep(3.5)
-                                            continue
+                                    else:
                                         raise api_err
 
                                 candidate = response.candidates[0] if response and response.candidates else None
@@ -3078,8 +3100,10 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                             st.write(f"➕ Dołączono przystanek: **{args.get('nazwa_z_bazy', '')}**")
                                         elif "edytuj_wycieczke" in call_name:
                                             st.write("⏱️ Zaktualizowano parametry trasy...")
+                                        elif "edytuj_krok" in call_name:
+                                            st.write("⏱️ Zaktualizowano okienko zwiedzania...")
                                         else:
-                                            st.write("⚙️ Pobieram dane...")
+                                            st.write("⚙️ Przetwarzam...")
                                         
                                         function_responses_parts.append(
                                             types.Part.from_function_response(
@@ -3089,7 +3113,6 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                         )
                                     
                                     contents.append(types.Content(role="user", parts=function_responses_parts))
-                                    py_time.sleep(1.5)
                                 else:
                                     if candidate and candidate.content and candidate.content.parts:
                                         assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
@@ -3097,339 +3120,7 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                         assistant_reply = response.text
                                     break
 
-                            # ZMIANA: Uzupełnienie szkieletu nowej trasy o brakujące punkty (atrakcja + obiad)
-                            created_trip_id = None
-                            for act in executed_actions:
-                                if "utworz_nowa_wycieczke" in act:
-                                    m_id = re.search(r'#(\d+)', act)
-                                    if m_id:
-                                        created_trip_id = m_id.group(1)
-
-                            if created_trip_id:
-                                with get_db() as conn:
-                                    c_cur = conn.cursor()
-                                    c_cur.execute("SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?", (str(created_trip_id),))
-                                    istniejace_kroki = c_cur.fetchall()
-                                
-                                if len(istniejace_kroki) <= 2:
-                                    ustaw_aktywna_wycieczke_id(created_trip_id)
-                                    c_cur.execute("SELECT tytul_wycieczki FROM wycieczka WHERE id = ?", (str(created_trip_id),))
-                                    tytul_row = c_cur.fetchone()
-                                    nazwa_atrakcji = tytul_row[0] if tytul_row else "Główna atrakcja"
-
-                                    c_cur.execute("""
-                                        SELECT numer_miejsca, nazwa FROM miejsca 
-                                        WHERE (LOWER(?) LIKE ('%' || LOWER(nazwa) || '%') OR LOWER(nazwa) LIKE ('%' || LOWER(?) || '%'))
-                                          AND LOWER(nazwa) NOT LIKE '%tawerna%'
-                                        ORDER BY CAST(numer_miejsca AS INTEGER) DESC LIMIT 1
-                                    """, (nazwa_atrakcji, nazwa_atrakcji))
-                                    m_istniejace = c_cur.fetchone()
-                                    if m_istniejace:
-                                        dodaj_krok_wycieczki(id_wycieczki=created_trip_id, nazwa_z_bazy=m_istniejace[1], okienko_zwiedzania="10:00 - 11:30")
-                                        executed_actions.append(f"dodaj_krok_wycieczki: Dodano punkt {m_istniejace[1]}")
-
-                                    c_cur.execute("""
-                                        SELECT nazwa FROM miejsca 
-                                        WHERE LOWER(nazwa) LIKE '%tawerna%' OR LOWER(nazwa) LIKE '%obiad%'
-                                        ORDER BY CAST(numer_miejsca AS INTEGER) DESC LIMIT 1
-                                    """)
-                                    tawerna_row = c_cur.fetchone()
-                                    if tawerna_row:
-                                        dodaj_krok_wycieczki(id_wycieczki=created_trip_id, nazwa_z_bazy=tawerna_row[0], okienko_zwiedzania="11:45 - 13:15")
-                                        executed_actions.append(f"dodaj_krok_wycieczki: Dodano punkt {tawerna_row[0]}")
-
-                                    przelicz_i_zsynchronizuj_wycieczke(created_trip_id, force_wyjazd_str="06:30")
-                                    has_db_mutations = True
-
-                            # ZMIANA: Ścisła kontrola mutacji CRUD, ochrona przed zrzutami technicznymi i obsługa retry dla błędu 503
-                            has_db_mutations = False
-                            for loop_idx in range(4):
-                                st.write(f"🧠 Analizuję plan wycieczki (krok {loop_idx + 1})...")
-                                
-                                response = None
-                                # ZMIANA: Exponential backoff dla błędów 503 (High Demand) i 429
-                                for retry_attempt in range(3):
-                                    try:
-                                        response = client.models.generate_content(
-                                            model=wybrany_model,
-                                            contents=contents,
-                                            config=config
-                                        )
-                                        break
-                                    except Exception as api_err:
-                                        err_str = str(api_err).lower()
-                                        if ("503" in err_str or "unavailable" in err_str or "429" in err_str) and retry_attempt < 2:
-                                            py_time.sleep(2.0 * (retry_attempt + 1))
-                                            continue
-                                        raise api_err
-
-                                candidate = response.candidates[0] if response and response.candidates else None
-                                calls = []
-                                if hasattr(response, 'function_calls') and response.function_calls:
-                                    calls = response.function_calls
-                                elif candidate and candidate.content and candidate.content.parts:
-                                    for p_part in candidate.content.parts:
-                                        if hasattr(p_part, 'function_call') and p_part.function_call:
-                                            calls.append(p_part.function_call)
-
-                                if calls:
-                                    if candidate and candidate.content:
-                                        contents.append(candidate.content)
-                                    
-                                    function_responses_parts = []
-                                    for call in calls:
-                                        call_name, args = call.name, call.args or {}
-                                        
-                                        wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
-                                        msg = wynik_bazy.get('message', wynik_bazy) if isinstance(wynik_bazy, dict) else str(wynik_bazy)
-                                        executed_actions.append(f"{call_name}: {msg}")
-                                        if not call_name.startswith("szukaj_") and not call_name.startswith("sprawdz_"):
-                                            has_db_mutations = True
-                                        
-                                        # ZMIANA: Czytelny komunikat w słońcu zamiast surowych słowników i nazw pól bazy
-                                        if "utworz_nowe_miejsce" in call_name:
-                                            st.write(f"📍 Dodano do bazy: **{args.get('nazwa', 'nowe miejsce')}**")
-                                        elif "utworz_nowa_wycieczke" in call_name:
-                                            st.write(f"🧭 Przygotowano szkielet trasy: **{args.get('tytul_wycieczki', '')}**")
-                                        elif "dodaj_krok" in call_name:
-                                            st.write(f"➕ Dołączono przystanek: **{args.get('nazwa_z_bazy', '')}**")
-                                        elif "edytuj_wycieczke" in call_name:
-                                            st.write("⏱️ Zaktualizowano parametry i bufor czasowy...")
-                                        else:
-                                            st.write("⚙️ Sprawdzam dane w bazie...")
-                                        
-                                        # ZMIANA: Usunięcie zduplikowanego bloku append i pojedyncza rejestracja odpowiedzi narzędzi
-                                        function_responses_parts.append(
-                                            types.Part.from_function_response(
-                                                name=call_name, 
-                                                response={"result": wynik_bazy}
-                                            )
-                                        )
-                                    contents.append(types.Content(role="user", parts=function_responses_parts))
-                                    # ZMIANA: Bufor ochronny przed 429 Rate Limit (Google AI Studio Free/Tier 1) pomiędzy iteracjami narzędzi
-                                    py_time.sleep(1.5)
-                                else:
-                                    if candidate and candidate.content and candidate.content.parts:
-                                        assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
-                                    elif hasattr(response, 'text') and response.text:
-                                        assistant_reply = response.text
-                                    break
-
-                            # ZMIANA: Ścisła blokada halucynacji CRUD i zmyślonych numerów ID wycieczek przy braku fizycznej mutacji bazy
-                            zakazane_zwroty_bez_mutacji = [
-                                "podsumowanie naszej dzisiejszej wycieczki", 
-                                "zaktualizowałam plan", 
-                                "zaktualizowano plan",
-                                "zapisano w bazie", 
-                                "zdefiniowałem ją w bazie",
-                                "zdefiniowałam ją w bazie",
-                                "utworzyłem w bazie",
-                                "utworzyłam w bazie",
-                                "dodałem do bazy",
-                                "dodałam do bazy"
-                            ]
-                            
-                            # ZMIANA: Weryfikacja spójności bazy – jeśli stworzono nową wycieczkę, sprawdzamy czy nie ma w niej tylko 2 kroków (start i powrót)
-                            created_trip_id = None
-                            for act in executed_actions:
-                                if "utworz_nowa_wycieczke" in act:
-                                    m_id = re.search(r'#(\d+)', act)
-                                    if m_id:
-                                        created_trip_id = m_id.group(1)
-
-                            # ZMIANA: Weryfikacja kompletności nowo utworzonej trasy (wykrywanie braku obiadu zadeklarowanego w planie)
-                            if created_trip_id:
-                                with get_db() as conn:
-                                    c_cur = conn.cursor()
-                                    c_cur.execute("SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?", (str(created_trip_id),))
-                                    istniejace_kroki = c_cur.fetchall()
-                                    c_cur.execute("SELECT COUNT(*) FROM posilki_kroku WHERE id_kroku IN (SELECT id FROM krok_wycieczki WHERE id_wycieczki = ?) AND rodzaj_posilku IN ('obiad', 'lunch', 'lunchbox_duzy')", (str(created_trip_id),))
-                                    ma_obiad_w_bazie = (c_cur.fetchone()[0] > 0)
-
-                                count_krokow = len(istniejace_kroki)
-                                # ZMIANA: Zabezpieczenie przed pustym szkieletem wycieczki i synchronizacja aktywnej trasy
-                                if count_krokow <= 2:
-                                    ustaw_aktywna_wycieczke_id(created_trip_id)
-                                    c_cur.execute("SELECT tytul_wycieczki FROM wycieczka WHERE id = ?", (str(created_trip_id),))
-                                    tytul_row = c_cur.fetchone()
-                                    nazwa_atrakcji = tytul_row[0] if tytul_row else "Główna atrakcja"
-
-                                    # Dopasowanie lub wyszukanie nowo zarejestrowanych miejsc
-                                    c_cur.execute("""
-                                        SELECT numer_miejsca, nazwa, wspolrzedne, opis 
-                                        FROM miejsca 
-                                        WHERE (LOWER(?) LIKE ('%' || LOWER(nazwa) || '%') 
-                                           OR LOWER(nazwa) LIKE ('%' || LOWER(?) || '%'))
-                                           AND LOWER(nazwa) NOT LIKE '%tawerna%'
-                                        ORDER BY CAST(numer_miejsca AS INTEGER) DESC LIMIT 1
-                                    """, (nazwa_atrakcji, nazwa_atrakcji))
-                                    m_istniejace = c_cur.fetchone()
-
-                                    if m_istniejace:
-                                        nr_m, nazwa_m, wsp_m, opis_m = m_istniejace
-                                        dodaj_krok_wycieczki(
-                                            id_wycieczki=created_trip_id,
-                                            nazwa_z_bazy=nazwa_m,
-                                            okienko_zwiedzania="10:00 - 11:30",
-                                            podsumowanie_taktyki="Zwiedzanie w porannym chłodzie, mobilny cień"
-                                        )
-                                        executed_actions.append(f"dodaj_krok_wycieczki: Dodano punkt {nazwa_m} (#{nr_m})")
-
-                                    # Pobranie tawerny powiązanej z celem
-                                    c_cur.execute("""
-                                        SELECT numer_miejsca, nazwa, wspolrzedne, opis 
-                                        FROM miejsca 
-                                        WHERE LOWER(nazwa) LIKE '%tawerna%' OR LOWER(nazwa) LIKE '%obiad%'
-                                        ORDER BY CAST(numer_miejsca AS INTEGER) DESC LIMIT 1
-                                    """)
-                                    tawerna_row = c_cur.fetchone()
-                                    if tawerna_row:
-                                        t_nr, t_nazwa, t_wsp, t_opis = tawerna_row
-                                        dodaj_krok_wycieczki(
-                                            id_wycieczki=created_trip_id,
-                                            nazwa_z_bazy=t_nazwa,
-                                            okienko_zwiedzania="11:45 - 13:15",
-                                            podsumowanie_taktyki="Posiłek w cieniu, stabilizacja sensoryczna, Safe Foods"
-                                        )
-                                        executed_actions.append(f"dodaj_krok_wycieczki: Dodano punkt {t_nazwa} (#{t_nr})")
-
-                                    przelicz_i_zsynchronizuj_wycieczke(created_trip_id, force_wyjazd_str="06:30")
-                                    has_db_mutations = True
-
-                            assistant_reply = ""
-                            executed_actions = []
-                            has_db_mutations = False
-                            # ZMIANA: Pamięć wywołanych sygnatur narzędzi, zapobiegająca pętli 'Sprawdzam dane w bazie...'
-                            executed_tool_signatures = set()
-
-                            # ZMIANA: Jednolita pętla z twardym limitem 3 kroków zamiast dwóch zduplikowanych pętli for
-                            for loop_idx in range(3):
-                                st.write(f"🧠 Analizuję sytuację (krok {loop_idx + 1})...")
-                                
-                                response = None
-                                for retry_attempt in range(2):
-                                    try:
-                                        response = client.models.generate_content(
-                                            model=wybrany_model,
-                                            contents=contents,
-                                            config=config
-                                        )
-                                        break
-                                    except Exception as api_err:
-                                        err_str = str(api_err).lower()
-                                        if ("503" in err_str or "unavailable" in err_str or "429" in err_str) and retry_attempt < 1:
-                                            py_time.sleep(2.0)
-                                            continue
-                                        raise api_err
-
-                                candidate = response.candidates[0] if response and response.candidates else None
-                                calls = []
-                                if hasattr(response, 'function_calls') and response.function_calls:
-                                    calls = response.function_calls
-                                elif candidate and candidate.content and candidate.content.parts:
-                                    for p_part in candidate.content.parts:
-                                        if hasattr(p_part, 'function_call') and p_part.function_call:
-                                            calls.append(p_part.function_call)
-
-                                if calls:
-                                    # ZMIANA: Detekcja ponownego wywołania identycznego narzędzia z tymi samymi argumentami
-                                    is_looping = False
-                                    for c in calls:
-                                        c_sig = f"{c.name}:{str(sorted(c.args.items())) if c.args else ''}"
-                                        if c_sig in executed_tool_signatures:
-                                            is_looping = True
-                                            break
-                                        executed_tool_signatures.add(c_sig)
-
-                                    if is_looping:
-                                        # ZMIANA: Przerwanie pętli narzędziowej i wymuszenie wygenerowania odpowiedzi tekstowej
-                                        if candidate and candidate.content and candidate.content.parts:
-                                            assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
-                                        break
-
-                                    if candidate and candidate.content:
-                                        contents.append(candidate.content)
-                                    
-                                    function_responses_parts = []
-                                    for call in calls:
-                                        call_name, args = call.name, call.args or {}
-                                        
-                                        wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
-                                        msg = wynik_bazy.get('message', wynik_bazy) if isinstance(wynik_bazy, dict) else str(wynik_bazy)
-                                        executed_actions.append(f"{call_name}: {msg}")
-                                        if not call_name.startswith("szukaj_") and not call_name.startswith("sprawdz_") and not call_name.startswith("pobierz_"):
-                                            has_db_mutations = True
-                                        
-                                        if "utworz_nowe_miejsce" in call_name:
-                                            st.write(f"📍 Dodano do bazy: **{args.get('nazwa', 'nowe miejsce')}**")
-                                        elif "utworz_nowa_wycieczke" in call_name:
-                                            st.write(f"🧭 Przygotowano szkielet trasy: **{args.get('tytul_wycieczki', '')}**")
-                                        elif "dodaj_krok" in call_name:
-                                            st.write(f"➕ Dołączono przystanek: **{args.get('nazwa_z_bazy', '')}**")
-                                        elif "edytuj_wycieczke" in call_name:
-                                            st.write("⏱️ Zaktualizowano parametry trasy...")
-                                        else:
-                                            st.write("⚙️ Pobieram dane...")
-                                        
-                                        function_responses_parts.append(
-                                            types.Part.from_function_response(
-                                                name=call_name, 
-                                                response={"result": wynik_bazy}
-                                            )
-                                        )
-                                    contents.append(types.Content(role="user", parts=function_responses_parts))
-                                else:
-                                    if candidate and candidate.content and candidate.content.parts:
-                                        assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
-                                    elif hasattr(response, 'text') and response.text:
-                                        assistant_reply = response.text
-                                    break
-
-                            # ZMIANA: ZACHOWANIE FUNKCJONALNOŚCI – weryfikacja kompletności nowo utworzonej wycieczki i uzupełnienie punktów
-                            created_trip_id = None
-                            for act in executed_actions:
-                                if "utworz_nowa_wycieczke" in act:
-                                    m_id = re.search(r'#(\d+)', act)
-                                    if m_id:
-                                        created_trip_id = m_id.group(1)
-
-                            if created_trip_id:
-                                with get_db() as conn:
-                                    c_cur = conn.cursor()
-                                    c_cur.execute("SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?", (str(created_trip_id),))
-                                    istniejace_kroki = c_cur.fetchall()
-                                
-                                if len(istniejace_kroki) <= 2:
-                                    ustaw_aktywna_wycieczke_id(created_trip_id)
-                                    c_cur.execute("SELECT tytul_wycieczki FROM wycieczka WHERE id = ?", (str(created_trip_id),))
-                                    tytul_row = c_cur.fetchone()
-                                    nazwa_atrakcji = tytul_row[0] if tytul_row else "Główna atrakcja"
-
-                                    c_cur.execute("""
-                                        SELECT numer_miejsca, nazwa FROM miejsca 
-                                        WHERE (LOWER(?) LIKE ('%' || LOWER(nazwa) || '%') OR LOWER(nazwa) LIKE ('%' || LOWER(?) || '%'))
-                                          AND LOWER(nazwa) NOT LIKE '%tawerna%'
-                                        ORDER BY CAST(numer_miejsca AS INTEGER) DESC LIMIT 1
-                                    """, (nazwa_atrakcji, nazwa_atrakcji))
-                                    m_istniejace = c_cur.fetchone()
-                                    if m_istniejace:
-                                        dodaj_krok_wycieczki(id_wycieczki=created_trip_id, nazwa_z_bazy=m_istniejace[1], okienko_zwiedzania="10:00 - 11:30")
-                                        executed_actions.append(f"dodaj_krok_wycieczki: Dodano punkt {m_istniejace[1]}")
-
-                                    c_cur.execute("""
-                                        SELECT nazwa FROM miejsca 
-                                        WHERE LOWER(nazwa) LIKE '%tawerna%' OR LOWER(nazwa) LIKE '%obiad%'
-                                        ORDER BY CAST(numer_miejsca AS INTEGER) DESC LIMIT 1
-                                    """)
-                                    tawerna_row = c_cur.fetchone()
-                                    if tawerna_row:
-                                        dodaj_krok_wycieczki(id_wycieczki=created_trip_id, nazwa_z_bazy=tawerna_row[0], okienko_zwiedzania="11:45 - 13:15")
-                                        executed_actions.append(f"dodaj_krok_wycieczki: Dodano punkt {tawerna_row[0]}")
-
-                                    przelicz_i_zsynchronizuj_wycieczke(created_trip_id, force_wyjazd_str="06:30")
-                                    has_db_mutations = True
-
-                            # ZMIANA: Zabezpieczenie przed fałszywym potwierdzeniem - blokada zwrotów o aktualizacji przy braku mutacji DB
+                            # ZMIANA: Zabezpieczenie przed halucynacją potwierdzenia bez fizycznej modyfikacji bazy
                             if not has_db_mutations:
                                 zakazane_frazy = [
                                     "zaktualizowałem plan", "zaktualizowałam plan", "zaktualizowano plan",
@@ -3440,10 +3131,10 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                     assistant_reply = (
                                         "⛔ Nie wprowadziłem zmian w bazie. Planowanie tego miejsca w oknie 11:30–15:30 "
                                         "narusza zasadę ochrony przed pełnym słońcem i grozi przebodźcowaniem. "
-                                        "Pozostajemy przy pierwotnym, bezpiecznym harmonogramie z porannym zwiedzaniem."
+                                        "Pozostajemy przy pierwotnym, bezpiecznym harmonogramie."
                                     )
 
-                            if not assistant_reply.strip() or has_db_mutations:
+                            if not assistant_reply.strip() and has_db_mutations:
                                 user_friendly_actions = []
                                 for act in executed_actions:
                                     if "szukaj_" in act or "error" in act.lower():
@@ -3468,7 +3159,12 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                     clean_list = "\n".join([f"- {a}" for a in set(user_friendly_actions)])
                                     assistant_reply = f"✅ **Plan zaktualizowany!**\n\n{clean_list}\n\n🌿 *Wszystkie godziny, posiłki i dojazdy zostały przeliczone.*"
                                 elif not assistant_reply.strip():
-                                    assistant_reply = "Harmonogram trasy pozostał bez zmian."
+                                    # ZMIANA: Wyciągnięcie komunikatu błędu bezpośrednio ze strażnika narzędzia, jeśli model nie wygenerował tekstu
+                                    guardrail_errors = [act.split("error':")[-1].strip(" }'") for act in executed_actions if "blocked_by_guardrail" in act or "error" in act.lower()]
+                                    if guardrail_errors:
+                                        assistant_reply = f"⚠️ {guardrail_errors[-1]}"
+                                    else:
+                                        assistant_reply = "Harmonogram trasy pozostał bez zmian."
 
                             status.update(label="✅ Gotowe!", state="complete", expanded=False)
 
