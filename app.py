@@ -1524,52 +1524,6 @@ def zapisz_wiadomosc_w_db(uzytkownik, rola, tresc):
         cursor = conn.cursor()
         cursor.execute('INSERT INTO czat_historia (uzytkownik, rola, tresc) VALUES (?, ?, ?)', (uzytkownik, rola, tresc))
         conn.commit()
-        
-# ZMIANA: Moduł selektywnego ładowania sekcji SYSTEM_RULES_KRETA_ADHD.md w celu oszczędzania tokenów
-@st.cache_data
-def pobierz_slownik_sekcji_regul():
-    sciezka = "SYSTEM_RULES_KRETA_ADHD.md"
-    if not os.path.exists(sciezka):
-        return {}
-    with open(sciezka, "r", encoding="utf-8") as f:
-        tekst = f.read()
-    
-    sekcje = {}
-    wzorce = re.findall(r'<!--\s*SECTION:([A-Z_]+)\s*-->(.*?)<!--\s*END:\1\s*-->', tekst, re.DOTALL)
-    for nazwa, cialo in wzorce:
-        sekcje[nazwa.strip()] = cialo.strip()
-    return sekcje
-
-def dobierz_sekcje_regul_dla_intencji(prompt_l, is_emergency):
-    # ZMIANA: Zwraca wyłącznie sekcje niezbędne dla bieżącej intencji
-    sekcje = pobierz_slownik_sekcji_regul()
-    if not sekcje:
-        return ""
-    
-    if is_emergency:
-        # W emergency prompt systemowy jest nadpisywany bezpośrednio w app.py
-        return ""
-
-    wybrane = [sekcje.get("CORE", "")]
-
-    # Intencja logistyczno-czasowa (przesunięcia, zamiana, kolejność)
-    if any(w in prompt_l for w in ["przesuń", "przesun", "godzin", "zmień czas", "zamień", "zamien", "zamiana", "kolejność", "kolejnosc"]):
-        wybrane.append(sekcje.get("SAFETY_PHYSIOLOGY", ""))
-        wybrane.append(sekcje.get("CRUD_LOGISTICS", ""))
-    # Intencja zakupowa / zaopatrzeniowa
-    elif any(w in prompt_l for w in ["kup", "zakup", "sklep", "market", "rynek", "targ", "laiki"]):
-        wybrane.append(sekcje.get("CRUD_LOGISTICS", ""))
-    # Intencja tworzenia i modyfikacji tras / nowych miejsc
-    elif any(w in prompt_l for w in ["nowa wycieczka", "nowe miejsce", "dodaj krok", "dodaj punkt", "stwórz wycieczkę", "utworz wycieczke", "zaplanuj"]):
-        wybrane.append(sekcje.get("DIALOG_RECOMMENDATIONS", ""))
-        wybrane.append(sekcje.get("SAFETY_PHYSIOLOGY", ""))
-        wybrane.append(sekcje.get("CRUD_LOGISTICS", ""))
-    # Domyślny tryb doradczy (pytania, rekomendacje, brak mutacji bazy)
-    else:
-        wybrane.append(sekcje.get("DIALOG_RECOMMENDATIONS", ""))
-        wybrane.append(sekcje.get("SAFETY_PHYSIOLOGY", ""))
-
-    return "\n\n".join([s for s in wybrane if s])
 
 def wyczysc_historie_czatu_w_db(uzytkownik):
     with get_db() as conn:
@@ -2973,31 +2927,28 @@ def wczytaj_kontekst_zewnetrzny(id_wycieczki):
             ORDER BY CAST(k.krok_wycieczki AS INTEGER) ASC
         '''
         kroki_df = pd.read_sql(query, conn, params=(str(id_wycieczki),))
-    # ZMIANA: Drastyczne odchudzenie promptu - nie wstrzykujemy listy wszystkich wycieczek bazy przy edycji aktywnej trasy
+
+        # ZMIANA: Pobranie spisu wyłącznie tras nieukończonych (odbyta = 0), aby model nie proponował odbytych wycieczek
+        wszystkie_wyc_df = pd.read_sql('SELECT id, tytul_wycieczki, szacowana_godzina_powrotu FROM wycieczka WHERE odbyta = 0 ORDER BY CAST(id AS INTEGER) ASC', conn)
+
     opis = ""
     if not wyc_df.empty:
         w = wyc_df.iloc[0]
-        opis += f"Trasa #{w['id']}: {w.get('tytul_wycieczki')} (Pobudka: {w.get('pobudka')}, Start: {w.get('czas_wyjazdu')}, Koniec: {w.get('szacowana_godzina_powrotu')}).\n"
+        opis += f"Aktywna wycieczka #{w['id']}: {w.get('tytul_wycieczki')} (Pobudka: {w.get('pobudka')}, Wyjazd: {w.get('czas_wyjazdu')}, Powrót: {w.get('szacowana_godzina_powrotu')}).\n"
+        if pd.notna(w.get('calosciowa_taktyka_dnia')) and str(w.get('calosciowa_taktyka_dnia')).strip():
+            opis += f"Aktualna taktyka dnia: {w.get('calosciowa_taktyka_dnia')}\n"
 
     if not kroki_df.empty:
-        opis += "Punkty w trasie:\n"
+        opis += "Kroki i zaplanowane posiłki w planie:\n"
         for _, r in kroki_df.iterrows():
-            pos = f" [{r['posilki']}]" if pd.notna(r['posilki']) and r['posilki'] else ""
-            opis += f"- #{r['krok_wycieczki']}: {r['nazwa']} ({r['okienko_zwiedzania']}){pos}\n"
-
-    return opis
-    if not wyc_df.empty:
-        w = wyc_df.iloc[0]
-        opis += f"Aktywna trasa #{w['id']}: {w.get('tytul_wycieczki')} (Pobudka: {w.get('pobudka')}, Start: {w.get('czas_wyjazdu')}, Koniec: {w.get('szacowana_godzina_powrotu')}).\n"
-
-    if not kroki_df.empty:
-        opis += "Punkty i posiłki w trasie:\n"
-        for _, r in kroki_df.iterrows():
-            pos = f" [{r['posilki']}]" if pd.notna(r['posilki']) and r['posilki'] else ""
-            opis += f"- #{r['krok_wycieczki']}: {r['nazwa']} ({r['okienko_zwiedzania']}){pos}\n"
+            posilki_str = f" [Posiłki: {r['posilki']}]" if pd.notna(r['posilki']) and r['posilki'] else " [Posiłki: brak]"
+            opis += f"- #{r['krok_wycieczki']}: {r['nazwa']} ({r['okienko_zwiedzania']}){posilki_str}\n"
 
     if not wszystkie_wyc_df.empty:
-        opis += "Dostępne trasy: " + ", ".join([f"#{rw['id']} {rw['tytul_wycieczki']}" for _, rw in wszystkie_wyc_df.iterrows()]) + "\n"
+        opis += "\nISTNIEJĄCE WYCIECZKI W BAZIE (UŻYWAJ WYŁĄCZNIE TYCH TYTUŁÓW I ID):\n"
+        for _, rw in wszystkie_wyc_df.iterrows():
+            powrot_info = f" (planowany powrót: {rw['szacowana_godzina_powrotu']})" if pd.notna(rw.get('szacowana_godzina_powrotu')) else ""
+            opis += f"- Wycieczka #{rw['id']}: {rw['tytul_wycieczki']}{powrot_info}\n"
 
     return opis
 
@@ -3061,30 +3012,64 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                 with st.chat_message("user"):
                     st.markdown(prompt)
                 with st.chat_message("assistant"):
-                    # ZMIANA: Dynamiczny dobór sekcji reguł w zależności od intencji (redukcja tokenów i 429)
                     dzisiaj_str = date.today().strftime("%Y-%m-%d")
                     zewnetrzny_kontekst = wczytaj_kontekst_zewnetrzny(akt_wyc_id)
                     
-                    prompt_l = prompt.lower()
-                    czy_polecenie_zapisu = any(w in prompt_l for w in ["dodaj", "zapisz", "wstaw", "wybieram", "utworz", "stwórz"])
-                    slowa_alarmowe = ["stop", "histeri", "głód", "glod", "hangry", "na skraju", "gdzie zjeść", "gdzie zjesc", "meltdown"]
-                    is_emergency = any(w in prompt_l for w in slowa_alarmowe) and not czy_polecenie_zapisu
+                    rules_content = ""
+                    if os.path.exists("SYSTEM_RULES_KRETA_ADHD.md"):
+                        with open("SYSTEM_RULES_KRETA_ADHD.md", "r", encoding="utf-8") as rf:
+                            rules_content = rf.read()
 
-                    dopasowane_reguly = dobierz_sekcje_regul_dla_intencji(prompt_l, is_emergency)
-
-                    system_prompt = f"""Rola: Analityk i doradca AuDHD dla rodzica {uzytkownik}. Data: {dzisiaj_str}. Aktywna trasa #{akt_wyc_id}.
-
-KONTEKST BAZY DANYCH:
+                    system_prompt = f"""Rola: Planer wycieczek - Kreta dla rodzica {uzytkownik}. Data: {dzisiaj_str}. Aktywna wycieczka w tle ID: {akt_wyc_id}.
 {zewnetrzny_kontekst}
 
-ZASADY BIZNESOWE I BEZPIECZEŃSTWO (MODUŁY AKTYWNE):
-{dopasowane_reguly}
+ZASADY SYSTEMOWE:
+{rules_content}
 
-WYTYCZNE DLA WYWOŁAŃ NARZĘDZI:
-- Komendy planowania i tworzenia tras traktuj jako dialog projektowy. Zapis w bazie wykonuj wyłącznie po akceptacji rodzica.
-- W zapytaniach doradczych proponuj dokładnie 2 opcje z bazy (nieodwiedzone).
-- Przy modyfikacji godzin lub kolejności wywołuj bezpośrednio odpowiednie narzędzia bez zbędnych zapytań o pogodę.
-- Zakaz potwierdzania operacji bazodanowych, które nie zakończyły się sukcesem w narzędziu."""
+PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
+# ZMIANA: Rozróżnienie zapytań ogólnych (2 opcje z bazy) od zapytań o konkretny cel (np. Spinalonga)
+1. OBSŁUGA ZAPYTAŃ I REKOMENDACJI:
+   # ZMIANA: Obsługa pytań o konkretną kategorię miejsc (np. plaże) bez mylenia ich z całymi trasami
+   a) Zapytania doradcze i rekomendacje:
+      - Działasz w 100% doradczo. ZAKAZ wywoływania narzędzi CRUD i zerowy zapis przed akceptacją.
+      - Zakaz proponowania wycieczek odbytych (odbyta=1) i miejsc odwiedzonych (odwiedzone=1).
+      - Gdy rodzic pyta o WYCIECZKĘ: podaj dokładnie 2 pozycje z bazy wycieczek (**Wycieczka #[ID]: [Tytuł]**).
+      - Gdy rodzic pyta o MIEJSCE / PLAŻĘ / ATRAKCJĘ (np. „jaka plaża w okolicy?”, „co blisko domku?”): przeszukaj bazę i podaj dokładnie 2 konkretne pozycje z bazy miejsc:
+        * **Miejsce #[ID]: [Nazwa z bazy miejsc]**
+        * 🚗 Dojazd ze Stavros: [czas] | ☀️ Cień: [ochrona] | 🌊 [specyfika AuDHD / zejście do wody]
+      - Zawsze zakończ jednym krótkim pytaniem decyzyjnym dopasowanym do kontekstu.
+   b) Prośba o konkretny cel / nowe miejsce (np. „utwórz wycieczkę na Spinalongę”, „chcę jechać na Balos”):
+      - KATEGORYCZNY ZAKAZ ignorowania celu rodzica i zakaz wklejania dwóch niepowiązanych wycieczek z bazy!
+      - KATEGORYCZNY ZAKAZ tworzenia pustego rekordu w bazie w pierwszym kroku.
+      - Oceń wskazany cel pod kątem AuDHD (długość trasy ze Stavros, ryzyko meltdownu, brak cienia w 11:30–15:30).
+      - Zapytaj rodzica o preferencje do projektu trasy (np. „Możemy to zaplanować z przerwą na obiad w Eloundzie i rejsem z samego rana. Czy taki plan dopracować i przygotować do zapisu?”).
+2. ŻELAZNA REGUŁA PO KAŻDEJ ZMIANIE KROKÓW (CRUD):
+   - Jeśli dodajesz, przesuwasz lub usuwasz JAKIKOLWIEK krok wycieczki, masz BEZWZGLĘDNY OBOWIĄZEK w tej samej serii wywołań uruchomić narzędzie:
+     `edytuj_wycieczke(id="{akt_wyc_id}", calosciowy_opis_wycieczki=..., calosciowa_taktyka_dnia=...)`.
+   - `calosciowy_opis_wycieczki` – zwięzły, zaktualizowany cel dnia uwzględniający nowe punkty.
+   - `calosciowa_taktyka_dnia` – zaktualizowana taktyka: ochrona przed upałem 11:30–15:30, gdzie zaplanowano regenerację/cień, gdzie i kiedy jest bezpieczny obiad oraz prowiant Safe Foods.
+# ZMIANA: Bezwzględny rygor atomowego wywoływania kroków pośrednich (atrakcja + obiad) przy tworzeniu nowej trasy
+3. ZAKAZ OBIADU-WIDMA I SEKWENCJA TWORZENIA TRASY:
+   - Gdy rodzic zaakceptuje plan trasy zawierającej obiad/tawernę (np. Spinalonga + obiad w Eloundzie), masz OBOWIĄZEK wykonać pełną sekwencję w JEDNEJ turze:
+     1) `utworz_nowa_wycieczke(...)` -> pobierz ID nowej wycieczki,
+     2) `dodaj_krok_wycieczki(id_wycieczki=..., nazwa_z_bazy='Główna Atrakcja', ...)`
+     3) `dodaj_krok_wycieczki(id_wycieczki=..., nazwa_z_bazy='Obiad w tawernie / restauracji', ...)`
+   - KATEGORYCZNY ZAKAZ wspominania o obiedzie lub regeneracji w podsumowaniu, jeśli w wykonanych akcjach nie ma osobnego wywołania `dodaj_krok_wycieczki` dla tego posiłku!
+   # ZMIANA: Ścisła reguła dialogowa dla przesuwania godzin posiłków i tawern na późniejsze okna
+   - PRZESUWANIE GODZIN POSIŁKÓW / TAWERN (np. dojazd na 15:00):
+     * Tawerny i restauracje są zacienione i DOZWOLONE w godzinach 11:30–15:30. Nie odrzucaj ich z powodu zakazu słońca.
+     * Jeśli przesunięcie obiadu na 15:00 tworzy lukę >4h bez jedzenia po porannym śniadaniu/lunchboxie, MASZ ZAKAZ natychmiastowej zmiany w bazie oraz ZAKAZ kategorycznej odmowy.
+     * Zwróć się po imieniu ({uzytkownik}), wyjaśnij dlaczego to ryzykowny pomysł (np. 15:00 to bardzo późny obiad, minie za dużo czasu od plaży, dzieci dopadnie wilczy głód i meltdown) i zapytaj decyzyjnie:
+       "Czy mimo to przesunąć godzinę w bazie na 15:00, czy wstawiamy mały lunchbox w aucie/na plaży około 12:00?".
+     * Dopiero po potwierdzeniu rodzica („tak, zmień na 15:00”) wywołaj edycję z flagą pomin_ostrzezenie_slonce=True.
+# ZMIANA: Bezwzględny zakaz samowolnego przekazywania pomin_ostrzezenie_posilku=True przy pierwszej prośbie o usunięcie
+4. STRAŻNIK USUWANIA KROKÓW (Hangry Prevention):
+   - Gdy rodzic pisze „usuń obiad”, ZAKAZ przekazywania parametru pomin_ostrzezenie_posilku=True.
+   - Wywołaj usuniecie z pomin_ostrzezenie_posilku=False – baza automatycznie zablokuje operację.
+   - Zwróć rodzicowi odmowę: wyjaśnij powstanie luki >4h, ryzyko meltdownu i zapytaj: „Gdzie indziej zaplanować posiłek lub mały lunchbox, aby zabezpieczyć dzieci?”.
+   - Dopiero po ponownym, świadomym potwierdzeniu przez rodzica wolno wymusić usunięcie.
+# ZMIANA: Ograniczenie używania imienia użytkownika wyłącznie do opiniowania i oceniania pomysłów
+5. UŻYWANIE IMIENIA: Zakaz zwracania się do użytkownika po imieniu w zwykłych propozycjach, powitaniach czy listach opcji. Zwracaj się po imieniu ({uzytkownik}) WYŁĄCZNIE wtedy, gdy wyrażasz bezpośrednią opinię lub oceniasz czy dany pomysł jest dobry, czy zły/ryzykowny (np. „{uzytkownik}, to bardzo dobry wybór...”, „{uzytkownik}, to ryzykowny pomysł na tę porę dnia...”)."""
 
                     try:
                         with st.status("🧭 Przygotowuję plan...", expanded=True) as status:
@@ -3092,49 +3077,25 @@ WYTYCZNE DLA WYWOŁAŃ NARZĘDZI:
                             client = get_gemini_client(api_key_input)
                             
                             contents = []
-                            # ZMIANA: Dla zwięzłych komend CRUD przekazujemy tylko bieżący prompt (oszczędność TPM)
-                            jest_komenda_operacyjna = any(w in prompt_l for w in ["przesuń", "przesun", "zmień", "zmien", "dodaj", "kup", "usuń", "usun"])
-                            if not jest_komenda_operacyjna:
-                                for m in chat_historia_z_db[-2:]:
-                                    role = "model" if m["role"] in ["assistant", "model"] else "user"
-                                    contents.append(types.Content(role=role, parts=[types.Part.from_text(text=m["content"])]))
+                            for m in chat_historia_z_db[-2:]:
+                                role = "model" if m["role"] in ["assistant", "model"] else "user"
+                                contents.append(types.Content(role=role, parts=[types.Part.from_text(text=m["content"])]))
                             
                             contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
 
-                            # ZMIANA: Programowe wykrycie intencji i dynamiczne przycinanie narzędzi (redukcja 429 Rate Limit)
+                            # ZMIANA: Programowe wykrycie trybu ratunkowego (Hangry Emergency)
                             prompt_l = prompt.lower()
-                            czy_polecenie_zapisu = any(w in prompt_l for w in ["dodaj", "zapisz", "wstaw", "wybieram", "utworz", "stwórz"])
+                            czy_polecenie_zapisu = any(w in prompt_l for w in ["dodaj", "zapisz", "wstaw", "wybieram", "utworz"])
                             slowa_alarmowe = ["stop", "histeri", "głód", "glod", "hangry", "na skraju", "gdzie zjeść", "gdzie zjesc", "meltdown"]
                             is_emergency = any(w in prompt_l for w in slowa_alarmowe) and not czy_polecenie_zapisu
 
-                            # ZMIANA: Usunięcie błędu NameError 'aktywny_system_prompt' i dynamiczny dobór narzędzi
-                            nazwy_aktywnych_narzedzi = set()
-                            # ZMIANA: Poprawa składni i wcięć struktury warunkowej if/else zapobiegająca SyntaxError
-                            nazwy_aktywnych_narzedzi = set()
-                            if is_emergency:
-                                narzedzia_call = None
-                                aktywny_system_prompt = (
-                                    "Jesteś ratownikiem rodziców dzieci z AuDHD na Krecie w trybie awaryjnym (skrajny głód/meltdown). "
-                                    "Odpowiedz natychmiast i zwięźle w 1 kroku: podaj 1-2 najbliższe zacienione tawerny z parkingiem na 2 auta "
-                                    "i bezpiecznym jedzeniem (safe foods: drób, frytki, zero wieprzowiny). Zakaz używania narzędzi."
-                                )
-                            else:
-                                aktywny_system_prompt = system_prompt
-                                if any(w in prompt_l for w in ["przesuń", "przesun", "godzin", "zmień czas", "na godz"]):
-                                    nazwy_aktywnych_narzedzi = {"edytuj_krok_wycieczki"}
-                                elif any(w in prompt_l for w in ["zamień", "zamien", "zamiana", "kolejność", "kolejnosc", "przenieś", "przenies"]):
-                                    nazwy_aktywnych_narzedzi = {"zamien_kroki_miejscami", "przenies_krok_wycieczki"}
-                                elif any(w in prompt_l for w in ["kup", "zakup", "sklep", "market"]):
-                                    nazwy_aktywnych_narzedzi = {"dodaj_produkt_zakupow", "dodaj_wiele_produktow_zakupow", "dodaj_sklep_przy_domku"}
-                                elif any(w in prompt_l for w in ["rynek", "targ", "laiki"]):
-                                    nazwy_aktywnych_narzedzi = {"dodaj_rynek_w_chanii", "usun_rynek_z_wycieczki"}
-                                elif any(w in prompt_l for w in ["nowa wycieczka", "nowe miejsce", "dodaj krok", "dodaj punkt", "stwórz wycieczkę", "utworz wycieczke"]):
-                                    nazwy_aktywnych_narzedzi = {"utworz_nowa_wycieczke", "dodaj_krok_wycieczki", "utworz_nowe_miejsce", "szukaj_miejsca_w_bazie"}
-                                else:
-                                    nazwy_aktywnych_narzedzi = {"szukaj_miejsca_w_bazie", "pobierz_liste_dostepnych_wycieczek", "pobierz_nieprzypisane_miejsca"}
-
-                                przefiltrowane_definicje = [t for t in tools_definitions if t.name in nazwy_aktywnych_narzedzi]
-                                narzedzia_call = [types.Tool(function_declarations=przefiltrowane_definicje)]
+                            # ZMIANA: Odcięcie zbędnych narzędzi i odchudzenie promptu w kryzysie (ochrona limitu tokenów i 429 RPM)
+                            narzedzia_call = None if is_emergency else [types.Tool(function_declarations=tools_definitions)]
+                            aktywny_system_prompt = (
+                                "Jesteś ratownikiem rodziców dzieci z ADHD na Krecie w trybie awaryjnym (skrajny głód/meltdown). "
+                                "Odpowiedz natychmiast i zwięźle w 1 kroku: podaj 1-2 najbliższe zacienione tawerny z parkingiem na 2 auta "
+                                "i bezpiecznym jedzeniem (safe foods). Zakaz używania narzędzi."
+                            ) if is_emergency else system_prompt
 
                             config = types.GenerateContentConfig(
                                 tools=narzedzia_call,
