@@ -20,6 +20,26 @@ from datetime import datetime, date, time, timedelta
 # Stałe koordynatów
 DOMEK_LAT, DOMEK_LON = 35.5914, 24.0918
 SKLEP_LAT, SKLEP_LON = 35.586222, 24.091861
+MARKET_LAT, MARKET_LON = 35.532585622784076, 24.075806829428785
+
+# ZMIANA: Deklaracja harmonogramu i funkcji rynków na górze pliku przed ich wywołaniem w st.sidebar
+LAIKI_SCHEDULE = {
+    0: {"dzien_pl": "Poniedziałek", "opis_miejsca": "Plac Markopoulou / ul. Malinou", "coords": "35.5118, 24.0239"},
+    1: {"dzien_pl": "Wtorek", "opis_miejsca": "Plac Agias Marinas / ul. Plastira", "coords": "35.4962, 24.0148"},
+    2: {"dzien_pl": "Środa", "opis_miejsca": "ul. Therisou 1 / dawny Biochym", "coords": "35.5057, 24.0094"},
+    3: {"dzien_pl": "Czwartek", "opis_miejsca": "Nea Chora – dawna ABEA / Akti Kanari", "coords": "35.5147, 24.0076"},
+    4: None,
+    5: {"dzien_pl": "Sobota", "opis_miejsca": "ul. Minoos przy murach weneckich", "coords": "35.5166, 24.0237"},
+    6: None
+}
+
+def pobierz_dane_rynku_dla_daty(data_str):
+    try:
+        dt = datetime.strptime(str(data_str), "%Y-%m-%d").date()
+        weekday = dt.weekday()
+    except Exception:
+        weekday = date.today().weekday()
+    return LAIKI_SCHEDULE.get(weekday), weekday
 
 # --- 0. BAZA DANYCH (CONCURRENCY & WAL) ---
 def get_db():
@@ -1237,7 +1257,7 @@ with st.sidebar:
     if api_key_input != zapisany_klucz_db and api_key_input.strip():
         zapisz_api_key_uzytkownika(aktualny_uzytkownik, api_key_input)
         
-    # ZMIANA: Stałe przyciski szybkiej nawigacji do domku i sklepu w panelu bocznym
+    # ZMIANA: Rozszerzona szybka nawigacja (Domek, Sklep przy domku, Market, Rynek w Chanii)
     st.markdown("<div style='margin-top: 14px; border-top: 1.5px solid #D6D2C4; padding-top: 10px;'></div>", unsafe_allow_html=True)
     st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 6px;'>🧭 Szybka nawigacja</div>", unsafe_allow_html=True)
     
@@ -1250,7 +1270,25 @@ with st.sidebar:
         "🛒 Sklep", 
         f"https://www.google.com/maps/search/?api=1&query={SKLEP_LAT},{SKLEP_LON}",
         use_container_width=True
-    )    
+    )
+    st.link_button(
+        "🏬 Market", 
+        f"https://www.google.com/maps/search/?api=1&query={MARKET_LAT},{MARKET_LON}",
+        use_container_width=True
+    )
+
+    # Dynamiczne wyliczenie rynku na dany dzień tygodnia z LAIKI_SCHEDULE
+    rynek_dzis, nr_dnia = pobierz_dane_rynku_dla_daty(date.today().strftime("%Y-%m-%d"))
+    if rynek_dzis and rynek_dzis.get("coords"):
+        coords_rynek = rynek_dzis["coords"].replace(" ", "")
+        label_rynek = f"🧺 Rynek ({rynek_dzis['dzien_pl']})"
+        st.link_button(
+            label_rynek,
+            f"https://www.google.com/maps/search/?api=1&query={coords_rynek}",
+            use_container_width=True
+        )
+    else:
+        st.button("🧺 Rynek (dziś nieczynny)", disabled=True, use_container_width=True)  
 
     if aktualny_uzytkownik == "Magda":
         st.markdown("<div style='margin-top: 50px;'></div>", unsafe_allow_html=True)
@@ -1341,24 +1379,6 @@ def render_adventure_header(tytul_belki):
         <div><div class="adventure-title-text">{tytul_belki}</div></div>
     </div>
     """, unsafe_allow_html=True)
-
-LAIKI_SCHEDULE = {
-    0: {"dzien_pl": "Poniedziałek", "opis_miejsca": "Plac Markopoulou / ul. Malinou", "coords": "35.5118, 24.0239"},
-    1: {"dzien_pl": "Wtorek", "opis_miejsca": "Plac Agias Marinas / ul. Plastira", "coords": "35.4962, 24.0148"},
-    2: {"dzien_pl": "Środa", "opis_miejsca": "ul. Therisou 1 / dawny Biochym", "coords": "35.5057, 24.0094"},
-    3: {"dzien_pl": "Czwartek", "opis_miejsca": "Nea Chora – dawna ABEA / Akti Kanari", "coords": "35.5147, 24.0076"},
-    4: None,
-    5: {"dzien_pl": "Sobota", "opis_miejsca": "ul. Minoos przy murach weneckich", "coords": "35.5166, 24.0237"},
-    6: None
-}
-
-def pobierz_dane_rynku_dla_daty(data_str):
-    try:
-        dt = datetime.strptime(str(data_str), "%Y-%m-%d").date()
-        weekday = dt.weekday()
-    except Exception:
-        weekday = date.today().weekday()
-    return LAIKI_SCHEDULE.get(weekday), weekday
 
 DNI_TYGODNIA_PL = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"]
 MIESIACE_PL = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września", "października", "listopada", "grudnia"]
