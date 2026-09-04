@@ -2647,54 +2647,6 @@ tools_definitions = [
         ),
     ),
     types.FunctionDeclaration(
-        name="dodaj_sklep_przy_domku",
-        description="Dodaje sklep w Stavros jako krok wycieczki.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "pozycja": types.Schema(type=types.Type.STRING, description="'start' lub 'koniec'"),
-            },
-            required=["id_wycieczki"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="usun_sklep_z_wycieczki",
-        description="Usuwa sklep z trasy wycieczki.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "pozycja": types.Schema(type=types.Type.STRING, description="'start' lub 'koniec'"),
-            },
-            required=["id_wycieczki"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="dodaj_rynek_w_chanii",
-        description="Dodaje targ miejski (Laiki) w Chanii do trasy.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "pozycja": types.Schema(type=types.Type.STRING, description="'start' lub 'koniec'"),
-            },
-            required=["id_wycieczki"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="usun_rynek_z_wycieczki",
-        description="Usuwa targ miejski (Laiki) z trasy.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "pozycja": types.Schema(type=types.Type.STRING, description="'start' lub 'koniec'"),
-            },
-            required=["id_wycieczki"]
-        ),
-    ),
-    types.FunctionDeclaration(
         name="dodaj_notatke",
         description="Dodaje notatkę do wycieczki lub miejsca.",
         parameters=types.Schema(
@@ -2909,10 +2861,6 @@ NARZEDZIA_DISPATCHER = {
     "utworz_nowe_miejsce": lambda args: utworz_nowe_miejsce(**args),
     "utworz_nowa_wycieczke": lambda args: utworz_nowa_wycieczke(**args),
     "sprawdz_pogode": lambda args: pobierz_szczegoly_pogody_dla_godziny(**args) or {"error": "Brak danych pogodowych."},
-    "dodaj_sklep_przy_domku": lambda args: dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki=args.get("id_wycieczki"), pozycja=args.get("pozycja", "koniec")),
-    "usun_sklep_z_wycieczki": lambda args: usun_sklep_z_wycieczki_handler(args.get("id_wycieczki"), pozycja=args.get("pozycja")),
-    "dodaj_rynek_w_chanii": lambda args: dodaj_rynek_w_chanii_do_wycieczki(id_wycieczki=args.get("id_wycieczki"), pozycja=args.get("pozycja", "start")),
-    "usun_rynek_z_wycieczki": lambda args: usun_rynek_z_wycieczki_handler(args.get("id_wycieczki"), pozycja=args.get("pozycja")),
     "dodaj_notatke": lambda args: dodaj_notatke(**args),
     "edytuj_wycieczke": lambda args: edytuj_wycieczke(**args),
     "usun_wycieczke": lambda args: usun_wycieczke(args.get("id_wycieczki")),
@@ -3265,8 +3213,6 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                         user_friendly_actions.append("🧭 Utworzono nową wycieczkę w bazie")
                                     elif "utworz_nowe_miejsce" in act:
                                         user_friendly_actions.append("🏛️ Zarejestrowano nowe miejsce w bazie")
-                                    elif "dodaj_sklep" in act:
-                                        user_friendly_actions.append("🛒 Dodano postój w sklepie")
                                     elif "edytuj_wycieczke" in act:
                                         user_friendly_actions.append("⏱️ Przeliczono godziny i bufor sjesty")
 
@@ -3766,74 +3712,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
     st.markdown('<div class="section-unified-header">🛒 Zaopatrzenie</div>', unsafe_allow_html=True)
     df_wszystkie_zakupy = zakupy_wszystkie_df
 
-    with st.expander("🛒 Zaopatrzenie", expanded=False):
-        st.markdown("<div style='font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 6px;'>⚡ Szybkie przystanki na trasie</div>", unsafe_allow_html=True)
-        
-        all_k_list = [r for _, r in kroki_df.iterrows()]
-        total_k_count = len(all_k_list)
-
-        has_shop_start = any("sklep" in str(r['nazwa']).lower() and int(r['krok_wycieczki']) in [1, 2] for r in all_k_list)
-        has_market_start = any(("rynek" in str(r['nazwa']).lower() or "targ" in str(r['nazwa']).lower()) and int(r['krok_wycieczki']) in [1, 2] for r in all_k_list)
-
-        has_shop_end = any("sklep" in str(r['nazwa']).lower() and int(r['krok_wycieczki']) >= max(total_k_count - 3, 1) for r in all_k_list)
-        has_market_end = any(("rynek" in str(r['nazwa']).lower() or "targ" in str(r['nazwa']).lower()) and int(r['krok_wycieczki']) >= max(total_k_count - 3, 1) for r in all_k_list)
-
-        rynek_dla_daty, _ = pobierz_dane_rynku_dla_daty(planowana_data_val)
-        rynek_czynny = (rynek_dla_daty is not None)
-
-        col_qs_am, col_qs_pm = st.columns(2)
-        with col_qs_am:
-            st.markdown("<div style='font-size: 7.5pt; font-weight: 800; color: #5D7A60; text-transform: uppercase; margin-bottom: 4px;'>🌅 Po wyjeździe</div>", unsafe_allow_html=True)
-            if has_shop_start:
-                if st.button("🗑️ Usuń sklep rano", key=f"btn_del_shop_am_{wycieczka_id}", use_container_width=True):
-                    usun_sklep_z_wycieczki_handler(wycieczka_id, pozycja="start")
-                    st.session_state["flash_toast"] = "🗑️ Usunięto Sklep po wyjeździe!"
-                    st.rerun()
-            else:
-                if st.button("🛒 Sklep rano", key=f"btn_add_shop_am_{wycieczka_id}", use_container_width=True):
-                    dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="start")
-                    st.session_state["flash_toast"] = "🌅 Dodano Sklep po wyjeździe!"
-                    st.rerun()
-            
-            if has_market_start:
-                if st.button("🗑️ Usuń rynek rano", key=f"btn_del_market_am_{wycieczka_id}", use_container_width=True):
-                    usun_rynek_z_wycieczki_handler(wycieczka_id, pozycja="start")
-                    st.session_state["flash_toast"] = "🗑️ Usunięto Rynek rano!"
-                    st.rerun()
-            else:
-                btn_market_am_label = "🛒 Rynek rano" if rynek_czynny else "🛒 Rynek (nieczynny)"
-                if st.button(btn_market_am_label, key=f"btn_add_market_am_{wycieczka_id}", use_container_width=True, disabled=(not rynek_czynny), help=f"Lokalizacja: {rynek_dla_daty['opis_miejsca']}" if rynek_czynny else "Dziś brak targu w Chanii"):
-                    dodaj_rynek_w_chanii_do_wycieczki(wycieczka_id, pozycja="start")
-                    st.session_state["flash_toast"] = f"🌅 Dodano Rynek w Chanii ({rynek_dla_daty['dzien_pl']})!"
-                    st.rerun()
-
-        with col_qs_pm:
-            st.markdown("<div style='font-size: 7.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;'>🌇 Przed powrotem</div>", unsafe_allow_html=True)
-            if has_shop_end:
-                if st.button("🗑️ Usuń sklep powrót", key=f"btn_del_shop_pm_{wycieczka_id}", use_container_width=True):
-                    usun_sklep_z_wycieczki_handler(wycieczka_id, pozycja="koniec")
-                    st.session_state["flash_toast"] = "🗑️ Usunięto Sklep przed powrotem!"
-                    st.rerun()
-            else:
-                if st.button("🛒 Sklep powrót", key=f"btn_add_shop_pm_{wycieczka_id}", use_container_width=True):
-                    dodaj_sklep_przy_domku_do_wycieczki(wycieczka_id, pozycja="koniec")
-                    st.session_state["flash_toast"] = "🌇 Dodano Sklep przed powrotem!"
-                    st.rerun()
-            
-            if has_market_end:
-                if st.button("🗑️ Usuń rynek powrót", key=f"btn_del_market_pm_{wycieczka_id}", use_container_width=True):
-                    usun_rynek_z_wycieczki_handler(wycieczka_id, pozycja="koniec")
-                    st.session_state["flash_toast"] = "🗑️ Usunięto Rynek powrót!"
-                    st.rerun()
-            else:
-                btn_market_pm_label = "🛒 Rynek powrót" if rynek_czynny else "🛒 Rynek (nieczynny)"
-                if st.button(btn_market_pm_label, key=f"btn_add_market_pm_{wycieczka_id}", use_container_width=True, disabled=(not rynek_czynny), help=f"Lokalizacja: {rynek_dla_daty['opis_miejsca']}" if rynek_czynny else "Dziś brak targu w Chanii"):
-                    dodaj_rynek_w_chanii_do_wycieczki(wycieczka_id, pozycja="koniec")
-                    st.session_state["flash_toast"] = f"🌇 Dodano Rynek w Chanii ({rynek_dla_daty['dzien_pl']})!"
-                    st.rerun()
-
-        st.markdown("<div style='border-top: 1px solid #D6CEBC; margin: 10px 0 8px 0;'></div>", unsafe_allow_html=True)
-
+    with st.expander("🛒 Zakupy", expanded=False):
         with st.form(key=f"form_add_shopping_item_{wycieczka_id}", clear_on_submit=True):
             st.markdown("<div style='font-size: 9pt; font-weight: 800; color: #8C5338; margin-bottom: 3px;'>➕ Dodaj nową pozycję do listy</div>", unsafe_allow_html=True)
             col_nazwa, col_ilosc = st.columns([2, 1])
