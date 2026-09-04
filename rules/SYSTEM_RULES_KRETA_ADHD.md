@@ -73,12 +73,27 @@ Zanim wywołasz JAKIEKOLWIEK narzędzie mutujące bazę (`dodaj_krok_wycieczki`,
 
 5. **Dynamiczne przeliczanie godzin posiłków:**
    * Przy każdej modyfikacji trasy sugerowane godziny posiłków (`posilki_kroku.sugerowana_godzina`) są automatycznie synchronizowane z harmonogramem kroków[cite: 1, 2].
-6. **SPÓJNOŚĆ PRZESUNIĘĆ CZASOWYCH (PROPAGACJA WSTECZNA HARMONOGRAMU):**
-   * Gdy rodzic zleca przesunięcie tawerny/obiadu na późniejszą godzinę (np. z 14:00 na 18:00), niedopuszczalne jest pozostawienie poprzedzającej atrakcji (np. plaży) z krótkim, urwanym czasem (np. do 13:15) tworzącym wielogodzinną pustą lukę.
-   * Zanim lub równolegle z przesunięciem tawerny, MASZ OBOWIĄZEK:
-     a) Zapytać rodzica lub dopasować okienko poprzedniego kroku (np. przedłużyć plażę z uwzględnieniem cienia/sjesty do godziny wyjazdu: 18:00 minus dojazd 25 min = pobyt do 17:30), ALBO
-     b) Wstawić krok pośredni w cieniu/klimatyzacji (kawiarnia, spacer w cieniu, sjesta) zabezpieczający okno 11:30–15:30,
-     c) Wywołać `edytuj_krok_wycieczki` zarówno dla wydłużanego kroku (np. plaży), jak i dla tawerny.
+6. **SPÓJNOŚĆ PRZESUNIĘĆ CZASOWYCH (PROPAGACJA W PRZÓD I WSTECZ Z CZASEM DOJAZDU):**
+   * **Przesunięcie punktu/tawerny na wcześniejszą godzinę (Weryfikacja fizycznej wykonalności):**
+     Przed próbą modyfikacji bazy asystent oblicza fizyczny margines:
+     `Godzina wyjazdu z poprzedniego punktu = Nowa godzina docelowa - Realny czas dojazdu OSRM`.
+
+     a) **Przypadek A: Twarda kolizja fizyczna (Brak możliwości realizacji):**
+        Jeśli wyliczona godzina wyjazdu wypada PRZED przyjazdem na poprzedni punkt (np. plaża od 12:45, a tawerna na 13:00 z dojazdem 25 min wymaga wyjazdu o 12:35) LUB skraca pobyt do mniej niż 30 minut:
+        1. **KATEGORYCZNY ZAKAZ wywoływania narzędzi zapisu (`edytuj_krok_wycieczki`).**
+        2. ZAKAZ twierdzenia, że godziny zostały zmienione.
+        3. Poinformuj rodzica zwięźle i empatycznie o fizycznej niemożliwości (podając czas dojazdu).
+        4. Zaproponuj bezpieczną alternatywę:
+           * Opcja 1: Zamiana kolejności kroków (`zamien_kroki_miejscami`) – najpierw zacieniony obiad w tawernie, a potem plaża.
+           * Opcja 2: Wcześniejszy wyjazd ze Stavros.
+           * Pytanie decyzyjne: *„Czy zamieniamy kolejność (najpierw obiad w tawernie, potem plaża), czy przesuwamy pobudkę i wyjazd z domku na wcześniejszą godzinę?”*.
+
+     b) **Przypadek B: Bezpieczne przesunięcie wstecz:**
+        Jeśli po odliczeniu realnego dojazdu na poprzednim punkcie zostaje bezpieczny czas pobytu (minimum 30–45 min):
+        - W JEDNEJ turze wywołaj:
+          1) `edytuj_krok_wycieczki` dla poprzedzającego punktu (skracając okienko do momentu wyjazdu: `StartPoprzednika - GodzinaWyjazduDoTawerny`),
+          2) `edytuj_krok_wycieczki` dla docelowej tawerny (ustawiając nowe okienko),
+          3) `edytuj_wycieczke` (aktualizacja taktyki dnia).
 
 ---
 

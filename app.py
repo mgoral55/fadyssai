@@ -424,7 +424,7 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
             end_times[i] = start_times[i] + timedelta(minutes=czasy_pobytu[i])
             cur_dt = end_times[i]
     else:
-        # ZMIANA: Propagacja wsteczna sztywnych godzin – dociąganie pobytu na plaży/atrakcji do godziny wyjazdu do tawerny
+        # ZMIANA: Propagacja czasowa w przód i w tył uwzględniająca realny czas dojazdu OSRM i chronologię
         cur_dt = dt_wyj
         for i in range(len(kroki)):
             if i == 0:
@@ -432,16 +432,26 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
             else:
                 okienko_istniejace = kroki[i][3]
                 godz_manualna = sparsuj_godzine_minuty(okienko_istniejace.split("-")[0].strip()) if okienko_istniejace and "-" in str(okienko_istniejace) else None
+
                 if godz_manualna and not force_wyjazd_str and not force_powrot_str:
                     dt_manual = datetime(2026, 1, 1, godz_manualna[0], godz_manualna[1])
-                    if dt_manual > cur_dt:
-                        # Jeśli przesunięto punkt w przód (np. tawernę na 18:00), dociągamy koniec poprzedniego kroku (plaży) do momentu wyjazdu:
-                        if i > 1 and end_times[i - 1] is not None:
-                            dojazd_poprzedni = dojazdy_minuty[i - 1] if (i - 1) < len(dojazdy_minuty) else 25
-                            nowy_end_poprzedniego = dt_manual - timedelta(minutes=dojazd_poprzedni)
-                            if nowy_end_poprzedniego > start_times[i - 1]:
-                                end_times[i - 1] = nowy_end_poprzedniego
-                        cur_dt = dt_manual
+                    dojazd_z_poprzedniego = dojazdy_minuty[i - 1] if (i - 1) < len(dojazdy_minuty) else 25
+
+                    if dt_manual != cur_dt:
+                        if i >= 1 and end_times[i - 1] is not None:
+                            wymagany_koniec_poprzednika = dt_manual - timedelta(minutes=dojazd_z_poprzedniego)
+                            # Jeśli poprzedni punkt zachowuje co najmniej 20 minut pobytu, dociągamy go:
+                            if wymagany_koniec_poprzednika >= start_times[i - 1] + timedelta(minutes=20):
+                                end_times[i - 1] = wymagany_koniec_poprzednika
+                                cur_dt = dt_manual
+                            elif dt_manual > cur_dt:
+                                # Przesunięcie w przód zawsze bezpiecznie przesuwa strumień
+                                cur_dt = dt_manual
+                            else:
+                                # Przy twardej kolizji wstecznej nie niszczymy osi czasu: punkt startuje natychmiast po poprzedniku + dojazd
+                                cur_dt = max(dt_manual, end_times[i - 1] + timedelta(minutes=dojazd_z_poprzedniego))
+                        else:
+                            cur_dt = dt_manual
 
                 start_times[i] = cur_dt
                 end_times[i] = cur_dt + timedelta(minutes=czasy_pobytu[i])
@@ -2151,6 +2161,52 @@ def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, okienko_zwiedzania, pomi
         ok, err_msg = sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, k_nazwa, okienko_zwiedzania, pomin_ostrzezenie_slonce=pomin_ostrzezenie_slonce)
         if not ok:
             return {"success": False, "blocked_by_guardrail": True, "error": err_msg}
+            
+        # ZMIANA: Twarda walidacja fizycznej wykonalności przesunięcia z uwzględnieniem czasu dojazdu OSRM
+        cursor.execute('''
+            SELECT id, nazwa, okienko_zwiedzania, wspolrzedne 
+            FROM krok_wycieczki 
+            WHERE id_wycieczki = ? 
+            ORDER BY CAST(krok_wycieczki AS INTEGER) ASC, id ASC
+        ''', (str(id_wycieczki),))
+        wszystkie_kroki_walidacja = cursor.fetchall()
+
+        krok_idx = next((idx for idx, r in enumerate(wszystkie_kroki_walidacja) if r[0] == k_id), None)
+        if krok_idx is not None and krok_idx > 0:
+            poprz_krok = wszystkie_kroki_walidacja[krok_idx - 1]
+            poprz_okno = poprz_krok[2]
+            g_docelowy_start = sparsuj_godzine_minuty(okienko_zwiedzania.split("-")[0].strip())
+            g_poprz_start = sparsuj_godzine_minuty(poprz_okno.split("-")[0].strip()) if poprz_okno and "-" in poprz_okno else None
+
+            if g_docelowy_start and g_poprz_start:
+                lat1, lon1 = sparsuj_wspolrzedne(poprz_krok[3])
+                lat2, lon2 = sparsuj_wspolrzedne(wszystkie_kroki_walidacja[krok_idx][3])
+
+                if lat1 is not None and lon1 is not None and lat2 is not None and lon2 is not None:
+                    tekst_dojazdu, minuty_dojazdu = oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2)
+                else:
+                    tekst_dojazdu, minuty_dojazdu = "~25 min", 25
+
+                dt_docelowy_start = datetime(2026, 1, 1, g_docelowy_start[0], g_docelowy_start[1])
+                dt_poprz_start = datetime(2026, 1, 1, g_poprz_start[0], g_poprz_start[1])
+
+                wymagany_wyjazd_z_poprz = dt_docelowy_start - timedelta(minutes=minuty_dojazdu)
+                czas_na_poprzednim_min = int((wymagany_wyjazd_z_poprz - dt_poprz_start).total_seconds() / 60)
+
+                # Blokada: wyjazd musiałby nastąpić przed dotarciem lub zostaje mniej niż 25 min na pobyt
+                if czas_na_poprzednim_min < 25:
+                    return {
+                        "success": False,
+                        "blocked_by_guardrail": True,
+                        "error": (
+                            f"⛔ FIZYCZNA KOLIZJA CZASOWA: Nie można przesunąć punktu '{k_nazwa}' na {okienko_zwiedzania}. "
+                            f"Poprzedni punkt ('{poprz_krok[1]}') rozpoczyna się o {g_poprz_start[0]:02d}:{g_poprz_start[1]:02d}, "
+                            f"a dojazd stamtąd zajmuje {tekst_dojazdu}. Aby zdążyć na {g_docelowy_start[0]:02d}:{g_docelowy_start[1]:02d}, "
+                            f"należałoby wyjechać o {wymagany_wyjazd_z_poprz.strftime('%H:%M')}, co daje zaledwie {max(czas_na_poprzednim_min, 0)} min pobytu. "
+                            f"💡 ZALECENIE: Zastosuj 'zamien_kroki_miejscami' (najpierw obiad/tawerna w cieniu, potem plaża) "
+                            f"lub przesuń godzinę wyjazdu z domku."
+                        )
+                    }
 
         cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (okienko_zwiedzania, k_id))
         conn.commit()
