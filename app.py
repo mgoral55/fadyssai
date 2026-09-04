@@ -412,6 +412,7 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
         start_times[0] = dt_pob
 
     elif force_wyjazd_str:
+        # ZMIANA: Przeliczanie w przód z wymuszonym wyjazdem
         g_wyj = sparsuj_godzine_minuty(force_wyjazd_str) or (6, 30)
         dt_wyj = datetime(2026, 1, 1, g_wyj[0], g_wyj[1])
         dt_pob = dt_wyj - timedelta(minutes=minuty_ogarniania)
@@ -424,39 +425,51 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
             end_times[i] = start_times[i] + timedelta(minutes=czasy_pobytu[i])
             cur_dt = end_times[i]
     else:
-        # ZMIANA: Propagacja czasowa w przód i w tył uwzględniająca realny czas dojazdu OSRM i chronologię
-        cur_dt = dt_wyj
-        for i in range(len(kroki)):
-            if i == 0:
-                start_times[i], end_times[i] = dt_pob, dt_wyj
-            else:
-                okienko_istniejace = kroki[i][3]
-                godz_manualna = sparsuj_godzine_minuty(okienko_istniejace.split("-")[0].strip()) if okienko_istniejace and "-" in str(okienko_istniejace) else None
+        # ZMIANA: Dwukierunkowa propagacja z zachowaniem kotwic czasowych edytowanych kroków
+        kotwica_idx = None
+        dt_kotwica_start = None
 
-                if godz_manualna and not force_wyjazd_str and not force_powrot_str:
-                    dt_manual = datetime(2026, 1, 1, godz_manualna[0], godz_manualna[1])
-                    dojazd_z_poprzedniego = dojazdy_minuty[i - 1] if (i - 1) < len(dojazdy_minuty) else 25
+        for idx in range(1, len(kroki) - 1):
+            okn = kroki[idx][3]
+            if okn and "-" in str(okn):
+                g_manual = sparsuj_godzine_minuty(str(okn).split("-")[0].strip())
+                if g_manual:
+                    kotwica_idx = idx
+                    dt_kotwica_start = datetime(2026, 1, 1, g_manual[0], g_manual[1])
+                    break
 
-                    if dt_manual != cur_dt:
-                        if i >= 1 and end_times[i - 1] is not None:
-                            wymagany_koniec_poprzednika = dt_manual - timedelta(minutes=dojazd_z_poprzedniego)
-                            # Jeśli poprzedni punkt zachowuje co najmniej 20 minut pobytu, dociągamy go:
-                            if wymagany_koniec_poprzednika >= start_times[i - 1] + timedelta(minutes=20):
-                                end_times[i - 1] = wymagany_koniec_poprzednika
-                                cur_dt = dt_manual
-                            elif dt_manual > cur_dt:
-                                # Przesunięcie w przód zawsze bezpiecznie przesuwa strumień
-                                cur_dt = dt_manual
-                            else:
-                                # Przy twardej kolizji wstecznej nie niszczymy osi czasu: punkt startuje natychmiast po poprzedniku + dojazd
-                                cur_dt = max(dt_manual, end_times[i - 1] + timedelta(minutes=dojazd_z_poprzedniego))
-                        else:
-                            cur_dt = dt_manual
+        if kotwica_idx is not None and dt_kotwica_start is not None:
+            # Propagacja WSTECZ od zakotwiczonego kroku do wyjazdu i pobudki
+            start_times[kotwica_idx] = dt_kotwica_start
+            end_times[kotwica_idx] = dt_kotwica_start + timedelta(minutes=czasy_pobytu[kotwica_idx])
 
+            for i in range(kotwica_idx - 1, 0, -1):
+                end_times[i] = start_times[i + 1] - timedelta(minutes=dojazdy_minuty[i])
+                start_times[i] = end_times[i] - timedelta(minutes=czasy_pobytu[i])
+
+            dt_wyj = start_times[1] - timedelta(minutes=dojazdy_minuty[0])
+            dt_pob = dt_wyj - timedelta(minutes=minuty_ogarniania)
+            start_times[0], end_times[0] = dt_pob, dt_wyj
+            pobudka_z_bazy = dt_pob.strftime("%H:%M")
+
+            # Propagacja W PRZÓD od zakotwiczonego kroku do powrotu
+            cur_dt = end_times[kotwica_idx]
+            for i in range(kotwica_idx + 1, len(kroki)):
+                cur_dt = cur_dt + timedelta(minutes=dojazdy_minuty[i - 1])
                 start_times[i] = cur_dt
-                end_times[i] = cur_dt + timedelta(minutes=czasy_pobytu[i])
-            if i < len(kroki) - 1:
-                cur_dt = end_times[i] + timedelta(minutes=dojazdy_minuty[i])
+                end_times[i] = start_times[i] + timedelta(minutes=czasy_pobytu[i])
+                cur_dt = end_times[i]
+        else:
+            # Standardowy przebieg liniowy w przód
+            cur_dt = dt_wyj
+            for i in range(len(kroki)):
+                if i == 0:
+                    start_times[i], end_times[i] = dt_pob, dt_wyj
+                else:
+                    start_times[i] = cur_dt
+                    end_times[i] = cur_dt + timedelta(minutes=czasy_pobytu[i])
+                if i < len(kroki) - 1:
+                    cur_dt = end_times[i] + timedelta(minutes=dojazdy_minuty[i])
 
     with get_db() as conn:
         cursor = conn.cursor()
@@ -2148,15 +2161,21 @@ def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, okienko_zwiedzania, pomi
             return {"success": False, "error": f"Nie znaleziono kroku: {krok_wycieczki}"}
         k_id, k_nazwa = k_info
 
-        # ZMIANA: Automatyczna konwersja pojedynczej godziny (np. "14:30") na pełne okienko czasowe z zachowaniem domyślnego czasu pobytu
+     # ZMIANA: Usunięcie IndentationError i ujednolicenie wcięć (dokładnie 8 spacji) dla translacji okienka
         okienko_str = str(okienko_zwiedzania).strip()
         if "-" not in okienko_str:
-            g_parsed = sparsuj_godzine_minuty(okienko_str)
+            czas_trwania = 60 if any(w in k_nazwa.lower() for w in ["knossos", "muzeum", "pałac", "tawerna", "restauracja", "obiad"]) else 45
+            okienko_clean = okienko_str.lower().replace("do", "").strip()
+            g_parsed = sparsuj_godzine_minuty(okienko_clean)
             if g_parsed:
-                czas_trwania = 60 if any(w in k_nazwa.lower() for w in ["tawerna", "restauracja", "obiad", "lunch"]) else 45
-                dt_s = datetime(2026, 1, 1, g_parsed[0], g_parsed[1])
-                dt_e = dt_s + timedelta(minutes=czas_trwania)
-                okienko_zwiedzania = f"{dt_s.strftime('%H:%M')} - {dt_e.strftime('%H:%M')}"
+                if "do" in okienko_str.lower():
+                    dt_e = datetime(2026, 1, 1, g_parsed[0], g_parsed[1])
+                    dt_s = dt_e - timedelta(minutes=czas_trwania)
+                    okienko_zwiedzania = f"{dt_s.strftime('%H:%M')} - {dt_e.strftime('%H:%M')}"
+                else:
+                    dt_s = datetime(2026, 1, 1, g_parsed[0], g_parsed[1])
+                    dt_e = dt_s + timedelta(minutes=czas_trwania)
+                    okienko_zwiedzania = f"{dt_s.strftime('%H:%M')} - {dt_e.strftime('%H:%M')}"                                                         
 
         ok, err_msg = sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, k_nazwa, okienko_zwiedzania, pomin_ostrzezenie_slonce=pomin_ostrzezenie_slonce)
         if not ok:

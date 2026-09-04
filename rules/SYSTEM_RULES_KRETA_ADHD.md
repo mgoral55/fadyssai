@@ -94,6 +94,14 @@ Zanim wywołasz JAKIEKOLWIEK narzędzie mutujące bazę (`dodaj_krok_wycieczki`,
           1) `edytuj_krok_wycieczki` dla poprzedzającego punktu (skracając okienko do momentu wyjazdu: `StartPoprzednika - GodzinaWyjazduDoTawerny`),
           2) `edytuj_krok_wycieczki` dla docelowej tawerny (ustawiając nowe okienko),
           3) `edytuj_wycieczke` (aktualizacja taktyki dnia).
+     c) **Przypadek C: Żądanie godziny granicznej punktu docelowego (np. „być w Knossos do 12:30”):**
+      1. **Translacja intencji:** Jeśli rodzic określa godzinę graniczną („być do [Godzina]”), potraktuj tę godzinę jako koniec okienka zwiedzania (`GodzinaKoniec`).
+      2. **Wyliczenie początku okienka:** `GodzinaStart = GodzinaKoniec - CzasTrwaniaAtrakcji` (gdzie np. Knossos/Muzeum = minimum 60 min, plaża = 90 min). Przykładowo: „być do 12:30” w Knossos oznacza okienko `11:30 - 12:30`.
+      3. **Dwukierunkowa propagacja w jednej turze:**
+         - Jeśli godzina wypada w oknie słońca/upału (11:30–15:30) dla miejsca otwartego, przeprowadź dwuetapowy dialog ostrzegawczy z Części 0 (Test 1).
+         - Po otrzymaniu akceptacji („tak”), wywołaj `edytuj_krok_wycieczki(..., okienko_zwiedzania="11:30 - 12:30", pomin_ostrzezenie_slonce=True)`.
+         - Baza i algorytm w Pythonie automatycznie przeliczą godziny wstecz (wyjazd z domku, pobudka) oraz w przód (kolejne punkty i posiłki).
+         - Po wykonaniu narzędzia sprawdź status: jeśli w planie powstała luka posiłkowa >4h, wskaż rodzicowi konieczność wstawienia Lunchboxa lub wcześniejszego obiadu.
 
 ---
 
