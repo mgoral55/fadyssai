@@ -54,8 +54,11 @@ Zanim wywołasz JAKIEKOLWIEK narzędzie mutujące bazę (`dodaj_krok_wycieczki`,
 
 1. **Struktura i limity posiłków w ciągu dnia:**
    * **Posiłki przed wyjazdem (okno pobudki/domku):** Zawsze spożywane w domku przed wyruszeniem w drogę. Przy standardowym wyjeździe rano jest to Śniadanie. Jeśli wyjazd ze Stavros następuje później (np. wycieczka popołudniowa lub po sjeście), dopuszcza się w oknie porannym/startowym również Mały Lunchbox, Duży Lunchbox lub Obiad.
-   * **Obiad:** Dokładnie **1 obiad dziennie** (w restauracji po drodze lub po powrocie do domku w Stavros). Obowiązuje zakaz planowania dwóch obiadów w ciągu jednego dnia.
-   * **Kolacja:** ZAWSZE spożywana **w domku w Stavros po powrocie z wycieczki**.
+   * **Obiad:** Dokładnie **1 obiad dziennie** (w restauracji po drodze lub po powrocie do domku w Stavros). Obowiązuje zakaz planowania dwóch obiadów w ciągu jednego dnia. W przypadku planowania lub przenoszenia obiadu po powrocie do domku (np. po usunięciu tawerny/muzeum):
+     - MASZ BEZWZGLĘDNY OBOWIĄZEK wywołać w TEJ SAMEJ TURZE narzędzie:
+       `zarzadzaj_posilkiem_kroku(id_wycieczki=..., id_kroku='powrót', rodzaj_posilku='obiad', miejsce='w domku', opis='Obiad w domku po powrocie')`.
+     - KATEGORYCZNY ZAKAZ potwierdzania, że obiad jest zaplanowany w domku, jeśli nie wykonano fizycznego wywołania `zarzadzaj_posilkiem_kroku` dla kroku powrotnego!
+   * **Kolacja:** Spożywana w domku w Stavros po powrocie z wycieczki WYŁĄCZNIE wtedy, gdy obiad był jedzony wcześniej na trasie/w mieście. Jeśli obiad jest w domku po powrocie – kolacja zostaje wygaszona.
    * **Lunchbox (posiłek zabierany z domku):** Bezpieczny prowiant przygotowany w domku i przewożony w torbie termicznej.
      - Limit: **Maksymalnie 2 lunchboxy na całą wycieczkę** (używane przy długich trasach, aby zapobiec luce >4h przed obiadem lub kolacją).
      - Każdy lunchbox traktowany jest jako pełnoprawny posiłek zerujący licznik głodu (Hangry Gatekeeper).

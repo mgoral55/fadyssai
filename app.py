@@ -489,10 +489,15 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
                 p_rodz_l = str(p_rodzaj).lower() if p_rodzaj else ""
                 if 'śniadan' in p_rodz_l or 'sniadan' in p_rodz_l:
                     nowa_godz_p = pobudka_z_bazy
-                elif 'kolacja' in p_rodzaj:
+                elif 'kolacja' in p_rodz_l:
+                    # ZMIANA: Kolacja w domku po powrocie zaczyna się 30 min po dotarciu na miejsce
                     nowa_godz_p = (start_times[-1] + timedelta(minutes=30)).strftime("%H:%M") if i == last_idx else s_str
                 elif 'obiad' in p_rodz_l or 'lunch' in p_rodz_l or 'duzy' in p_rodz_l:
-                    nowa_godz_p = f"{s_str} - {e_str}"
+                    # ZMIANA: Posiłek jedzony w domku po powrocie zaczyna się pół godziny po powrocie (+30 min buforu)
+                    if i == last_idx:
+                        nowa_godz_p = (start_times[-1] + timedelta(minutes=30)).strftime("%H:%M")
+                    else:
+                        nowa_godz_p = f"{s_str} - {e_str}"
                 else:
                     nowa_godz_p = s_str
                 cursor.execute('UPDATE posilki_kroku SET sugerowana_godzina = ? WHERE id = ?', (nowa_godz_p, p_id))
@@ -1207,7 +1212,7 @@ with st.sidebar:
             "gemini-3.5-flash-lite",
             "gemini-3.6-flash"
         ], 
-        index=0
+        index=1
     )
     # ZMIANA: Odczyt klucza powiązanego z użytkownikiem z bazy SQLite lub fallback do env
     zapisany_klucz_db = pobierz_api_key_uzytkownika(aktualny_uzytkownik)
@@ -1345,9 +1350,15 @@ def sformatuj_date_pl(data_str):
 def formatuj_posilki_kroku(df_pos):
     if df_pos.empty:
         return ""
+    # ZMIANA: Wykluczenie kolacji, jeśli w danym kroku znajduje się obiad (obiad w domku zastępuje kolację)
+    rodzaje_w_kroku = [str(r).strip().lower() for r in df_pos['rodzaj_posilku'].dropna()]
+    ma_obiad = any('obiad' in r or 'lunch' in r for r in rodzaje_w_kroku)
+
     posiłki_str = []
     for _, prow in df_pos.iterrows():
         p_rodzaj = str(prow.get('rodzaj_posilku', '')).strip().lower()
+        if ma_obiad and 'kolacja' in p_rodzaj:
+            continue
         p_godz = str(prow.get('sugerowana_godzina', '')).strip()
         p_opis = str(prow.get('opis', '')).strip()
         
@@ -1672,14 +1683,37 @@ def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df, df_wszystkie_miejs
     return grupy
 
 def znajdz_id_kroku_w_db(cursor, id_wycieczki, identyfikator):
-    ident_str = str(identyfikator).strip().lower()
-    cursor.execute('SELECT id, krok_wycieczki, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?', (str(id_wycieczki),))
+    # ZMIANA: Oczyszczenie identyfikatora z formatowania modelu (np. "#2", "krok 2", "id: 2")
+    raw_ident = str(identyfikator).strip()
+    ident_str = raw_ident.lower()
+    clean_digits = re.sub(r'[^\d]', '', ident_str)
+
+    cursor.execute('''
+        SELECT id, krok_wycieczki, nazwa 
+        FROM krok_wycieczki 
+        WHERE id_wycieczki = ? 
+        ORDER BY CAST(krok_wycieczki AS INTEGER) ASC, id ASC
+    ''', (str(id_wycieczki),))
     rows = cursor.fetchall()
     
-    for r_id, r_num, r_nazwa in rows:
-        if str(r_id) == str(identyfikator) or str(r_num) == str(identyfikator):
-            return r_id, r_nazwa
+    if not rows:
+        return None
 
+    # ZMIANA: Obsługa słów kluczowych kroku powrotnego/końcowego
+    if any(w in ident_str for w in ["powrót", "powrot", "ostatni", "koniec", "domek (powrót)"]):
+        for r_id, r_num, r_nazwa in reversed(rows):
+            r_nazwa_l = r_nazwa.lower()
+            if any(w in r_nazwa_l for w in ["powrót", "powrot", "domek"]):
+                return r_id, r_nazwa
+        return rows[-1][0], rows[-1][2]
+
+    # ZMIANA: Porównanie po wyczyszczonym identyfikatorze numerycznym (id lub krok_wycieczki)
+    if clean_digits:
+        for r_id, r_num, r_nazwa in rows:
+            if str(r_id) == clean_digits or str(r_num) == clean_digits:
+                return r_id, r_nazwa
+
+    # Standardowe dopasowanie po nazwie
     for r_id, r_num, r_nazwa in rows:
         nazwa_l = r_nazwa.lower()
         if ident_str in nazwa_l or nazwa_l in ident_str:
