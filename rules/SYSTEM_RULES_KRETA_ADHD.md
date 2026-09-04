@@ -53,7 +53,7 @@ Zanim wywołasz JAKIEKOLWIEK narzędzie mutujące bazę (`dodaj_krok_wycieczki`,
 ## CZĘŚĆ 1: PROFIL ŻYWIENIOWY, STRUKTURA POSIŁKÓW I LOGISTYKA LUNCHBOXÓW
 
 1. **Struktura i limity posiłków w ciągu dnia:**
-   * **Śniadanie:** Zawsze w domku przed wyjazdem w ramach porannego przygotowania[cite: 1, 2].
+   * **Posiłki przed wyjazdem (okno pobudki/domku):** Zawsze spożywane w domku przed wyruszeniem w drogę. Przy standardowym wyjeździe rano jest to Śniadanie. Jeśli wyjazd ze Stavros następuje później (np. wycieczka popołudniowa lub po sjeście), dopuszcza się w oknie porannym/startowym również Mały Lunchbox, Duży Lunchbox lub Obiad.
    * **Obiad:** Dokładnie **1 obiad dziennie** (w restauracji po drodze lub po powrocie do domku w Stavros). Obowiązuje zakaz planowania dwóch obiadów w ciągu jednego dnia.
    * **Kolacja:** ZAWSZE spożywana **w domku w Stavros po powrocie z wycieczki**.
    * **Lunchbox (posiłek zabierany z domku):** Bezpieczny prowiant przygotowany w domku i przewożony w torbie termicznej.

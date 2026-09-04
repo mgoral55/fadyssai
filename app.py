@@ -3480,8 +3480,13 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         (posilki_wszystkie_df['rodzaj_posilku'].str.lower().str.contains('śniadan|sniadan', na=False))
     ] if not kroki_df.empty else pd.DataFrame()
 
-    if not df_pos_sniadanie.empty:
-        pobudka_posilki_tekst = formatuj_posilki_kroku(df_pos_sniadanie)
+    # ZMIANA: Wyświetlanie wszystkich posiłków przypisanych do pierwszego kroku (domku) przy pobudce (śniadanie, lunchbox, obiad itp.)
+    df_pos_pobudka = posilki_wszystkie_df[
+        (posilki_wszystkie_df['id_kroku'] == int(kroki_df.iloc[0]['id']))
+    ] if not kroki_df.empty else pd.DataFrame()
+
+    if not df_pos_pobudka.empty:
+        pobudka_posilki_tekst = formatuj_posilki_kroku(df_pos_pobudka)
     else:
         pobudka_posilki_tekst = f"<span style='color:#8C5338; font-weight:700;'>Śniadanie - ok {pobudka_val}</span>"
 
