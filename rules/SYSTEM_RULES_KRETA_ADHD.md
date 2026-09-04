@@ -98,6 +98,10 @@ Zanim wywołasz JAKIEKOLWIEK narzędzie mutujące bazę (`dodaj_krok_wycieczki`,
           2) `edytuj_krok_wycieczki` dla docelowej tawerny (ustawiając nowe okienko),
           3) `edytuj_wycieczke` (aktualizacja taktyki dnia).
      c) **Przypadek C: Żądanie godziny granicznej punktu docelowego (np. „być w Knossos do 12:30”):**
+     d) **Przypadek D: Zmiana godziny pobudki lub wyjazdu z domku:**
+        - Gdy rodzic w czacie prosi o zmianę godziny pobudki lub wyjazdu ze Stavros (np. „wstańmy o 08:30”, „wyjedźmy o 09:00”):
+        - Wywołaj `edytuj_wycieczke(id=..., czas_wyjazdu="...")`, wyliczając godzinę wyjazdu jako `Pobudka + szacowany_czas_ogarniania_rano`.
+        - Przeliczenie w przód automatycznie zaktualizuje wszystkie kolejne punkty trasy i posiłki bez blokowania się o stare godziny kroków pośrednich.
       1. **Translacja intencji:** Jeśli rodzic określa godzinę graniczną („być do [Godzina]”), potraktuj tę godzinę jako koniec okienka zwiedzania (`GodzinaKoniec`).
       2. **Wyliczenie początku okienka:** `GodzinaStart = GodzinaKoniec - CzasTrwaniaAtrakcji` (gdzie np. Knossos/Muzeum = minimum 60 min, plaża = 90 min). Przykładowo: „być do 12:30” w Knossos oznacza okienko `11:30 - 12:30`.
       3. **Dwukierunkowa propagacja w jednej turze:**

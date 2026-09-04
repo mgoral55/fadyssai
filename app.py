@@ -386,15 +386,19 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
         dur_def = 25 if any(w in nazwa_l for w in ["sklep", "market", "zakup", "apteka", "rynek", "targ"]) else (90 if ("plaż" in nazwa_l or "beach" in nazwa_l) else (30 if (idx == 0 or idx == len(kroki) - 1 or any(w in nazwa_l for w in ["powrót", "powrot", "domek"])) else 60))
         czasy_pobytu.append(oblicz_czas_trwania_okienka(k[3], domyslny_czas=dur_def))
 
-    start_times, end_times = [None] * len(kroki), [None] * len(kroki)
+    # ZMIANA: Deklaracja struktur start_times, end_times i last_idx w nadrzędnym zasięgu przed gałęziami warunkowymi
+    start_times = [None] * len(kroki)
+    end_times = [None] * len(kroki)
+    last_idx = len(kroki) - 1
+
     if force_pobudka_str:
         pobudka_z_bazy = force_pobudka_str
 
     g_pob = sparsuj_godzine_minuty(pobudka_z_bazy) or (6, 0)
     dt_pob = datetime(2026, 1, 1, g_pob[0], g_pob[1])
     dt_wyj = dt_pob + timedelta(minutes=minuty_ogarniania)
-    last_idx = len(kroki) - 1
 
+    # ZMIANA: Obsługa jawnego wymuszenia pobudki lub wyjazdu z priorytetem przed detekcją kotwic pośrednich
     if force_powrot_str:
         g_pow = sparsuj_godzine_minuty(force_powrot_str) or (17, 0)
         dt_powrot_anchor = datetime(2026, 1, 1, g_pow[0], g_pow[1])
@@ -411,12 +415,19 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
         pobudka_z_bazy = dt_pob.strftime("%H:%M")
         start_times[0] = dt_pob
 
-    elif force_wyjazd_str:
-        # ZMIANA: Przeliczanie w przód z wymuszonym wyjazdem
-        g_wyj = sparsuj_godzine_minuty(force_wyjazd_str) or (6, 30)
-        dt_wyj = datetime(2026, 1, 1, g_wyj[0], g_wyj[1])
-        dt_pob = dt_wyj - timedelta(minutes=minuty_ogarniania)
-        pobudka_z_bazy = dt_pob.strftime("%H:%M")
+    elif force_pobudka_str or force_wyjazd_str:
+        # ZMIANA: Gdy użytkownik jawnie zmienia pobudkę w GUI lub wyjazd, propagujemy cały plan w przód od nowej godziny
+        if force_pobudka_str:
+            g_pob = sparsuj_godzine_minuty(force_pobudka_str) or (6, 0)
+            dt_pob = datetime(2026, 1, 1, g_pob[0], g_pob[1])
+            dt_wyj = dt_pob + timedelta(minutes=minuty_ogarniania)
+            pobudka_z_bazy = force_pobudka_str
+        else:
+            g_wyj = sparsuj_godzine_minuty(force_wyjazd_str) or (6, 30)
+            dt_wyj = datetime(2026, 1, 1, g_wyj[0], g_wyj[1])
+            dt_pob = dt_wyj - timedelta(minutes=minuty_ogarniania)
+            pobudka_z_bazy = dt_pob.strftime("%H:%M")
+
         start_times[0], end_times[0] = dt_pob, dt_wyj
         cur_dt = dt_wyj
         for i in range(1, len(kroki)):
@@ -425,7 +436,7 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
             end_times[i] = start_times[i] + timedelta(minutes=czasy_pobytu[i])
             cur_dt = end_times[i]
     else:
-        # ZMIANA: Dwukierunkowa propagacja z zachowaniem kotwic czasowych edytowanych kroków
+        # ZMIANA: Standardowa propagacja uwzględniająca edytowane kroki pośrednie
         kotwica_idx = None
         dt_kotwica_start = None
 
@@ -439,7 +450,6 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
                     break
 
         if kotwica_idx is not None and dt_kotwica_start is not None:
-            # Propagacja WSTECZ od zakotwiczonego kroku do wyjazdu i pobudki
             start_times[kotwica_idx] = dt_kotwica_start
             end_times[kotwica_idx] = dt_kotwica_start + timedelta(minutes=czasy_pobytu[kotwica_idx])
 
@@ -452,7 +462,6 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
             start_times[0], end_times[0] = dt_pob, dt_wyj
             pobudka_z_bazy = dt_pob.strftime("%H:%M")
 
-            # Propagacja W PRZÓD od zakotwiczonego kroku do powrotu
             cur_dt = end_times[kotwica_idx]
             for i in range(kotwica_idx + 1, len(kroki)):
                 cur_dt = cur_dt + timedelta(minutes=dojazdy_minuty[i - 1])
@@ -460,7 +469,6 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
                 end_times[i] = start_times[i] + timedelta(minutes=czasy_pobytu[i])
                 cur_dt = end_times[i]
         else:
-            # Standardowy przebieg liniowy w przód
             cur_dt = dt_wyj
             for i in range(len(kroki)):
                 if i == 0:
