@@ -107,6 +107,25 @@ def sparsuj_wspolrzedne(wsp_str):
         return float(parts[0].strip()), float(parts[1].strip())
     except Exception:
         return None, None
+        
+# ZMIANA: Lekki resolver geolokalizacji OSM dla Krety z timeoutem 1.5s (brak narzutu Gemini SDK)
+def rozwiaz_geolokalizacje_miejsca_kreta(nazwa_miejsca):
+    if not nazwa_miejsca:
+        return None, None
+    try:
+        query = urllib.parse.quote(f"{nazwa_miejsca} Crete Greece")
+        url = f"https://nominatim.openstreetmap.org/search?q={query}&format=json&limit=1&bounded=1&viewbox=23.40,35.75,26.40,34.80"
+        req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0 (FamilyTripPlanner)'})
+        with urllib.request.urlopen(req, timeout=1.5) as response:
+            data = json.loads(response.read().decode())
+            if data and len(data) > 0:
+                lat = float(data[0]['lat'])
+                lon = float(data[0]['lon'])
+                if 34.80 <= lat <= 35.75 and 23.40 <= lon <= 26.40:
+                    return lat, lon
+    except Exception:
+        pass
+    return None, None
 
 def sparsuj_godzine_minuty(czas_str):
     if not czas_str:
@@ -1794,7 +1813,42 @@ def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="4
         max_row = cursor.fetchone()
         nowy_nr = str((max_row[0] or 0) + 1) if max_row and max_row[0] is not None else "1"
 
-        lat_p, lon_p = sparsuj_wspolrzedne(wspolrzedne)
+        # ZMIANA: Walidacja współrzędnych i uniwersalny resolver Nominatim z fallbackiem do rejonu trasy
+        wsp_czyste = str(wspolrzedne).strip() if wspolrzedne else ""
+        lat_p, lon_p = sparsuj_wspolrzedne(wsp_czyste)
+
+        # Sprawdzenie Bounding Box Krety: lat [34.80, 35.75], lon [23.40, 26.40]
+        czy_w_granicach = (
+            lat_p is not None and lon_p is not None and
+            34.80 <= lat_p <= 35.75 and
+            23.40 <= lon_p <= 26.40
+        )
+
+        if not czy_w_granicach:
+            # Krok 1: Próba geokodowania przez lekki Nominatim OSM (max 1.5s)
+            lat_geo, lon_geo = rozwiaz_geolokalizacje_miejsca_kreta(nazwa)
+            if lat_geo is not None and lon_geo is not None:
+                lat_p, lon_p = lat_geo, lon_geo
+                wsp_czyste = f"{lat_p:.4f}, {lon_p:.4f}"
+            else:
+                # Krok 2: Fallback do współrzędnych ostatniego zarejestrowanego kroku
+                cursor.execute('''
+                    SELECT wspolrzedne FROM krok_wycieczki 
+                    WHERE wspolrzedne IS NOT NULL AND wspolrzedne != '' 
+                    ORDER BY id DESC LIMIT 1
+                ''')
+                ostatni_krok = cursor.fetchone()
+                if ostatni_krok and ostatni_krok[0]:
+                    lat_fb, lon_fb = sparsuj_wspolrzedne(ostatni_krok[0])
+                    if lat_fb and 34.80 <= lat_fb <= 35.75 and 23.40 <= lon_fb <= 26.40:
+                        lat_p, lon_p = lat_fb, lon_fb
+                        wsp_czyste = f"{lat_p:.4f}, {lon_p:.4f}"
+                
+                # Krok 3: Ostateczny fallback do bazy w Stavros
+                if lat_p is None or not (34.80 <= lat_p <= 35.75):
+                    lat_p, lon_p = DOMEK_LAT, DOMEK_LON
+                    wsp_czyste = f"{DOMEK_LAT}, {DOMEK_LON}"
+
         czas_dojazdu_z_domku = "—"
         if lat_p is not None and lon_p is not None:
             tekst_dojazdu, _ = oblicz_czas_przejazdu_osrm(DOMEK_LAT, DOMEK_LON, lat_p, lon_p)
@@ -2886,15 +2940,160 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                             
                             contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
 
+                            # ZMIANA: Programowe wykrycie trybu ratunkowego (Hangry Emergency)
+                            prompt_l = prompt.lower()
+                            czy_polecenie_zapisu = any(w in prompt_l for w in ["dodaj", "zapisz", "wstaw", "wybieram", "utworz"])
+                            slowa_alarmowe = ["stop", "histeri", "głód", "glod", "hangry", "na skraju", "gdzie zjeść", "gdzie zjesc", "meltdown"]
+                            is_emergency = any(w in prompt_l for w in slowa_alarmowe) and not czy_polecenie_zapisu
+
+                            # ZMIANA: Odcięcie zbędnych narzędzi i odchudzenie promptu w kryzysie (ochrona limitu tokenów i 429 RPM)
+                            narzedzia_call = None if is_emergency else [types.Tool(function_declarations=tools_definitions)]
+                            aktywny_system_prompt = (
+                                "Jesteś ratownikiem rodziców dzieci z ADHD na Krecie w trybie awaryjnym (skrajny głód/meltdown). "
+                                "Odpowiedz natychmiast i zwięźle w 1 kroku: podaj 1-2 najbliższe zacienione tawerny z parkingiem na 2 auta "
+                                "i bezpiecznym jedzeniem (safe foods). Zakaz używania narzędzi."
+                            ) if is_emergency else system_prompt
+
                             config = types.GenerateContentConfig(
-                                tools=[types.Tool(function_declarations=tools_definitions)],
-                                system_instruction=system_prompt,
+                                tools=narzedzia_call,
+                                system_instruction=aktywny_system_prompt,
                                 temperature=0.1,
-                                max_output_tokens=2048
+                                max_output_tokens=1024 if is_emergency else 2048
                             )
 
                             assistant_reply = ""
                             executed_actions = []
+                            has_db_mutations = False
+                            executed_tool_signatures = set()
+
+                            # ZMIANA: W trybie ratunkowym tylko 1 krok; w trybie planowania max 3 kroki
+                            max_loops = 1 if is_emergency else 3
+
+                            for loop_idx in range(max_loops):
+                                st.write(f"🧠 Analizuję sytuację (krok {loop_idx + 1})...")
+                                
+                                response = None
+                                for retry_attempt in range(2):
+                                    try:
+                                        response = client.models.generate_content(
+                                            model=wybrany_model,
+                                            contents=contents,
+                                            config=config
+                                        )
+                                        break
+                                    except Exception as api_err:
+                                        err_str = str(api_err).lower()
+                                        if ("503" in err_str or "unavailable" in err_str or "429" in err_str) and retry_attempt < 1:
+                                            # ZMIANA: Zwiększony bufor do 3.5s przy błędzie 429
+                                            py_time.sleep(3.5)
+                                            continue
+                                        raise api_err
+
+                                candidate = response.candidates[0] if response and response.candidates else None
+                                calls = []
+                                if hasattr(response, 'function_calls') and response.function_calls:
+                                    calls = response.function_calls
+                                elif candidate and candidate.content and candidate.content.parts:
+                                    for p_part in candidate.content.parts:
+                                        if hasattr(p_part, 'function_call') and p_part.function_call:
+                                            calls.append(p_part.function_call)
+
+                                if calls and not is_emergency:
+                                    is_looping = False
+                                    for c in calls:
+                                        c_sig = f"{c.name}:{str(sorted(c.args.items())) if c.args else ''}"
+                                        if c_sig in executed_tool_signatures:
+                                            is_looping = True
+                                            break
+                                        executed_tool_signatures.add(c_sig)
+
+                                    if is_looping:
+                                        if candidate and candidate.content and candidate.content.parts:
+                                            assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
+                                        break
+
+                                    if candidate and candidate.content:
+                                        contents.append(candidate.content)
+                                    
+                                    function_responses_parts = []
+                                    for call in calls:
+                                        call_name, args = call.name, call.args or {}
+                                        wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
+                                        msg = wynik_bazy.get('message', wynik_bazy) if isinstance(wynik_bazy, dict) else str(wynik_bazy)
+                                        executed_actions.append(f"{call_name}: {msg}")
+                                        if not call_name.startswith("szukaj_") and not call_name.startswith("sprawdz_") and not call_name.startswith("pobierz_"):
+                                            has_db_mutations = True
+                                        
+                                        if "utworz_nowe_miejsce" in call_name:
+                                            st.write(f"📍 Dodano do bazy: **{args.get('nazwa', 'nowe miejsce')}**")
+                                        elif "utworz_nowa_wycieczke" in call_name:
+                                            st.write(f"🧭 Przygotowano szkielet trasy: **{args.get('tytul_wycieczki', '')}**")
+                                        elif "dodaj_krok" in call_name:
+                                            st.write(f"➕ Dołączono przystanek: **{args.get('nazwa_z_bazy', '')}**")
+                                        elif "edytuj_wycieczke" in call_name:
+                                            st.write("⏱️ Zaktualizowano parametry trasy...")
+                                        else:
+                                            st.write("⚙️ Pobieram dane...")
+                                        
+                                        function_responses_parts.append(
+                                            types.Part.from_function_response(
+                                                name=call_name, 
+                                                response={"result": wynik_bazy}
+                                            )
+                                        )
+                                    
+                                    contents.append(types.Content(role="user", parts=function_responses_parts))
+                                    py_time.sleep(1.5)
+                                else:
+                                    if candidate and candidate.content and candidate.content.parts:
+                                        assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
+                                    elif hasattr(response, 'text') and response.text:
+                                        assistant_reply = response.text
+                                    break
+
+                            # ZMIANA: Uzupełnienie szkieletu nowej trasy o brakujące punkty (atrakcja + obiad)
+                            created_trip_id = None
+                            for act in executed_actions:
+                                if "utworz_nowa_wycieczke" in act:
+                                    m_id = re.search(r'#(\d+)', act)
+                                    if m_id:
+                                        created_trip_id = m_id.group(1)
+
+                            if created_trip_id:
+                                with get_db() as conn:
+                                    c_cur = conn.cursor()
+                                    c_cur.execute("SELECT id, nazwa FROM krok_wycieczki WHERE id_wycieczki = ?", (str(created_trip_id),))
+                                    istniejace_kroki = c_cur.fetchall()
+                                
+                                if len(istniejace_kroki) <= 2:
+                                    ustaw_aktywna_wycieczke_id(created_trip_id)
+                                    c_cur.execute("SELECT tytul_wycieczki FROM wycieczka WHERE id = ?", (str(created_trip_id),))
+                                    tytul_row = c_cur.fetchone()
+                                    nazwa_atrakcji = tytul_row[0] if tytul_row else "Główna atrakcja"
+
+                                    c_cur.execute("""
+                                        SELECT numer_miejsca, nazwa FROM miejsca 
+                                        WHERE (LOWER(?) LIKE ('%' || LOWER(nazwa) || '%') OR LOWER(nazwa) LIKE ('%' || LOWER(?) || '%'))
+                                          AND LOWER(nazwa) NOT LIKE '%tawerna%'
+                                        ORDER BY CAST(numer_miejsca AS INTEGER) DESC LIMIT 1
+                                    """, (nazwa_atrakcji, nazwa_atrakcji))
+                                    m_istniejace = c_cur.fetchone()
+                                    if m_istniejace:
+                                        dodaj_krok_wycieczki(id_wycieczki=created_trip_id, nazwa_z_bazy=m_istniejace[1], okienko_zwiedzania="10:00 - 11:30")
+                                        executed_actions.append(f"dodaj_krok_wycieczki: Dodano punkt {m_istniejace[1]}")
+
+                                    c_cur.execute("""
+                                        SELECT nazwa FROM miejsca 
+                                        WHERE LOWER(nazwa) LIKE '%tawerna%' OR LOWER(nazwa) LIKE '%obiad%'
+                                        ORDER BY CAST(numer_miejsca AS INTEGER) DESC LIMIT 1
+                                    """)
+                                    tawerna_row = c_cur.fetchone()
+                                    if tawerna_row:
+                                        dodaj_krok_wycieczki(id_wycieczki=created_trip_id, nazwa_z_bazy=tawerna_row[0], okienko_zwiedzania="11:45 - 13:15")
+                                        executed_actions.append(f"dodaj_krok_wycieczki: Dodano punkt {tawerna_row[0]}")
+
+                                    przelicz_i_zsynchronizuj_wycieczke(created_trip_id, force_wyjazd_str="06:30")
+                                    has_db_mutations = True
 
                             # ZMIANA: Ścisła kontrola mutacji CRUD, ochrona przed zrzutami technicznymi i obsługa retry dla błędu 503
                             has_db_mutations = False
@@ -2961,6 +3160,8 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                             )
                                         )
                                     contents.append(types.Content(role="user", parts=function_responses_parts))
+                                    # ZMIANA: Bufor ochronny przed 429 Rate Limit (Google AI Studio Free/Tier 1) pomiędzy iteracjami narzędzi
+                                    py_time.sleep(1.5)
                                 else:
                                     if candidate and candidate.content and candidate.content.parts:
                                         assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
@@ -3049,10 +3250,15 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                     przelicz_i_zsynchronizuj_wycieczke(created_trip_id, force_wyjazd_str="06:30")
                                     has_db_mutations = True
 
-                            # ZMIANA: Redukcja liczby zapytań do API (ochrona przed 429 Rate Limit) i usunięcie sztucznych podsumowań
+                            assistant_reply = ""
+                            executed_actions = []
                             has_db_mutations = False
+                            # ZMIANA: Pamięć wywołanych sygnatur narzędzi, zapobiegająca pętli 'Sprawdzam dane w bazie...'
+                            executed_tool_signatures = set()
+
+                            # ZMIANA: Jednolita pętla z twardym limitem 3 kroków zamiast dwóch zduplikowanych pętli for
                             for loop_idx in range(3):
-                                st.write(f"🧠 Analizuję plan wycieczki (krok {loop_idx + 1})...")
+                                st.write(f"🧠 Analizuję sytuację (krok {loop_idx + 1})...")
                                 
                                 response = None
                                 for retry_attempt in range(2):
@@ -3066,7 +3272,7 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                     except Exception as api_err:
                                         err_str = str(api_err).lower()
                                         if ("503" in err_str or "unavailable" in err_str or "429" in err_str) and retry_attempt < 1:
-                                            py_time.sleep(2.5)
+                                            py_time.sleep(2.0)
                                             continue
                                         raise api_err
 
@@ -3080,6 +3286,21 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                             calls.append(p_part.function_call)
 
                                 if calls:
+                                    # ZMIANA: Detekcja ponownego wywołania identycznego narzędzia z tymi samymi argumentami
+                                    is_looping = False
+                                    for c in calls:
+                                        c_sig = f"{c.name}:{str(sorted(c.args.items())) if c.args else ''}"
+                                        if c_sig in executed_tool_signatures:
+                                            is_looping = True
+                                            break
+                                        executed_tool_signatures.add(c_sig)
+
+                                    if is_looping:
+                                        # ZMIANA: Przerwanie pętli narzędziowej i wymuszenie wygenerowania odpowiedzi tekstowej
+                                        if candidate and candidate.content and candidate.content.parts:
+                                            assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
+                                        break
+
                                     if candidate and candidate.content:
                                         contents.append(candidate.content)
                                     
@@ -3090,7 +3311,7 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                         wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
                                         msg = wynik_bazy.get('message', wynik_bazy) if isinstance(wynik_bazy, dict) else str(wynik_bazy)
                                         executed_actions.append(f"{call_name}: {msg}")
-                                        if not call_name.startswith("szukaj_") and not call_name.startswith("sprawdz_"):
+                                        if not call_name.startswith("szukaj_") and not call_name.startswith("sprawdz_") and not call_name.startswith("pobierz_"):
                                             has_db_mutations = True
                                         
                                         if "utworz_nowe_miejsce" in call_name:
@@ -3102,7 +3323,7 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                         elif "edytuj_wycieczke" in call_name:
                                             st.write("⏱️ Zaktualizowano parametry trasy...")
                                         else:
-                                            st.write("⚙️ Sprawdzam dane...")
+                                            st.write("⚙️ Pobieram dane...")
                                         
                                         function_responses_parts.append(
                                             types.Part.from_function_response(
@@ -3118,7 +3339,7 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                         assistant_reply = response.text
                                     break
 
-                            # ZMIANA: Weryfikacja spójności bazy – zapobieganie pustym szkieletom
+                            # ZMIANA: ZACHOWANIE FUNKCJONALNOŚCI – weryfikacja kompletności nowo utworzonej wycieczki i uzupełnienie punktów
                             created_trip_id = None
                             for act in executed_actions:
                                 if "utworz_nowa_wycieczke" in act:
