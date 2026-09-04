@@ -1763,22 +1763,24 @@ def szukaj_miejsca_w_bazie(nazwa_zapytania):
             }
     return None
 
-# --- STRAŻNIK AuDHD ---
-def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane_okienko):
+## ZMIANA: Zezwolenie na tawerny, restauracje i klimatyzowane obiekty w oknie 11:30-15:30 oraz obsługa pomin_ostrzezenie_slonce
+def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane_okienko, pomin_ostrzezenie_slonce=False):
     miejsce_info = szukaj_miejsca_w_bazie(nazwa_nowego_miejsca)
     nazwa_l = str(nazwa_nowego_miejsca).lower()
     
     g_start = sparsuj_godzine_minuty(planowane_okienko.split("-")[0].strip()) if "-" in str(planowane_okienko) else sparsuj_godzine_minuty(str(planowane_okienko))
-    if g_start:
+    if g_start and not pomin_ostrzezenie_slonce:
         godz_dec = g_start[0] + g_start[1] / 60.0
         if 11.5 <= godz_dec <= 15.5:
+            jest_gastronomia = any(w in nazwa_l for w in ['tawerna', 'tavern', 'restauracja', 'obiad', 'lunch', 'cafe', 'kawiarnia', 'cretaquarium'])
             ochrona = str(miejsce_info.get('ochrona_slonce', '')).lower() if miejsce_info else ""
-            if any(w in ochrona for w in ['brak', 'niska', 'odkryte', 'pełne słońce', 'patelnia']) or \
-               any(w in nazwa_l for w in ['knossos', 'phaistos', 'ruiny', 'gortyna', 'falasarna', 'elafonisi']):
+            jest_odkryte = any(w in ochrona for w in ['brak', 'niska', 'odkryte', 'pełne słońce', 'patelnia']) or \
+                           any(w in nazwa_l for w in ['knossos', 'phaistos', 'ruiny', 'gortyna', 'falasarna', 'elafonisi'])
+            
+            if jest_odkryte and not jest_gastronomia:
                 return False, (
-                    f"⛔ ODMOWA: Planowanie '{nazwa_nowego_miejsca}' w oknie {planowane_okienko} narusza regułę sjesty i ochrony przed słońcem (11:30–15:30). "
-                    f"Jest to otwarty teren w pełnym słońcu – gwarantowane przebodźcowanie sensoryczne i ryzyko udaru termicznego. "
-                    f"💡 PROPOZYCJA: Zaplanuj tę atrakcję z samego rana (np. 08:00–10:00) lub w tych godzinach wybierz klimatyzowane Cretaquarium, jaskinię lub obiad w tawernie w głębokim cieniu."
+                    f"⛔ OSTRZEŻENIE: Planowanie '{nazwa_nowego_miejsca}' w oknie {planowane_okienko} narusza regułę sjesty i ochrony przed słońcem (11:30–15:30). "
+                    f"Jest to teren otwarty bez cienia. Ryzyko meltdownu i udaru cieplnego."
                 )
 
     if g_start:
@@ -2120,7 +2122,8 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 -
         "message": f"Dodano krok '{nazwa_z_bazy}' (ID #{nowy_id}, Miejsce ref: #{nr_miejsca or 'BRAK'})."
     }
 
-def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, okienko_zwiedzania):
+# ZMIANA: Obsługa flagi pomin_ostrzezenie_slonce oraz usunięcie duplikatu UPDATE w edytuj_krok_wycieczki
+def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, okienko_zwiedzania, pomin_ostrzezenie_slonce=False):
     with get_db() as conn:
         cursor = conn.cursor()
         k_info = znajdz_id_kroku_w_db(cursor, id_wycieczki, krok_wycieczki)
@@ -2128,8 +2131,7 @@ def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, okienko_zwiedzania):
             return {"success": False, "error": f"Nie znaleziono kroku: {krok_wycieczki}"}
         k_id, k_nazwa = k_info
 
-        # ZMIANA: Strażnik upału i posiłków również podczas edycji okienka istniejącego kroku
-        ok, err_msg = sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, k_nazwa, okienko_zwiedzania)
+        ok, err_msg = sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, k_nazwa, okienko_zwiedzania, pomin_ostrzezenie_slonce=pomin_ostrzezenie_slonce)
         if not ok:
             return {"success": False, "blocked_by_guardrail": True, "error": err_msg}
 
@@ -2682,17 +2684,19 @@ tools_definitions = [
             required=["id_wycieczki", "krok_a", "krok_b"]
         ),
     ),
+    # ZMIANA: Dodanie flagi pomin_ostrzezenie_slonce do schematu narzędzia edytuj_krok_wycieczki
     types.FunctionDeclaration(
         name="edytuj_krok_wycieczki",
-        description="Edytuje okienko czasowe wybranego kroku.",
+        description="Edytuje okienko czasowe wybranego kroku. Jeśli przesunięcie tworzy ryzyko (luka głodu >4h lub pełne słońce), najpierw zapytaj rodzica o zgodę w dialogu i dopiero po potwierdzeniu przekaż pomin_ostrzezenie_slonce=True.",
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={
                 "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
                 "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID lub nazwa kroku"),
-                "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Okienko np. '10:00 - 13:00'"),
+                "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Okienko np. '15:00 - 16:00'"),
+                "pomin_ostrzezenie_slonce": types.Schema(type=types.Type.BOOLEAN, description="Domyślnie False. Ustaw True TYLKO wtedy, gdy rodzic wyraźnie potwierdził realizację mimo ostrzeżenia.")
             },
-            required=["id_wycieczki", "krok_wycieczki"]
+            required=["id_wycieczki", "krok_wycieczki", "okienko_zwiedzania"]
         ),
     ),
     types.FunctionDeclaration(
