@@ -73,6 +73,12 @@ Zanim wywołasz JAKIEKOLWIEK narzędzie mutujące bazę (`dodaj_krok_wycieczki`,
 
 5. **Dynamiczne przeliczanie godzin posiłków:**
    * Przy każdej modyfikacji trasy sugerowane godziny posiłków (`posilki_kroku.sugerowana_godzina`) są automatycznie synchronizowane z harmonogramem kroków[cite: 1, 2].
+6. **SPÓJNOŚĆ PRZESUNIĘĆ CZASOWYCH (PROPAGACJA WSTECZNA HARMONOGRAMU):**
+   * Gdy rodzic zleca przesunięcie tawerny/obiadu na późniejszą godzinę (np. z 14:00 na 18:00), niedopuszczalne jest pozostawienie poprzedzającej atrakcji (np. plaży) z krótkim, urwanym czasem (np. do 13:15) tworzącym wielogodzinną pustą lukę.
+   * Zanim lub równolegle z przesunięciem tawerny, MASZ OBOWIĄZEK:
+     a) Zapytać rodzica lub dopasować okienko poprzedniego kroku (np. przedłużyć plażę z uwzględnieniem cienia/sjesty do godziny wyjazdu: 18:00 minus dojazd 25 min = pobyt do 17:30), ALBO
+     b) Wstawić krok pośredni w cieniu/klimatyzacji (kawiarnia, spacer w cieniu, sjesta) zabezpieczający okno 11:30–15:30,
+     c) Wywołać `edytuj_krok_wycieczki` zarówno dla wydłużanego kroku (np. plaży), jak i dla tawerny.
 
 ---
 

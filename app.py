@@ -424,17 +424,23 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
             end_times[i] = start_times[i] + timedelta(minutes=czasy_pobytu[i])
             cur_dt = end_times[i]
     else:
+        # ZMIANA: Propagacja wsteczna sztywnych godzin – dociąganie pobytu na plaży/atrakcji do godziny wyjazdu do tawerny
         cur_dt = dt_wyj
         for i in range(len(kroki)):
             if i == 0:
                 start_times[i], end_times[i] = dt_pob, dt_wyj
             else:
-                # ZMIANA: Uszanowanie sztywnej godziny podanej przez rodzica (np. 13:00)
                 okienko_istniejace = kroki[i][3]
                 godz_manualna = sparsuj_godzine_minuty(okienko_istniejace.split("-")[0].strip()) if okienko_istniejace and "-" in str(okienko_istniejace) else None
                 if godz_manualna and not force_wyjazd_str and not force_powrot_str:
                     dt_manual = datetime(2026, 1, 1, godz_manualna[0], godz_manualna[1])
                     if dt_manual > cur_dt:
+                        # Jeśli przesunięto punkt w przód (np. tawernę na 18:00), dociągamy koniec poprzedniego kroku (plaży) do momentu wyjazdu:
+                        if i > 1 and end_times[i - 1] is not None:
+                            dojazd_poprzedni = dojazdy_minuty[i - 1] if (i - 1) < len(dojazdy_minuty) else 25
+                            nowy_end_poprzedniego = dt_manual - timedelta(minutes=dojazd_poprzedni)
+                            if nowy_end_poprzedniego > start_times[i - 1]:
+                                end_times[i - 1] = nowy_end_poprzedniego
                         cur_dt = dt_manual
 
                 start_times[i] = cur_dt
