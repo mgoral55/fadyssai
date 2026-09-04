@@ -108,23 +108,27 @@ def sparsuj_wspolrzedne(wsp_str):
     except Exception:
         return None, None
         
-# ZMIANA: Lekki resolver geolokalizacji OSM dla Krety z timeoutem 1.5s (brak narzutu Gemini SDK)
 def rozwiaz_geolokalizacje_miejsca_kreta(nazwa_miejsca):
     if not nazwa_miejsca:
         return None, None
-    try:
-        query = urllib.parse.quote(f"{nazwa_miejsca} Crete Greece")
-        url = f"https://nominatim.openstreetmap.org/search?q={query}&format=json&limit=1&bounded=1&viewbox=23.40,35.75,26.40,34.80"
-        req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0 (FamilyTripPlanner)'})
-        with urllib.request.urlopen(req, timeout=1.5) as response:
-            data = json.loads(response.read().decode())
-            if data and len(data) > 0:
-                lat = float(data[0]['lat'])
-                lon = float(data[0]['lon'])
-                if 34.80 <= lat <= 35.75 and 23.40 <= lon <= 26.40:
-                    return lat, lon
-    except Exception:
-        pass
+    # Warianty zapytań: pełna nazwa oraz uproszczona (bez słów typu Tavern/Tawerna/Cafe)
+    czysta = re.sub(r'(?i)\b(tawerna|tavern|restaurant|restauracja|cafe|bar|snack)\b', '', nazwa_miejsca).strip()
+    zapytania = [f"{nazwa_miejsca} Crete Greece", f"{czysta} Crete Greece"] if czysta != nazwa_miejsca else [f"{nazwa_miejsca} Crete Greece"]
+    
+    for q in zapytania:
+        try:
+            query = urllib.parse.quote(q)
+            url = f"https://nominatim.openstreetmap.org/search?q={query}&format=json&limit=1&bounded=1&viewbox=23.40,35.75,26.40,34.80"
+            req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0 (FamilyTripPlanner)'})
+            with urllib.request.urlopen(req, timeout=1.8) as response:
+                data = json.loads(response.read().decode())
+                if data and len(data) > 0:
+                    lat = float(data[0]['lat'])
+                    lon = float(data[0]['lon'])
+                    if 34.80 <= lat <= 35.75 and 23.40 <= lon <= 26.40:
+                        return lat, lon
+        except Exception:
+            continue
     return None, None
 
 def sparsuj_godzine_minuty(czas_str):
@@ -425,6 +429,14 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
             if i == 0:
                 start_times[i], end_times[i] = dt_pob, dt_wyj
             else:
+                # ZMIANA: Uszanowanie sztywnej godziny podanej przez rodzica (np. 13:00)
+                okienko_istniejace = kroki[i][3]
+                godz_manualna = sparsuj_godzine_minuty(okienko_istniejace.split("-")[0].strip()) if okienko_istniejace and "-" in str(okienko_istniejace) else None
+                if godz_manualna and not force_wyjazd_str and not force_powrot_str:
+                    dt_manual = datetime(2026, 1, 1, godz_manualna[0], godz_manualna[1])
+                    if dt_manual > cur_dt:
+                        cur_dt = dt_manual
+
                 start_times[i] = cur_dt
                 end_times[i] = cur_dt + timedelta(minutes=czasy_pobytu[i])
             if i < len(kroki) - 1:
@@ -1798,6 +1810,30 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
     return True, ""
 
 # --- OPERACJE NA KROKACH I WYCIECZKACH ---
+# ZMIANA: Lekki resolver geolokalizacji OSM dla Krety z czyszczeniem nazwy (brak narzutu Gemini SDK)
+def rozwiaz_geolokalizacje_miejsca_kreta(nazwa_miejsca):
+    if not nazwa_miejsca:
+        return None, None
+    # Warianty zapytań: pełna nazwa oraz uproszczona (bez słów typu Tavern/Tawerna/Cafe)
+    czysta = re.sub(r'(?i)\b(tawerna|tavern|restaurant|restauracja|cafe|bar|snack)\b', '', nazwa_miejsca).strip()
+    zapytania = [f"{nazwa_miejsca} Crete Greece", f"{czysta} Crete Greece"] if czysta != nazwa_miejsca else [f"{nazwa_miejsca} Crete Greece"]
+    
+    for q in zapytania:
+        try:
+            query = urllib.parse.quote(q)
+            url = f"https://nominatim.openstreetmap.org/search?q={query}&format=json&limit=1&bounded=1&viewbox=23.40,35.75,26.40,34.80"
+            req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0 (FamilyTripPlanner)'})
+            with urllib.request.urlopen(req, timeout=1.8) as response:
+                data = json.loads(response.read().decode())
+                if data and len(data) > 0:
+                    lat = float(data[0]['lat'])
+                    lon = float(data[0]['lon'])
+                    if 34.80 <= lat <= 35.75 and 23.40 <= lon <= 26.40:
+                        return lat, lon
+        except Exception:
+            continue
+    return None, None
+
 def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="45 min", 
                         koszt="—", godziny_otwarcia="—", konieczna_akcja="", trudnosc_adhd="Średni", 
                         ochrona_slonce="Standardowa", potencjal_meltdownu="Średni", 
@@ -1813,11 +1849,20 @@ def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="4
         max_row = cursor.fetchone()
         nowy_nr = str((max_row[0] or 0) + 1) if max_row and max_row[0] is not None else "1"
 
-        # ZMIANA: Walidacja współrzędnych i uniwersalny resolver Nominatim z fallbackiem do rejonu trasy
+        # ZMIANA: Zawsze próbuj zweryfikować geolokalizację w OSM dla nowych obiektów gastronomicznych/miejsc
+        lat_p, lon_p = None, None
         wsp_czyste = str(wspolrzedne).strip() if wspolrzedne else ""
-        lat_p, lon_p = sparsuj_wspolrzedne(wsp_czyste)
+        
+        # Jeśli współrzędne są puste lub jest to tawerna, odpytaj OSM w pierwszej kolejności
+        if not wsp_czyste or any(w in nazwa.lower() for w in ["tavern", "tawern", "ammoudi", "gefyra"]):
+            lat_geo, lon_geo = rozwiaz_geolokalizacje_miejsca_kreta(nazwa)
+            if lat_geo is not None and lon_geo is not None:
+                lat_p, lon_p = lat_geo, lon_geo
+                wsp_czyste = f"{lat_p:.4f}, {lon_p:.4f}"
 
-        # Sprawdzenie Bounding Box Krety: lat [34.80, 35.75], lon [23.40, 26.40]
+        if lat_p is None:
+            lat_p, lon_p = sparsuj_wspolrzedne(wsp_czyste)
+
         czy_w_granicach = (
             lat_p is not None and lon_p is not None and
             34.80 <= lat_p <= 35.75 and
@@ -1825,13 +1870,12 @@ def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="4
         )
 
         if not czy_w_granicach:
-            # Krok 1: Próba geokodowania przez lekki Nominatim OSM (max 1.5s)
+            # Fallback OSM jeśli jeszcze nie był odpalany
             lat_geo, lon_geo = rozwiaz_geolokalizacje_miejsca_kreta(nazwa)
             if lat_geo is not None and lon_geo is not None:
                 lat_p, lon_p = lat_geo, lon_geo
                 wsp_czyste = f"{lat_p:.4f}, {lon_p:.4f}"
             else:
-                # Krok 2: Fallback do współrzędnych ostatniego zarejestrowanego kroku
                 cursor.execute('''
                     SELECT wspolrzedne FROM krok_wycieczki 
                     WHERE wspolrzedne IS NOT NULL AND wspolrzedne != '' 
@@ -1843,8 +1887,6 @@ def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="4
                     if lat_fb and 34.80 <= lat_fb <= 35.75 and 23.40 <= lon_fb <= 26.40:
                         lat_p, lon_p = lat_fb, lon_fb
                         wsp_czyste = f"{lat_p:.4f}, {lon_p:.4f}"
-                
-                # Krok 3: Ostateczny fallback do bazy w Stavros
                 if lat_p is None or not (34.80 <= lat_p <= 35.75):
                     lat_p, lon_p = DOMEK_LAT, DOMEK_LON
                     wsp_czyste = f"{DOMEK_LAT}, {DOMEK_LON}"
