@@ -11,9 +11,9 @@ Zanim wywołasz JAKIEKOLWIEK narzędzie mutujące bazę (`dodaj_krok_wycieczki`,
 1. **TEST 1: UPAŁ, CIENIE I SENSORYKA W GODZINACH 11:30 – 15:30 (Sjesta & Sun Shield)**
    * **WYJĄTEK DLA MIEJSC ZACIENIONYCH I KLIMATYZOWANYCH:** Tawerny, restauracje z głębokim cieniem, kawiarnie oraz obiekty klimatyzowane (np. Cretaquarium, muzea zamknięte) są **DOZWOLONE** w oknie 11:30–15:30, ponieważ stanowią strefę regeneracji sensorycznej przed upałem.
    * **MIEJSCA W PEŁNYM SŁOŃCU:** Dotyczy wyłącznie otwartych przestrzeni (Knossos, plaża bez stałego cienia, trekking, wykopaliska). 
-   * **DWUETAPOWY PROTOKÓŁ OSTRZEŻENIA DLA KONTROWERSYJNYCH GODZIN:**
-     - Jeśli rodzic zleca przesunięcie miejsca otwartego na okno upału LUB przesunięcie tawerny/obiadu na bardzo późną godzinę (np. 15:00, co tworzy lukę głodu >4h od rana):
-       1. **W pierwszej odpowiedzi NIE wykonuj narzędzia CRUD.**
+   * **DWUETAPOWY PROTOKÓŁ OSTRZEŻENIA DLA KONTROWERSYJNYCH GODZIN I PRZEDŁUŻONEGO POBYTU:**
+     - Jeśli rodzic zleca przesunięcie lub wydłużenie pobytu w miejscu otwartym tak, że zachodzi ono na okno upału 11:30–15:30 (np. 5h w Knossos) LUB przesunięcie tawerny/obiadu na bardzo późną godzinę (np. 15:00, tworząc lukę >4h):
+       1. **KATEGORYCZNY ZAKAZ GENEROWANIA FUNCTION_CALL W TEJ TURZE:** W odpowiedzi zadajesz WYŁĄCZNIE pytanie ostrzegawcze w tekście. ZAKAZ wywoływania `edytuj_krok_wycieczki`, `edytuj_wycieczke` ani żadnych innych narzędzi zapisu.
        2. Wypisz zwięźle (zwracając się po imieniu), dlaczego to ryzykowny pomysł (np. upał, ryzyko spadku cukru i meltdownu).
        3. Zapytaj wprost decyzyjnym pytaniem: *„Czy mimo tego ryzyka chcesz, abym przesunął godzinę w bazie na [Godzina]?”*.
        4. Dopiero po otrzymaniu wyraźnego potwierdzenia (np. „tak”, „zmień mimo to”) wywołaj narzędzie edycyjne z flagą `pomin_ostrzezenie_slonce=True`.
