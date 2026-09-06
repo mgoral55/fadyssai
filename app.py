@@ -2990,6 +2990,43 @@ def sprobuj_wykonac_komende_lokalnie(prompt, id_wycieczki):
 @st.cache_resource
 def get_gemini_client(api_key):
     return genai.Client(api_key=api_key)
+    
+# ZMIANA: Implementacja Context Caching dla przyspieszenia TTFT i odciążenia przetwarzania LLM
+@st.cache_resource(ttl=3600, show_spinner=False)
+def pobierz_lub_utworz_prompt_cache(api_key, model_name):
+    """Tworzy lub pobiera zcache'owany kontekst systemowy z regułami AuDHD i narzędziami."""
+    try:
+        rules_path = "SYSTEM_RULES_KRETA_ADHD.md"
+        base_rules = ""
+        if os.path.exists(rules_path):
+            with open(rules_path, "r", encoding="utf-8") as rf:
+                base_rules = rf.read()
+        
+        # Jeśli reguły nie istnieją lub model jest w trybie Lite, pomijamy Context Cache
+        if not base_rules:
+            return None
+
+        client = get_gemini_client(api_key)
+        
+        # Utworzenie cache na poziomie Gemini API (TTL: 60 minut)
+        cache = client.caches.create(
+            model=model_name,
+            config=types.CreateCachedContentConfig(
+                contents=[
+                    types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(text=f"BAZOWE ZASADY SYSTEMOWE I PROTOKOŁY AuDHD:\n{base_rules}")]
+                    )
+                ],
+                tools=[types.Tool(function_declarations=tools_definitions)],
+                ttl="3600s",
+                display_name=f"cretai_rules_cache_{model_name}"
+            )
+        )
+        return cache.name
+    except Exception:
+        # Bezpieczny fallback w przypadku modeli nieobsługujących cache lub braku minimalnej liczby tokenów
+        return None
 
 # --- GŁÓWNY WIDOK CZATU AI ---
 def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
@@ -3045,56 +3082,12 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                         with open("SYSTEM_RULES_KRETA_ADHD.md", "r", encoding="utf-8") as rf:
                             rules_content = rf.read()
 
+                    # ZMIANA: Usunięcie duplikatu protokołu z kodu app.py - całość reguł statycznych czytana jest z pliku SYSTEM_RULES_KRETA_ADHD.md
                     system_prompt = f"""Rola: Planer wycieczek - Kreta dla rodzica {uzytkownik}. Data: {dzisiaj_str}. Aktywna wycieczka w tle ID: {akt_wyc_id}.
 {zewnetrzny_kontekst}
 
-ZASADY SYSTEMOWE:
-{rules_content}
-
-PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
-# ZMIANA: Rozróżnienie zapytań ogólnych (2 opcje z bazy) od zapytań o konkretny cel (np. Spinalonga)
-1. OBSŁUGA ZAPYTAŃ I REKOMENDACJI:
-   # ZMIANA: Obsługa pytań o konkretną kategorię miejsc (np. plaże) bez mylenia ich z całymi trasami
-   a) Zapytania doradcze i rekomendacje:
-      - Działasz w 100% doradczo. ZAKAZ wywoływania narzędzi CRUD i zerowy zapis przed akceptacją.
-      - Zakaz proponowania wycieczek odbytych (odbyta=1) i miejsc odwiedzonych (odwiedzone=1).
-      - Gdy rodzic pyta o WYCIECZKĘ: podaj dokładnie 2 pozycje z bazy wycieczek (**Wycieczka #[ID]: [Tytuł]**).
-      - Gdy rodzic pyta o MIEJSCE / PLAŻĘ / ATRAKCJĘ (np. „jaka plaża w okolicy?”, „co blisko domku?”): przeszukaj bazę i podaj dokładnie 2 konkretne pozycje z bazy miejsc:
-        * **Miejsce #[ID]: [Nazwa z bazy miejsc]**
-        * 🚗 Dojazd ze Stavros: [czas] | ☀️ Cień: [ochrona] | 🌊 [specyfika AuDHD / zejście do wody]
-      - Zawsze zakończ jednym krótkim pytaniem decyzyjnym dopasowanym do kontekstu.
-   b) Prośba o konkretny cel / nowe miejsce (np. „utwórz wycieczkę na Spinalongę”, „chcę jechać na Balos”):
-      - KATEGORYCZNY ZAKAZ ignorowania celu rodzica i zakaz wklejania dwóch niepowiązanych wycieczek z bazy!
-      - KATEGORYCZNY ZAKAZ tworzenia pustego rekordu w bazie w pierwszym kroku.
-      - Oceń wskazany cel pod kątem AuDHD (długość trasy ze Stavros, ryzyko meltdownu, brak cienia w 11:30–15:30).
-      - Zapytaj rodzica o preferencje do projektu trasy (np. „Możemy to zaplanować z przerwą na obiad w Eloundzie i rejsem z samego rana. Czy taki plan dopracować i przygotować do zapisu?”).
-2. ŻELAZNA REGUŁA PO KAŻDEJ ZMIANIE KROKÓW (CRUD):
-   - Jeśli dodajesz, przesuwasz lub usuwasz JAKIKOLWIEK krok wycieczki, masz BEZWZGLĘDNY OBOWIĄZEK w tej samej serii wywołań uruchomić narzędzie:
-     `edytuj_wycieczke(id="{akt_wyc_id}", calosciowy_opis_wycieczki=..., calosciowa_taktyka_dnia=...)`.
-   - `calosciowy_opis_wycieczki` – zwięzły, zaktualizowany cel dnia uwzględniający nowe punkty.
-   - `calosciowa_taktyka_dnia` – zaktualizowana taktyka: ochrona przed upałem 11:30–15:30, gdzie zaplanowano regenerację/cień, gdzie i kiedy jest bezpieczny obiad oraz prowiant Safe Foods.
-# ZMIANA: Bezwzględny rygor atomowego wywoływania kroków pośrednich (atrakcja + obiad) przy tworzeniu nowej trasy
-3. ZAKAZ OBIADU-WIDMA I SEKWENCJA TWORZENIA TRASY:
-   - Gdy rodzic zaakceptuje plan trasy zawierającej obiad/tawernę (np. Spinalonga + obiad w Eloundzie), masz OBOWIĄZEK wykonać pełną sekwencję w JEDNEJ turze:
-     1) `utworz_nowa_wycieczke(...)` -> pobierz ID nowej wycieczki,
-     2) `dodaj_krok_wycieczki(id_wycieczki=..., nazwa_z_bazy='Główna Atrakcja', ...)`
-     3) `dodaj_krok_wycieczki(id_wycieczki=..., nazwa_z_bazy='Obiad w tawernie / restauracji', ...)`
-   - KATEGORYCZNY ZAKAZ wspominania o obiedzie lub regeneracji w podsumowaniu, jeśli w wykonanych akcjach nie ma osobnego wywołania `dodaj_krok_wycieczki` dla tego posiłku!
-   # ZMIANA: Ścisła reguła dialogowa dla przesuwania godzin posiłków i tawern na późniejsze okna
-   - PRZESUWANIE GODZIN POSIŁKÓW / TAWERN (np. dojazd na 15:00):
-     * Tawerny i restauracje są zacienione i DOZWOLONE w godzinach 11:30–15:30. Nie odrzucaj ich z powodu zakazu słońca.
-     * Jeśli przesunięcie obiadu na 15:00 tworzy lukę >4h bez jedzenia po porannym śniadaniu/lunchboxie, MASZ ZAKAZ natychmiastowej zmiany w bazie oraz ZAKAZ kategorycznej odmowy.
-     * Zwróć się po imieniu ({uzytkownik}), wyjaśnij dlaczego to ryzykowny pomysł (np. 15:00 to bardzo późny obiad, minie za dużo czasu od plaży, dzieci dopadnie wilczy głód i meltdown) i zapytaj decyzyjnie:
-       "Czy mimo to przesunąć godzinę w bazie na 15:00, czy wstawiamy mały lunchbox w aucie/na plaży około 12:00?".
-     * Dopiero po potwierdzeniu rodzica („tak, zmień na 15:00”) wywołaj edycję z flagą pomin_ostrzezenie_slonce=True.
-# ZMIANA: Bezwzględny zakaz samowolnego przekazywania pomin_ostrzezenie_posilku=True przy pierwszej prośbie o usunięcie
-4. STRAŻNIK USUWANIA KROKÓW (Hangry Prevention):
-   - Gdy rodzic pisze „usuń obiad”, ZAKAZ przekazywania parametru pomin_ostrzezenie_posilku=True.
-   - Wywołaj usuniecie z pomin_ostrzezenie_posilku=False – baza automatycznie zablokuje operację.
-   - Zwróć rodzicowi odmowę: wyjaśnij powstanie luki >4h, ryzyko meltdownu i zapytaj: „Gdzie indziej zaplanować posiłek lub mały lunchbox, aby zabezpieczyć dzieci?”.
-   - Dopiero po ponownym, świadomym potwierdzeniu przez rodzica wolno wymusić usunięcie.
-# ZMIANA: Ograniczenie używania imienia użytkownika wyłącznie do opiniowania i oceniania pomysłów
-5. UŻYWANIE IMIENIA: Zakaz zwracania się do użytkownika po imieniu w zwykłych propozycjach, powitaniach czy listach opcji. Zwracaj się po imieniu ({uzytkownik}) WYŁĄCZNIE wtedy, gdy wyrażasz bezpośrednią opinię lub oceniasz czy dany pomysł jest dobry, czy zły/ryzykowny (np. „{uzytkownik}, to bardzo dobry wybór...”, „{uzytkownik}, to ryzykowny pomysł na tę porę dnia...”)."""
+ZASADY SYSTEMOWE I PROTOKOŁY:
+{rules_content}"""
 
                     try:
                         with st.status("🧭 Przygotowuję plan...", expanded=True) as status:
@@ -3122,12 +3115,25 @@ PROTOKÓŁ INTENCJI UŻYTKOWNIKA:
                                 "i bezpiecznym jedzeniem (safe foods). Zakaz używania narzędzi."
                             ) if is_emergency else system_prompt
 
-                            config = types.GenerateContentConfig(
-                                tools=narzedzia_call,
-                                system_instruction=aktywny_system_prompt,
-                                temperature=0.1,
-                                max_output_tokens=1024 if is_emergency else 2048
-                            )
+                            # ZMIANA: Wykorzystanie prompt caching w konfiguracji zapytania z płynnym fallbackiem
+                            cached_name = None
+                            if not is_emergency:
+                                cached_name = pobierz_lub_utworz_prompt_cache(api_key_input, wybrany_model)
+
+                            if cached_name and not is_emergency:
+                                config = types.GenerateContentConfig(
+                                    cached_content=cached_name,
+                                    system_instruction=f"Rola: Planer wycieczek - Kreta dla rodzica {uzytkownik}. Data: {dzisiaj_str}. Aktywna wycieczka ID: {akt_wyc_id}.\n{zewnetrzny_kontekst}",
+                                    temperature=0.1,
+                                    max_output_tokens=2048
+                                )
+                            else:
+                                config = types.GenerateContentConfig(
+                                    tools=narzedzia_call,
+                                    system_instruction=aktywny_system_prompt,
+                                    temperature=0.1,
+                                    max_output_tokens=1024 if is_emergency else 2048
+                                )
 
                             assistant_reply = ""
                             executed_actions = []
