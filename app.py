@@ -1486,10 +1486,16 @@ def formatuj_posilki_kroku(df_pos):
     return f"<span style='color:#8C5338; font-weight:700;'>{' / '.join(posiłki_str)}</span>" if posiłki_str else ""
 
 def render_action_bar(coords_clean, search_name=""):
+    if search_name:
+        czysta_nazwa_nav = re.sub(r'^\d+[\.\)]\s*', '', str(search_name)).strip()
+        query_nav = urllib.parse.quote(f"{czysta_nazwa_nav}, Crete") if czysta_nazwa_nav else coords_clean
+    else:
+        query_nav = coords_clean
+
     google_search_btn = f'<a href="https://www.google.com/search?q={search_name} Kreta" target="_blank" class="step-action-vertical-btn"><span>🔍</span><span>Szukaj w Google</span></a>' if search_name else ""
     return f"""
     <div class="step-action-vertical-bar">
-        <a href="https://www.google.com/maps/search/?api=1&query={coords_clean}" target="_blank" class="step-action-vertical-btn"><span>🧭</span><span>Nawiguj do tego miejsca</span></a>
+        <a href="https://www.google.com/maps/search/?api=1&query={query_nav}" target="_blank" class="step-action-vertical-btn"><span>🧭</span><span>Nawiguj do tego miejsca</span></a>
         {google_search_btn}
     </div>
     """
