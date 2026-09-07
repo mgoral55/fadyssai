@@ -522,7 +522,23 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
         for i in range(len(kroki)):
             s_str, e_str = start_times[i].strftime("%H:%M"), end_times[i].strftime("%H:%M")
             krok_id_val = kroki[i][0]
-            cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (f"{s_str} - {e_str}", krok_id_val))
+
+            # ZMIANA: Dynamiczne przeliczanie godziny ewakuacji w oparciu o nowe okno czasowe (z zachowaniem dopisku w nawiasie)
+            cursor.execute('SELECT godzina_ewakuacji FROM krok_wycieczki WHERE id = ?', (krok_id_val,))
+            stara_ewak_row = cursor.fetchone()
+            stara_ewak = stara_ewak_row[0] if stara_ewak_row and stara_ewak_row[0] else ""
+
+            if stara_ewak and stara_ewak not in ['None', '-', 'Brak']:
+                dopisek_m = re.search(r'(\(.*\))', stara_ewak)
+                dopisek = f" {dopisek_m.group(1)}" if dopisek_m else ""
+                nowa_godzina_ewak = f"{e_str}{dopisek}"
+                cursor.execute('''
+                    UPDATE krok_wycieczki 
+                    SET okienko_zwiedzania = ?, godzina_ewakuacji = ? 
+                    WHERE id = ?
+                ''', (f"{s_str} - {e_str}", nowa_godzina_ewak, krok_id_val))
+            else:
+                cursor.execute('UPDATE krok_wycieczki SET okienko_zwiedzania = ? WHERE id = ?', (f"{s_str} - {e_str}", krok_id_val))
             
             cursor.execute('SELECT id, rodzaj_posilku FROM posilki_kroku WHERE id_kroku = ?', (krok_id_val,))
             pos_rows = cursor.fetchall()

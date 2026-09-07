@@ -81,7 +81,10 @@ Zanim wywołasz JAKIEKOLWIEK narzędzie mutujące bazę (`dodaj_krok_wycieczki`,
 
 5. **Dynamiczne przeliczanie godzin posiłków:**
    * Przy każdej modyfikacji trasy sugerowane godziny posiłków (`posilki_kroku.sugerowana_godzina`) są automatycznie synchronizowane z harmonogramem kroków[cite: 1, 2].
-6. **SPÓJNOŚĆ PRZESUNIĘĆ CZASOWYCH (PROPAGACJA W PRZÓD I WSTECZ Z CZASEM DOJAZDU):**
+6. **Dynamiczna synchronizacja godziny ewakuacji:**
+   * Każde przesunięcie harmonogramu wycieczki automatycznie synchronizuje pole `godzina_ewakuacji` danego kroku z końcem jego okienka zwiedzania (zachowując opis powodu ewakuacji, np. upał, tłum).
+   * Jeśli atrakcja na otwartej przestrzeni w nowym planie przekracza 11:30, godzina ewakuacji musi stanowić bezwzględny punkt graniczny wyjścia do klimatyzowanego auta.
+7. **SPÓJNOŚĆ PRZESUNIĘĆ CZASOWYCH (PROPAGACJA W PRZÓD I WSTECZ Z CZASEM DOJAZDU):**
    * **Przesunięcie punktu/tawerny na wcześniejszą godzinę (Weryfikacja fizycznej wykonalności):**
      Przed próbą modyfikacji bazy asystent oblicza fizyczny margines:
      `Godzina wyjazdu z poprzedniego punktu = Nowa godzina docelowa - Realny czas dojazdu OSRM`.
