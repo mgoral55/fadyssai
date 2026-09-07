@@ -3454,14 +3454,14 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                                         "Pozostajemy przy pierwotnym, bezpiecznym harmonogramie."
                                     )
                                     
-                            # ZMIANA: Obsługa pustej odpowiedzi modelu przy zapytaniach odczytowych (read-only tool call)
+                            # ZMIANA: Usunięcie mylącego fallbacku tekstowego, zachowanie spójności dialogu decyzyjnego
                             if not assistant_reply.strip() and not has_db_mutations:
                                 for p_cand in (candidate.content.parts if candidate and candidate.content and candidate.content.parts else []):
                                     if hasattr(p_cand, 'text') and p_cand.text and p_cand.text.strip():
                                         assistant_reply = p_cand.text.strip()
                                         break
                                 if not assistant_reply.strip():
-                                    assistant_reply = "Przeszukałem bazę CretAi. Sprecyzuj, jakiego typu miejsc szukasz (plaża, zabytek w cieniu czy safe food)?"
+                                    assistant_reply = "Przeanalizowałem opcje w bazie CretAi. Aby sfinalizować zmianę, potwierdź proszę szczegóły planu."
                                     
                             if not assistant_reply.strip() and has_db_mutations:
                                 user_friendly_actions = []
