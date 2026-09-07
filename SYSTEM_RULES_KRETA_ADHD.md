@@ -138,7 +138,9 @@ Zanim wywołasz JAKIEKOLWIEK narzędzie mutujące bazę (`dodaj_krok_wycieczki`,
 
 ## CZĘŚĆ 3: REGUŁA ZAMKNIĘTEGO OBIEGU MIEJSC W WYCIECZKACH (CLOSED-LOOP TRIPS)
 
-1. **WYKORZYSTANIE GOOGLE DO PRECYZYJNEGO GPS (ZERO PRZYBLIŻEŃ I CENTROIDÓW):**
+1. **HYBRYDOWA IDENTYFIKACJA MIEJSC I OCHRONA PUNKTÓW STAŁYCH:**
+   * **Żelazna ochrona bazy (Domek, Sklep w Stavros, Rynek w Chanii):** Punkty stałe rodziny MUSZĄ zawsze korzystać wyłącznie z twardych koordynatów GPS (`DOMEK_LAT, DOMEK_LON` itp.)[cite: 1, 2]. Kategoryczny zakaz nawigowania do domku lub lokalnego sklepu po nazwie tekstowej!
+   * **Zewnętrzne atrakcje i gastronomia (Google POI + GPS dla OSRM):** Dla nowych lub odwiedzanych restauracji, plaż i zabytków (np. *Peskesi*, *Muzeum Archeologiczne*) nawigacja kierowcy używa oficjalnej nazwy z miastem (np. `Peskesi, Heraklion`), co prowadzi dokładnie pod drzwi lokalu[cite: 1, 2]. W bazie danych współrzędne numeryczne GPS zawsze pozostają zapisane i służą silnikowi OSRM oraz mapie do obliczania czasów przejazdu[cite: 1, 2].
    * Przed utworzeniem nowego miejsca gastronomicznego (np. tawerna, restauracja, kawiarnia) lub nowej plaży masz BEZWZGLĘDNY OBOWIĄZEK ustalić dokładne współrzędne geograficzne wejścia/lokalu[cite: 2].
    * **Zakaz wpisywania pustych współrzędnych (`""`) lub współrzędnych „z pamięci”:** Przy wywołaniu `utworz_nowe_miejsce` parametr `wspolrzedne` MUSI zawierać precyzyjne koordynaty w formacie `DD.DDDD, DD.DDDD`[cite: 1, 2].
    * Dla obiektów w miastach (np. Peskesi w Heraklionie) współrzędne muszą wskazywać dokładnie budynek lokalu (np. dla Peskesi: `35.3400, 25.1323`), a nie losową ulicę obok czy centroid dzielnicy.

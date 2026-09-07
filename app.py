@@ -1289,6 +1289,7 @@ with st.sidebar:
     st.markdown("<div style='margin-top: 14px; border-top: 1.5px solid #D6D2C4; padding-top: 10px;'></div>", unsafe_allow_html=True)
     st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 6px;'>🧭 Szybka nawigacja</div>", unsafe_allow_html=True)
     
+    # ZMIANA: Stałe punkty w panelu bocznym zawsze linkują bezpośrednio do koordynatów GPS
     st.link_button(
         "🏠 Domek", 
         f"https://www.google.com/maps/search/?api=1&query={DOMEK_LAT},{DOMEK_LON}",
@@ -3724,7 +3725,17 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         is_cottage_step = any(w in nazwa_lower for w in ["domek", "powrót", "powrot", "start", "wyjazd"])
 
         lat_parsed, lon_parsed = sparsuj_wspolrzedne(wspolrzedne)
-        nav_btn_html = f'<a href="https://www.google.com/maps/search/?api=1&query={coords_clean}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>' if (lat_parsed is not None and lon_parsed is not None) else ""
+        # ZMIANA: Bezwzględna ochrona punktów stałych (Domek, Sklep w Stavros, Rynek) - nawigacja ZAWSZE po koordynatach GPS
+        czy_punkt_staly = any(w in nazwa_lower for w in ["domek", "stavros", "sklep przy domku", "rynek", "targ", "laiki"])
+        
+        if czy_punkt_staly or not lat_parsed or not lon_parsed:
+            query_nav = coords_clean if coords_clean else f"{DOMEK_LAT},{DOMEK_LON}"
+        else:
+            # Dla zewnętrznych atrakcji i restauracji nawigacja po nazwie z dopiskiem Krety (POI w Google Maps)
+            czysta_nazwa_nav = re.sub(r'^\d+[\.\)]\s*', '', nazwa).strip()
+            query_nav = urllib.parse.quote(f"{czysta_nazwa_nav}, Crete") if czysta_nazwa_nav else coords_clean
+
+        nav_btn_html = f'<a href="https://www.google.com/maps/search/?api=1&query={query_nav}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>' if (lat_parsed is not None or czy_punkt_staly) else ""
 
         matched_place_id = str(k['numer_miejsca']).strip() if (pd.notna(k.get('numer_miejsca')) and str(k.get('numer_miejsca')).strip() not in ['', 'None', 'nan']) else None
         m_dopasowane_krok = None
