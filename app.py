@@ -3379,26 +3379,57 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                             executed_tool_signatures = set()
 
                             for loop_idx in range(max_loops):
-                                st.write(f"🧠 Analizuję sytuację (krok {loop_idx + 1})...")
+                                # ZMIANA: Dynamiczny, rotujący status sensoryczny AuDHD eliminujący uczucie martwego zawieszenia
+                                status_placeholder = st.empty()
+                                status_komunikaty = [
+                                    "🧠 Sprawdzam strefy cienia i okno sjesty...",
+                                    "🚗 Weryfikuję czasy dojazdu i postoje sensoryczne...",
+                                    "🥪 Pilnuję licznika głodu (Safe Foods i 4h)...",
+                                    "💡 Dopasowuję bezpieczny harmonogram dnia..."
+                                ]
+                                status_placeholder.markdown(f"*{random.choice(status_komunikaty)}*")
                                 
+                                # ZMIANA: Odporny mechanizm retry z backoffem i kaskadowym fallbackiem modeli przy błędach 503 / 429
+                                kandydaci_modeli = [wybrany_model]
+                                for zapas in ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]:
+                                    if zapas not in kandydaci_modeli:
+                                        kandydaci_modeli.append(zapas)
+
                                 response = None
-                                try:
-                                    response = client.models.generate_content(
-                                        model=wybrany_model,
-                                        contents=contents,
-                                        config=config
-                                    )
-                                except Exception as api_err:
-                                    err_str = str(api_err).lower()
-                                    if "503" in err_str or "unavailable" in err_str or "429" in err_str:
-                                        py_time.sleep(1.5)
-                                        response = client.models.generate_content(
-                                            model=wybrany_model,
-                                            contents=contents,
-                                            config=config
-                                        )
-                                    else:
-                                        raise api_err
+                                ostatni_wyjatek = None
+
+                                for model_target in kandydaci_modeli:
+                                    for proba in range(3):
+                                        try:
+                                            cfg_wywolania = config
+                                            if model_target != wybrany_model and hasattr(cfg_wywolania, 'cached_content'):
+                                                cfg_wywolania = types.GenerateContentConfig(
+                                                    tools=narzedzia_call,
+                                                    system_instruction=aktywny_system_prompt,
+                                                    temperature=0.1,
+                                                    max_output_tokens=1024 if is_emergency else 2048
+                                                )
+
+                                            response = client.models.generate_content(
+                                                model=model_target,
+                                                contents=contents,
+                                                config=cfg_wywolania
+                                            )
+                                            if response:
+                                                break
+                                        except Exception as api_err:
+                                            ostatni_wyjatek = api_err
+                                            err_str = str(api_err).lower()
+                                            if any(err_code in err_str for err_code in ["503", "unavailable", "high demand", "overloaded", "429", "resource_exhausted"]):
+                                                py_time.sleep(1.2 * (proba + 1))
+                                                continue
+                                            else:
+                                                raise api_err
+                                    if response:
+                                        break
+
+                                if response is None and ostatni_wyjatek is not None:
+                                    raise ostatni_wyjatek
 
                                 candidate = response.candidates[0] if response and response.candidates else None
                                 calls = []
