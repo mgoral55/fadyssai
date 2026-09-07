@@ -1851,14 +1851,25 @@ def pobierz_nieprzypisane_miejsca():
 def szukaj_miejsca_w_bazie(nazwa_zapytania):
     with get_db() as conn:
         cursor = conn.cursor()
-        # ZMIANA: Usunięcie błędnych wcięć (IndentationError) i czyste formatowanie zapytania SQL
-        cursor.execute('''
-            SELECT numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas, 
-                   godziny_otwarcia, konieczna_akcja, ochrona_slonce, potencjal_meltdownu, 
-                   strategie_meltdown, opis, odwiedzone
-            FROM miejsca 
-            WHERE nazwa LIKE ? OR numer_miejsca = ?
-        ''', (f"%{nazwa_zapytania}%", str(nazwa_zapytania)))
+        # ZMIANA: Priorytetyzacja ścisłego dopasowania po numerze miejsca przed wyszukiwaniem tekstowym LIKE
+        zapytanie_str = str(nazwa_zapytania).strip()
+        if zapytanie_str.isdigit():
+            cursor.execute('''
+                SELECT numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas, 
+                       godziny_otwarcia, konieczna_akcja, ochrona_slonce, potencjal_meltdownu, 
+                       strategie_meltdown, opis, odwiedzone
+                FROM miejsca 
+                WHERE TRIM(numer_miejsca) = ?
+            ''', (zapytanie_str,))
+        else:
+            cursor.execute('''
+                SELECT numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas, 
+                       godziny_otwarcia, konieczna_akcja, ochrona_slonce, potencjal_meltdownu, 
+                       strategie_meltdown, opis, odwiedzone
+                FROM miejsca 
+                WHERE LOWER(nazwa) LIKE LOWER(?) OR TRIM(numer_miejsca) = ?
+                ORDER BY CASE WHEN LOWER(nazwa) = LOWER(?) THEN 0 ELSE 1 END, CAST(numer_miejsca AS INTEGER) ASC
+            ''', (f"%{zapytanie_str}%", zapytanie_str, zapytanie_str))
         row = cursor.fetchone()
         if row:
             return {
@@ -1868,6 +1879,39 @@ def szukaj_miejsca_w_bazie(nazwa_zapytania):
                 "strategie_meltdown": row[10], "opis": row[11], "odwiedzone": bool(row[12])
             }
     return None
+    
+# ZMIANA: Obsługa zapytań o listy miejsc z bazy według miasta, nazwy lub kategorii
+def pobierz_miejsca_z_bazy(fraza_wyszukiwania="", kategoria=""):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        query = '''
+            SELECT numer_miejsca, nazwa, typ, czas_dojazdu, orientacyjny_czas, ochrona_slonce, trudnosc_adhd, opis
+            FROM miejsca
+            WHERE odwiedzone = 0
+        '''
+        params = []
+        if fraza_wyszukiwania:
+            query += ' AND (nazwa LIKE ? OR opis LIKE ?)'
+            params.extend([f"%{fraza_wyszukiwania}%", f"%{fraza_wyszukiwania}%"])
+        if kategoria:
+            query += ' AND typ LIKE ?'
+            params.append(f"%{kategoria}%")
+        query += ' ORDER BY CAST(numer_miejsca AS INTEGER) ASC LIMIT 10'
+        cursor.execute(query, tuple(params))
+        rows = cursor.fetchall()
+        wyniki = []
+        for r in rows:
+            wyniki.append({
+                "numer_miejsca": str(r[0]),
+                "nazwa": r[1],
+                "typ": r[2],
+                "czas_dojazdu": r[3],
+                "orientacyjny_czas": r[4],
+                "ochrona_slonce": r[5],
+                "trudnosc_adhd": r[6],
+                "opis": r[7]
+            })
+    return {"znalezione_miejsca": wyniki, "liczba": len(wyniki)}
 
 def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane_okienko, pomin_ostrzezenie_slonce=False):
     miejsce_info = szukaj_miejsca_w_bazie(nazwa_nowego_miejsca)
@@ -2456,7 +2500,9 @@ def zarzadzaj_posilkiem_kroku(id_wycieczki, id_kroku, rodzaj_posilku, miejsce="r
         
         prawdziwe_id_kroku, nazwa_kroku = k_info
 
-        # ZMIANA: Aktualizacja istniejącego posiłku tego samego typu lub wstawienie nowego bez dublowania
+        if any(w in str(rodzaj_posilku).lower() for w in ['obiad', 'lunch']):
+            cursor.execute("DELETE FROM posilki_kroku WHERE id_kroku = ? AND rodzaj_posilku IN ('śniadanie', 'sniadanie')", (prawdziwe_id_kroku,))
+        
         cursor.execute('SELECT id FROM posilki_kroku WHERE id_kroku = ? AND rodzaj_posilku = ?', (prawdziwe_id_kroku, rodzaj_posilku))
         istniejacy_p = cursor.fetchone()
         if istniejacy_p:
@@ -2635,6 +2681,18 @@ tools_definitions = [
                 "nazwa_zapytania": types.Schema(type=types.Type.STRING, description="Nazwa miejsca lub numer"),
             },
             required=["nazwa_zapytania"]
+        ),
+    ),
+    # ZMIANA: Deklaracja narzędzia do listowania miejsc dla zapytań o region/miasto/kategorię
+    types.FunctionDeclaration(
+        name="pobierz_miejsca_z_bazy",
+        description="Wyszukuje i listuje miejsca z bazy danych wg słowa kluczowego (np. 'Chania', 'Rethymno') lub kategorii.",
+        parameters=types.Schema(
+            type=types.Type.OBJECT,
+            properties={
+                "fraza_wyszukiwania": types.Schema(type=types.Type.STRING, description="Nazwa miasta, regionu lub atrakcji, np. 'Chania'"),
+                "kategoria": types.Schema(type=types.Type.STRING, description="Opcjonalna kategoria: 'Plaża', 'Must have', 'Shop', 'Activity'"),
+            },
         ),
     ),
     types.FunctionDeclaration(
@@ -2900,6 +2958,7 @@ tools_definitions = [
 ]
 
 NARZEDZIA_DISPATCHER = {
+    "pobierz_miejsca_z_bazy": lambda args: pobierz_miejsca_z_bazy(**args),
     "szukaj_miejsca_w_bazie": lambda args: szukaj_miejsca_w_bazie(**args) or {"error": "Brak miejsca w bazie."},
     "utworz_nowe_miejsce": lambda args: utworz_nowe_miejsce(**args),
     "utworz_nowa_wycieczke": lambda args: utworz_nowa_wycieczke(**args),
@@ -3204,10 +3263,15 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                                         if not call_name.startswith("szukaj_") and not call_name.startswith("sprawdz_") and not call_name.startswith("pobierz_"):
                                             has_db_mutations = True
                                         
+                                        # ZMIANA: Automatyczne przełączenie aktywnej wycieczki w sesji po utworzeniu nowej trasy
                                         if "utworz_nowe_miejsce" in call_name:
                                             st.write(f"📍 Dodano do bazy: **{args.get('nazwa', 'nowe miejsce')}**")
                                         elif "utworz_nowa_wycieczke" in call_name:
                                             st.write(f"🧭 Przygotowano szkielet trasy: **{args.get('tytul_wycieczki', '')}**")
+                                            if isinstance(wynik_bazy, dict) and wynik_bazy.get("id_wycieczki"):
+                                                nowe_w_id = str(wynik_bazy["id_wycieczki"])
+                                                st.session_state["target_trip_id"] = nowe_w_id
+                                                st.session_state["selected_trip_from_click"] = nowe_w_id
                                         elif "dodaj_krok" in call_name:
                                             st.write(f"➕ Dołączono przystanek: **{args.get('nazwa_z_bazy', '')}**")
                                         elif "edytuj_wycieczke" in call_name:
@@ -3245,7 +3309,16 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                                         "narusza zasadę ochrony przed pełnym słońcem i grozi przebodźcowaniem. "
                                         "Pozostajemy przy pierwotnym, bezpiecznym harmonogramie."
                                     )
-
+                                    
+                            # ZMIANA: Obsługa pustej odpowiedzi modelu przy zapytaniach odczytowych (read-only tool call)
+                            if not assistant_reply.strip() and not has_db_mutations:
+                                for p_cand in (candidate.content.parts if candidate and candidate.content and candidate.content.parts else []):
+                                    if hasattr(p_cand, 'text') and p_cand.text and p_cand.text.strip():
+                                        assistant_reply = p_cand.text.strip()
+                                        break
+                                if not assistant_reply.strip():
+                                    assistant_reply = "Przeszukałem bazę CretAi. Sprecyzuj, jakiego typu miejsc szukasz (plaża, zabytek w cieniu czy safe food)?"
+                                    
                             if not assistant_reply.strip() and has_db_mutations:
                                 user_friendly_actions = []
                                 for act in executed_actions:
