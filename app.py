@@ -128,19 +128,32 @@ def sparsuj_wspolrzedne(wsp_str):
     except Exception:
         return None, None
         
-def rozwiaz_geolokalizacje_miejsca_kreta(nazwa_miejsca):
+# ZMIANA: Zaawansowane geokodowanie OSM z czyszczeniem prefiksów, rozpoznawaniem miast i dłuższym timeoutem
+def rozwiaz_geolokalizacje_miejsca_kreta(nazwa_miejsca, kontekst_miasta=""):
     if not nazwa_miejsca:
         return None, None
-    # Warianty zapytań: pełna nazwa oraz uproszczona (bez słów typu Tavern/Tawerna/Cafe)
-    czysta = re.sub(r'(?i)\b(tawerna|tavern|restaurant|restauracja|cafe|bar|snack)\b', '', nazwa_miejsca).strip()
-    zapytania = [f"{nazwa_miejsca} Crete Greece", f"{czysta} Crete Greece"] if czysta != nazwa_miejsca else [f"{nazwa_miejsca} Crete Greece"]
     
-    for q in zapytania:
+    # Oczyszczenie nazwy ze zbędnych słów kluczowych zaburzających geocoder OSM
+    czysta = re.sub(r'(?i)\b(tawerna|tavern|restaurant|restauracja|cafe|bar|snack|obiad|lunch|w|przy|blisko)\b', '', nazwa_miejsca).strip()
+    czysta = re.sub(r'\s+', ' ', czysta).strip()
+    
+    zapytania = []
+    if kontekst_miasta:
+        zapytania.append(f"{czysta} {kontekst_miasta} Crete Greece")
+    zapytania.append(f"{czysta} Crete Greece")
+    zapytania.append(f"{nazwa_miejsca} Crete Greece")
+    zapytania.append(f"{czysta} Crete")
+    
+    # Unikalne zapytania zachowujące kolejność
+    zapytania_unikalne = list(dict.fromkeys(zapytania))
+    
+    for q in zapytania_unikalne:
         try:
             query = urllib.parse.quote(q)
+            # viewbox ograniczony do całej wyspy Kreta
             url = f"https://nominatim.openstreetmap.org/search?q={query}&format=json&limit=1&bounded=1&viewbox=23.40,35.75,26.40,34.80"
-            req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0 (FamilyTripPlanner)'})
-            with urllib.request.urlopen(req, timeout=1.8) as response:
+            req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0 (FamilyTripPlannerAuDHD)'})
+            with urllib.request.urlopen(req, timeout=3.5) as response:
                 data = json.loads(response.read().decode())
                 if data and len(data) > 0:
                     lat = float(data[0]['lat'])
@@ -2044,16 +2057,25 @@ def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="4
             23.40 <= lon_p <= 26.40
         )
 
+        # ZMIANA: Inteligentny fallback koordynatów – zakaz automatycznego przypisywania Stavros dla miejsc na wschodzie Krety
         if not czy_w_granicach:
-            # Fallback OSM jeśli jeszcze nie był odpalany
-            lat_geo, lon_geo = rozwiaz_geolokalizacje_miejsca_kreta(nazwa)
+            # Próba geokodowania z kontekstem
+            kontekst_m = ""
+            for miasto in ["Heraklion", "Chania", "Rethymno", "Agios Nikolaos", "Ierapetra", "Kissamos"]:
+                if miasto.lower() in nazwa.lower() or miasto.lower() in opis.lower():
+                    kontekst_m = miasto
+                    break
+            
+            lat_geo, lon_geo = rozwiaz_geolokalizacje_miejsca_kreta(nazwa, kontekst_miasta=kontekst_m)
             if lat_geo is not None and lon_geo is not None:
                 lat_p, lon_p = lat_geo, lon_geo
                 wsp_czyste = f"{lat_p:.4f}, {lon_p:.4f}"
             else:
+                # Kotwiczenie na współrzędnych ostatniego zwiedzanego punktu (np. muzeum w Heraklionie)
                 cursor.execute('''
                     SELECT wspolrzedne FROM krok_wycieczki 
                     WHERE wspolrzedne IS NOT NULL AND wspolrzedne != '' 
+                      AND nazwa NOT LIKE '%domek%' AND nazwa NOT LIKE '%stavros%'
                     ORDER BY id DESC LIMIT 1
                 ''')
                 ostatni_krok = cursor.fetchone()
@@ -2062,11 +2084,18 @@ def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="4
                     if lat_fb and 34.80 <= lat_fb <= 35.75 and 23.40 <= lon_fb <= 26.40:
                         lat_p, lon_p = lat_fb, lon_fb
                         wsp_czyste = f"{lat_p:.4f}, {lon_p:.4f}"
-                if lat_p is None or not (34.80 <= lat_p <= 35.75):
-                    lat_p, lon_p = DOMEK_LAT, DOMEK_LON
-                    wsp_czyste = f"{DOMEK_LAT}, {DOMEK_LON}"
 
-        czas_dojazdu_z_domku = "—"
+                # Koordynaty znanych miast jako ostateczny bezpieczny fallback zamiast domku
+                if lat_p is None:
+                    if "heraklion" in nazwa.lower() or "iraklio" in nazwa.lower():
+                        lat_p, lon_p = 35.3387, 25.1332  # Centrum Heraklionu
+                    elif "rethymno" in nazwa.lower():
+                        lat_p, lon_p = 35.3670, 24.4759  # Centrum Rethymno
+                    elif "chania" in nazwa.lower():
+                        lat_p, lon_p = 35.5138, 24.0180  # Centrum Chanii
+                    else:
+                        lat_p, lon_p = DOMEK_LAT, DOMEK_LON
+                    wsp_czyste = f"{lat_p:.4f}, {lon_p:.4f}"
         if lat_p is not None and lon_p is not None:
             tekst_dojazdu, _ = oblicz_czas_przejazdu_osrm(DOMEK_LAT, DOMEK_LON, lat_p, lon_p)
             czas_dojazdu_z_domku = tekst_dojazdu
