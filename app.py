@@ -521,8 +521,16 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
                     # ZMIANA: Kolacja w domku po powrocie zaczyna się 30 min po dotarciu na miejsce
                     nowa_godz_p = (start_times[-1] + timedelta(minutes=30)).strftime("%H:%M") if i == last_idx else s_str
                 elif 'obiad' in p_rodz_l or 'lunch' in p_rodz_l or 'duzy' in p_rodz_l:
-                    # ZMIANA: Posiłek jedzony w domku po powrocie zaczyna się pół godziny po powrocie (+30 min buforu)
-                    if i == last_idx:
+                    # ZMIANA: Strażnik godziny obiadu podczas synchronizacji harmonogramu
+                    g_start_kroku = sparsuj_godzine_minuty(s_str)
+                    if g_start_kroku and g_start_kroku[0] < 12 and i != last_idx:
+                        # Posiłek wypada przed 12:00 - przymusowa konwersja na lunchbox
+                        nowy_rodzaj = 'lunchbox_maly'
+                        nowy_opis = 'Mały lunchbox'
+                        cursor.execute('UPDATE posilki_kroku SET rodzaj_posilku = ?, opis = ?, miejsce = ? WHERE id = ?', 
+                                       (nowy_rodzaj, nowy_opis, 'z domu (lunchbox)', p_id))
+                        nowa_godz_p = f"{s_str} - {e_str}"
+                    elif i == last_idx:
                         nowa_godz_p = (start_times[-1] + timedelta(minutes=30)).strftime("%H:%M")
                     else:
                         nowa_godz_p = f"{s_str} - {e_str}"
@@ -843,8 +851,15 @@ def init_db():
                                         p_rodzaj = 'kolacja'
                                         p_miejsce = 'w domku'
                                     elif any(w in p_str_l for w in ['obiad', 'lunch', 'tawerna', 'restauracja']) and 'lunchbox' not in p_str_l:
-                                        p_rodzaj = 'obiad'
-                                        p_miejsce = 'restauracja'
+                                        # ZMIANA: Zakaz obiadu przed 12:00 przy imporcie kroków wycieczki
+                                        g_krok_p = sparsuj_godzine_minuty(okienko_kroku.split('-')[0].strip()) if '-' in okienko_kroku else None
+                                        if g_krok_p and g_krok_p[0] < 12:
+                                            p_rodzaj = 'lunchbox_maly'
+                                            p_miejsce = 'z domu (lunchbox)'
+                                            p_str = 'Mały lunchbox'
+                                        else:
+                                            p_rodzaj = 'obiad'
+                                            p_miejsce = 'restauracja'
                                     elif 'lunchbox duży' in p_str_l or 'duży lunchbox' in p_str_l or 'obiad z domku' in p_str_l:
                                         p_rodzaj = 'lunchbox_duzy'
                                         p_miejsce = 'z domu (lunchbox)'
@@ -1750,11 +1765,18 @@ def znajdz_id_kroku_w_db(cursor, id_wycieczki, identyfikator):
                 return r_id, r_nazwa
         return rows[-1][0], rows[-1][2]
 
-    # ZMIANA: Porównanie po wyczyszczonym identyfikatorze numerycznym (id lub krok_wycieczki)
+    # ZMIANA: Porównanie po wyczyszczonym identyfikatorze numerycznym z tolerancją na typ int/str
     if clean_digits:
+        val_int = int(clean_digits)
         for r_id, r_num, r_nazwa in rows:
-            if str(r_id) == clean_digits or str(r_num) == clean_digits:
+            if r_id == val_int or str(r_id) == clean_digits:
                 return r_id, r_nazwa
+            try:
+                if int(r_num) == val_int or str(r_num) == clean_digits:
+                    return r_id, r_nazwa
+            except (ValueError, TypeError):
+                if str(r_num) == clean_digits:
+                    return r_id, r_nazwa
 
     # Standardowe dopasowanie po nazwie
     for r_id, r_num, r_nazwa in rows:
@@ -2246,8 +2268,24 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 -
         )
 
         nazwa_l = nazwa_z_bazy.lower()
-        if any(w in nazwa_l for w in ["obiad", "tawerna", "lunch", "restauracja", "jedzenie", "lunchbox"]):
-            rodzaj = "lunchbox_duzy" if "duży" in nazwa_l else ("lunchbox_maly" if ("mały" in nazwa_l or "lunchbox" in nazwa_l) else "obiad")
+        typ_miejsca_l = str(miejsce.get("typ", "")).lower() if miejsce else ""
+        opis_miejsca_l = str(opis).lower() if opis else ""
+
+        # ZMIANA: Wykrywanie gastronomii także po typie i opisie miejsca z bazy (gdy nazwa to np. tylko 'Kritikos')
+        jest_gastro = any(w in nazwa_l for w in ["obiad", "tawerna", "tavern", "lunch", "restauracja", "jedzenie", "lunchbox", "kritikos", "peskesi"]) or \
+                     any(w in typ_miejsca_l for w in ["tawern", "restaurac", "gastro"]) or \
+                     any(w in opis_miejsca_l for w in ["tawerna", "restauracja", "dania"])
+
+        if jest_gastro:
+            # ZMIANA: Przed 12:00 posiłek nie może być zakwalifikowany jako obiad - automatyczna konwersja na lunchbox
+            godz_pos = okienko_zwiedzania.split("-")[0].strip() if "-" in okienko_zwiedzania else "12:30"
+            g_pos_parsed = sparsuj_godzine_minuty(godz_pos)
+            jest_przed_12 = g_pos_parsed is not None and g_pos_parsed[0] < 12
+
+            if jest_przed_12 and not any(w in nazwa_l for w in ["śniadan", "sniadan"]):
+                rodzaj = "lunchbox_duzy" if "duży" in nazwa_l or "obiad" in nazwa_l else "lunchbox_maly"
+            else:
+                rodzaj = "lunchbox_duzy" if "duży" in nazwa_l else ("lunchbox_maly" if ("mały" in nazwa_l or "lunchbox" in nazwa_l) else "obiad")
             miejsce_pos = "z domu (lunchbox)" if "lunchbox" in rodzaj else "restauracja"
             godz_pos = okienko_zwiedzania.split("-")[0].strip() if "-" in okienko_zwiedzania else "12:30"
             # ZMIANA: Sprawdzenie czy posiłek już nie został wcześniej przypisany, zapobiegając duplikacji
@@ -2261,7 +2299,19 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 -
         conn.commit()
 
     if wzgledem_kroku is not None:
-        przenies_krok_wycieczki(id_wycieczki, krok_identyfikator=nowy_id, wzgledem_kroku=wzgledem_kroku, relacja=relacja)
+        # ZMIANA: Strażnik kolejności obiadu - jeśli dodajemy obiad/tawernę względem porannej atrakcji, wstawiamy go PO niej, a nie PRZED
+        relacja_skorygowana = relacja
+        if any(w in nazwa_z_bazy.lower() for w in ["obiad", "tawern", "lunch", "kritikos", "peskesi"]) and relacja == "przed":
+            ref_info = znajdz_id_kroku_w_db(cursor, id_wycieczki, wzgledem_kroku)
+            if ref_info:
+                cursor.execute('SELECT okienko_zwiedzania FROM krok_wycieczki WHERE id = ?', (ref_info[0],))
+                row_ref = cursor.fetchone()
+                if row_ref and row_ref[0]:
+                    g_ref = sparsuj_godzine_minuty(row_ref[0].split('-')[0].strip())
+                    if g_ref and g_ref[0] < 12:
+                        relacja_skorygowana = "po"
+
+        przenies_krok_wycieczki(id_wycieczki, krok_identyfikator=nowy_id, wzgledem_kroku=wzgledem_kroku, relacja=relacja_skorygowana)
     else:
         przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
 
@@ -2414,7 +2464,10 @@ def przenies_krok_wycieczki(id_wycieczki, krok_identyfikator, docelowa_pozycja=N
             idx_ref = kroki_ids.index(ref_id)
             target_idx = idx_ref if relacja == "przed" else idx_ref + 1
         elif docelowa_pozycja is not None:
-            target_idx = max(0, min(int(docelowa_pozycja), len(kroki_ids)))
+            # ZMIANA: Bezpieczne oczyszczenie wartości docelowej pozycji z hashy (#) i formatowania LLM
+            czysta_poz = re.sub(r'[^\d]', '', str(docelowa_pozycja))
+            int_poz = int(czysta_poz) if czysta_poz else 0
+            target_idx = max(0, min(int_poz, len(kroki_ids)))
         else:
             return {"success": False, "error": "Podaj docelową pozycję lub punkt odniesienia."}
 
@@ -2499,6 +2552,20 @@ def zarzadzaj_posilkiem_kroku(id_wycieczki, id_kroku, rodzaj_posilku, miejsce="r
             return {"success": False, "error": f"Nie znaleziono kroku wycieczki: {id_kroku}"}
         
         prawdziwe_id_kroku, nazwa_kroku = k_info
+
+        r_pos_lower = str(rodzaj_posilku).lower()
+        if any(w in r_pos_lower for w in ['obiad', 'lunch']):
+            g_pos = sparsuj_godzine_minuty(sugerowana_godzina)
+            if g_pos and (g_pos[0] < 12):
+                return {
+                    "success": False,
+                    "blocked_by_guardrail": True,
+                    "error": (
+                        f"⛔ ZATRZYMANO: Obiad nie może odbyć się przed 12:00 (podano {sugerowana_godzina}). "
+                        f"Przed godziną 12:00 dopuszczalne są wyłącznie: śniadanie, Mały Lunchbox lub Duży Lunchbox. "
+                        f"Zaplanuj obiad na 12:00 lub później, albo wybierz lunchbox."
+                    )
+                }
 
         if any(w in str(rodzaj_posilku).lower() for w in ['obiad', 'lunch']):
             cursor.execute("DELETE FROM posilki_kroku WHERE id_kroku = ? AND rodzaj_posilku IN ('śniadanie', 'sniadanie')", (prawdziwe_id_kroku,))
@@ -3679,7 +3746,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         if is_cottage_step:
             is_wyjazd = any(w in nazwa_lower for w in ["wyjazd", "start"])
             godzina_cottage = godzina_koniec if (is_wyjazd and godzina_koniec and godzina_koniec != godzina_start) else godzina_start
-            opis_kroku_cottage = posilki_tekst if posilki_tekst else ("" if is_wyjazd else "Wypoczynek i relaks")
+            opis_kroku_cottage = "" if is_wyjazd else (posilki_tekst if posilki_tekst else "Wypoczynek i relaks")
             badge_icon_cottage = "🚗" if is_wyjazd else "🏠"
             badge_class_cottage = "badge-wyjazd" if is_wyjazd else "badge-powrot"
             timeline_full_html.append(render_timeline_row_simple(godzina_cottage, badge_icon_cottage, badge_class_cottage, nazwa, opis_kroku_cottage, nav_btn_html=""))
