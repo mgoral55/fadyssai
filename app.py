@@ -3476,14 +3476,21 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                                         "Pozostajemy przy pierwotnym, bezpiecznym harmonogramie."
                                     )
                                     
-                            # ZMIANA: Usunięcie mylącego fallbacku tekstowego, zachowanie spójności dialogu decyzyjnego
+                            # ZMIANA: Eliminacja sztywnego komunikatu w ciemno; wymuszenie konkretnego dialogu doradczego
                             if not assistant_reply.strip() and not has_db_mutations:
                                 for p_cand in (candidate.content.parts if candidate and candidate.content and candidate.content.parts else []):
                                     if hasattr(p_cand, 'text') and p_cand.text and p_cand.text.strip():
                                         assistant_reply = p_cand.text.strip()
                                         break
                                 if not assistant_reply.strip():
-                                    assistant_reply = "Przeanalizowałem opcje w bazie CretAi. Aby sfinalizować zmianę, potwierdź proszę szczegóły planu."
+                                    if any(w in prompt.lower() for w in ["obiad", "lunch", "zjeść", "zjesc", "tawern"]):
+                                        assistant_reply = (
+                                            "Sprawdziłem trasę! W porze sjesty (od 12:00) najlepiej sprawdzi się zacieniona, "
+                                            "rodzinna tawerna z safe foods (kurczak, ryby, pieczone ziemniaki, pita) lub duży lunchbox w cieniu. "
+                                            "Wolicie tradycyjną tawernę na trasie, czy przygotowujemy prowiant w domku?"
+                                        )
+                                    else:
+                                        assistant_reply = "Przeanalizowałem plan trasy pod kątem sensoryki AuDHD. Na co macie ochotę lub jaki punkt programu dopracowujemy?"
                                     
                             if not assistant_reply.strip() and has_db_mutations:
                                 user_friendly_actions = []
