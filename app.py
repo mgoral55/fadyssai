@@ -2012,6 +2012,37 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
                         f"💡 PROPOZYCJA: Zaplanuj Lunchbox mały, ciepły obiad na mieście w cieniu lub Lunchbox duży przed '{nazwa_nowego_miejsca}'."
                     )
 
+        # ZMIANA: Strażnik obecności obiadu przy jakiejkolwiek mutacji w długim planie dnia (trasa >= 5h lub powrót >= 14:00)
+        cursor.execute('SELECT pobudka, czas_wyjazdu, szacowana_godzina_powrotu FROM wycieczka WHERE id = ?', (str(id_wycieczki),))
+        w_row = cursor.fetchone()
+        if w_row:
+            g_wyjazd = sparsuj_godzine_minuty(w_row[1] or '07:00')
+            g_powrot = sparsuj_godzine_minuty(w_row[2] or '17:00')
+            if g_wyjazd and g_powrot:
+                czas_trwania_h = (g_powrot[0] + g_powrot[1] / 60.0) - (g_wyjazd[0] + g_wyjazd[1] / 60.0)
+                if czas_trwania_h < 0:
+                    czas_trwania_h += 24.0
+
+                if czas_trwania_h >= 5.0 or g_powrot[0] >= 14:
+                    cursor.execute('''
+                        SELECT COUNT(*) 
+                        FROM posilki_kroku p
+                        JOIN krok_wycieczki k ON p.id_kroku = k.id
+                        WHERE k.id_wycieczki = ? 
+                          AND p.rodzaj_posilku IN ('obiad', 'lunch', 'lunchbox_duzy')
+                    ''', (str(id_wycieczki),))
+                    liczba_obiadow = cursor.fetchone()[0]
+
+                    jest_nowy_obiad = any(w in nazwa_l for w in ['obiad', 'tawern', 'tavern', 'lunch', 'duży lunchbox', 'lunchbox duży'])
+
+                    if liczba_obiadow == 0 and not jest_nowy_obiad:
+                        return False, (
+                            f"⛔ ZATRZYMANO (Brak Obiadu w trasie): Plan dnia trwa aż {czas_trwania_h:.1f}h, a nie ma w nim zaplanowanego żadnego obiadu! "
+                            f"Małe lunchboxy to tylko przekąski i nie wystarczą na cały dzień. "
+                            f"Przed dodaniem kolejnych atrakcji ({nazwa_nowego_miejsca}) musimy zaplanować stały posiłek główny: "
+                            f"Zacienioną tawernę na trasie (od 12:00) lub Duży Lunchbox z domku."
+                        )
+
     return True, ""
 
 # --- OPERACJE NA KROKACH I WYCIECZKACH ---
