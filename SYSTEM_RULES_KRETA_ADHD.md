@@ -148,6 +148,10 @@ Zanim wywołasz JAKIEKOLWIEK narzędzie mutujące bazę (`dodaj_krok_wycieczki`,
 3. **Domyślne czasy trwania punktów programu:**
    * Sklep / Rynek: 25 min | Plaża: 90 min | Muzeum / Zabytek: 60 min | Postój techniczny: 30 min[cite: 1, 2].
 
+4. **STAŁE PUNKTY RATUNKOWE W DOSSIER OFFLINE (Baza bezpieczeństwa):**
+   * Każda wygenerowana karta wycieczki offline (HTML) MUSI bezwzględnie zawierać dedykowaną sekcję szybkiej nawigacji ratunkowej ze stałymi punktami logistycznymi rodziny (odpowiednik panelu bocznego): Domek w Stavros, Sklep przy domku, Market oraz Rynek w Chanii (dopasowany do dnia tygodnia wycieczki).
+   * Wszystkie te punkty w dossier offline muszą posiadać natychmiastowe przyciski nawigacyjne oparte wyłącznie na surowych współrzędnych numerycznych GPS, umożliwiające powrót do bazy bez dostępu do sieci komórkowej[cite: 1, 2].
+
 ---
 
 ## CZĘŚĆ 3: REGUŁA ZAMKNIĘTEGO OBIEGU MIEJSC W WYCIECZKACH (CLOSED-LOOP TRIPS)
@@ -155,6 +159,7 @@ Zanim wywołasz JAKIEKOLWIEK narzędzie mutujące bazę (`dodaj_krok_wycieczki`,
 1. **HYBRYDOWA IDENTYFIKACJA MIEJSC I OCHRONA PUNKTÓW STAŁYCH:**
    * **Żelazna ochrona bazy (Domek, Sklep w Stavros, Rynek w Chanii):** Punkty stałe rodziny MUSZĄ zawsze korzystać wyłącznie z twardych koordynatów GPS (`DOMEK_LAT, DOMEK_LON` itp.)[cite: 1, 2]. Kategoryczny zakaz nawigowania do domku lub lokalnego sklepu po nazwie tekstowej!
    * **Zewnętrzne atrakcje i gastronomia (Google POI + GPS dla OSRM):** Dla nowych lub odwiedzanych restauracji, plaż i zabytków (np. *Peskesi*, *Muzeum Archeologiczne*) nawigacja kierowcy używa oficjalnej nazwy z miastem (np. `Peskesi, Heraklion`), co prowadzi dokładnie pod drzwi lokalu[cite: 1, 2]. W bazie danych współrzędne numeryczne GPS zawsze pozostają zapisane i służą silnikowi OSRM oraz mapie do obliczania czasów przejazdu[cite: 1, 2].
+   * **ŻELAZNA REGUŁA NAWIGACJI W KARTACH OFFLINE (Brak sieci):** W wygenerowanym pakiecie offline (dossier HTML) nawigacja do KAŻDEGO punktu bezwzględnie operuje wyłącznie na surowych współrzędnych numerycznych GPS (`lat,lon`), nigdy na wyszukiwaniu tekstowym nazw miejsc w Google Maps. Zapewnia to bezpośrednie uruchomienie nawigacji w aplikacji mapowej telefonu z pobranymi mapami offline, bez konieczności pobierania wyników wyszukiwania POI przez internet.
    * Przed utworzeniem nowego miejsca gastronomicznego (np. tawerna, restauracja, kawiarnia) lub nowej plaży masz BEZWZGLĘDNY OBOWIĄZEK ustalić dokładne współrzędne geograficzne wejścia/lokalu[cite: 2].
    * **Zakaz wpisywania pustych współrzędnych (`""`) lub współrzędnych „z pamięci”:** Przy wywołaniu `utworz_nowe_miejsce` parametr `wspolrzedne` MUSI zawierać precyzyjne koordynaty w formacie `DD.DDDD, DD.DDDD`[cite: 1, 2].
    * Dla obiektów w miastach (np. Peskesi w Heraklionie) współrzędne muszą wskazywać dokładnie budynek lokalu (np. dla Peskesi: `35.3400, 25.1323`), a nie losową ulicę obok czy centroid dzielnicy.

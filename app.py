@@ -4169,32 +4169,8 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         """
         st.components.v1.html(btn_offline_js, height=44)
 
-# --- PAKIET OFFLINE I PAMIĘĆ PODRĘCZNA W TELEFONIE ---
 def generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_miejsca_ref):
-    with get_db() as conn:
-        wyc = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
-        kroki = pd.read_sql('''
-            SELECT k.*, 
-                   GROUP_CONCAT(p.rodzaj_posilku || ' (' || COALESCE(p.sugerowana_godzina, '') || '): ' || COALESCE(p.opis, ''), ' | ') AS posilki_info
-            FROM krok_wycieczki k
-            LEFT JOIN posilki_kroku p ON k.id = p.id_kroku
-            WHERE k.id_wycieczki = ?
-            GROUP BY k.id
-            ORDER BY CAST(k.krok_wycieczki AS INTEGER) ASC
-        ''', conn, params=(str(wycieczka_id),))
-        zakupy = pd.read_sql('SELECT * FROM zakupy WHERE id_wycieczki = ?', conn, params=(str(wycieczka_id),))
-
-    if wyc.empty:
-        return None
-
-    w = wyc.iloc[0]
-    tytul = w.get('tytul_wycieczki', 'Trasa Dnia')
-    taktyka = w.get('calosciowa_taktyka_dnia', 'Brak szczegółów')
-    pobudka = w.get('pobudka', '06:00')
-    wyjazd = w.get('czas_wyjazdu', '06:30')
-    powrot = w.get('szacowana_godzina_powrotu', '17:30')
-    data_w = w.get('planowana_data', '')
-
+    # ZMIANA: Usunięcie zdublowanego bloku zapytań SQL i scalenie w pojedynczą transakcję odczytu
     with get_db() as conn:
         wyc = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
         kroki = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn, params=(str(wycieczka_id),))
@@ -4211,6 +4187,53 @@ def generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_miejsca_ref):
     wyjazd = w.get('czas_wyjazdu', '06:30')
     powrot = w.get('szacowana_godzina_powrotu', '17:30')
     data_w = w.get('planowana_data', '')
+    
+    # ZMIANA: Pobranie i sformatowanie stałych punktów z panelu bocznego do widoku offline
+    rynek_dane, _ = pobierz_dane_rynku_dla_daty(data_w)
+    rynek_html = ""
+    # ZMIANA: Czysty napis "Nawiguj" w przyciskach szybkiej nawigacji bez wyświetlania surowych cyfr GPS
+    if rynek_dane and rynek_dane.get("coords"):
+        coords_r = str(rynek_dane["coords"]).replace(" ", "")
+        rynek_html = f"""
+        <div class="quick-nav-item">
+            <div class="quick-nav-label">🧺 Rynek ({rynek_dane['dzien_pl']})</div>
+            <div class="quick-nav-desc">{rynek_dane['opis_miejsca']}</div>
+            <a href="https://www.google.com/maps/search/?api=1&query={coords_r}" target="_blank" class="btn-quick-nav">🧭 Nawiguj</a>
+        </div>
+        """
+    else:
+        rynek_html = """
+        <div class="quick-nav-item" style="opacity: 0.7;">
+            <div class="quick-nav-label">🧺 Rynek w Chanii</div>
+            <div class="quick-nav-desc">W wybranym dniu targ nie funkcjonuje</div>
+        </div>
+        """
+
+    quick_nav_section_html = f"""
+    <div class="card" style="margin-bottom: 14px; border-color: #8C5338;">
+        <div style="font-weight: 900; font-size: 11pt; color: #8C5338; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+            <span>🧭</span><span>SZYBKA NAWIGACJA (PUNKTY BAZOWE)</span>
+        </div>
+        <div class="quick-nav-grid">
+            <div class="quick-nav-item">
+                <div class="quick-nav-label">🏠 Nasz Domek (Stavros)</div>
+                <div class="quick-nav-desc">Główna baza wypadowa i bezpieczna przystań</div>
+                <a href="https://www.google.com/maps/search/?api=1&query={DOMEK_LAT},{DOMEK_LON}" target="_blank" class="btn-quick-nav">🧭 Nawiguj</a>
+            </div>
+            <div class="quick-nav-item">
+                <div class="quick-nav-label">🛒 Sklep przy domku</div>
+                <div class="quick-nav-desc">Lokalny sklep w Stavros na szybkie zakupy</div>
+                <a href="https://www.google.com/maps/search/?api=1&query={SKLEP_LAT},{SKLEP_LON}" target="_blank" class="btn-quick-nav">🧭 Nawiguj</a>
+            </div>
+            <div class="quick-nav-item">
+                <div class="quick-nav-label">🏬 Market</div>
+                <div class="quick-nav-desc">Duży supermarket na trasie</div>
+                <a href="https://www.google.com/maps/search/?api=1&query={MARKET_LAT},{MARKET_LON}" target="_blank" class="btn-quick-nav">🧭 Nawiguj</a>
+            </div>
+            {rynek_html}
+        </div>
+    </div>
+    """
 
     kroki_cards_html = []
     for _, k in kroki.iterrows():
@@ -4255,7 +4278,13 @@ def generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_miejsca_ref):
         evac_badge = f'<div class="evac-badge">🚨 Godzina ewakuacji: <b>{ewakuacja}</b></div>' if ewakuacja and ewakuacja not in ['None', '-', 'nan'] else ''
         warn_box = f'<div class="warn-box">⚠️ <b>Czerwona Strefa:</b> {ostrzezenie}</div>' if ostrzezenie and ostrzezenie not in ['None', '-', 'nan'] else ''
         taktyka_box = f'<div class="tactics-box">🎯 <b>Taktyka:</b> {taktyka_k}</div>' if taktyka_k and taktyka_k not in ['None', '-', 'nan'] else ''
-        geo_btn = f'<a href="https://www.google.com/maps/search/?api=1&query={wsp}" target="_blank" class="btn-geo">🧭 Nawiguj w Google Maps</a>' if wsp and ',' in wsp else ''
+        # ZMIANA: Etykieta przycisku to wyłącznie "Nawiguj", link pod spodem prowadzi precyzyjnie do koordynatów GPS
+        lat_krok, lon_krok = sparsuj_wspolrzedne(wsp)
+        if lat_krok is not None and lon_krok is not None:
+            geo_query = f"{lat_krok:.5f},{lon_krok:.5f}"
+            geo_btn = f'<a href="https://www.google.com/maps/search/?api=1&query={geo_query}" target="_blank" class="btn-geo">🧭 Nawiguj</a>'
+        else:
+            geo_btn = ''
 
         kroki_cards_html.append(f"""
         <div class="step-card">
@@ -4338,6 +4367,16 @@ def generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_miejsca_ref):
   }}
   .check-item {{ display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 10.5pt; font-weight: 700; border-bottom: 1px solid #D6CEBA; }}
   .check-item input {{ width: 22px; height: 22px; accent-color: var(--accent); }}
+  /* ZMIANA: Style dla szybkiej nawigacji z panelu bocznego w karcie offline */
+  .quick-nav-grid {{ display: flex; flex-direction: column; gap: 8px; }}
+  .quick-nav-item {{ background: #FAF8F2; border: 1.5px solid #D6CEBA; border-radius: 12px; padding: 10px; }}
+  .quick-nav-label {{ font-size: 10pt; font-weight: 900; color: #2B2118; margin-bottom: 2px; }}
+  .quick-nav-desc {{ font-size: 8.5pt; color: #4A3E36; font-weight: 600; margin-bottom: 6px; }}
+  .btn-quick-nav {{
+    display: block; width: 100%; text-align: center; background: #2E251E;
+    color: #FFFFFF !important; text-decoration: none; font-weight: 900;
+    font-size: 9pt; padding: 8px; border-radius: 10px; box-sizing: border-box;
+  }}
 </style>
 </head>
 <body>
@@ -4356,6 +4395,9 @@ def generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_miejsca_ref):
     <b>🎯 Taktyka Dnia:</b><br>{taktyka}
   </div>
 </div>
+
+<!-- ZMIANA: Dołączenie sekcji szybkiej nawigacji z panelu bocznego do pakietu offline -->
+{quick_nav_section_html}
 
 <div style="font-weight: 900; font-size: 12pt; margin: 14px 0 8px 4px; color: #2B2118;">🗺️ HARMONOGRAM TRASY</div>
 {"".join(kroki_cards_html)}
