@@ -1571,22 +1571,31 @@ def render_action_bar(coords_clean, search_name="", search_name_en="", address="
     czysta_nazwa_en = re.sub(r'^\d+[\.\)]\s*', '', str(search_name_en)).strip() if search_name_en and str(search_name_en).strip() not in ['None', 'nan'] else ""
     czysty_adres = str(address).strip() if address and str(address).strip() not in ['None', 'nan'] else ""
 
-    # Priorytetyzacja nazwy angielskiej i adresu
+    # ZMIANA: Automatyczne usuwanie dopisków adresowych w nawiasach z nazwy miejsca
+    czysta_nazwa = re.sub(r'\(.*?\)', '', czysta_nazwa).strip()
+    czysta_nazwa_en = re.sub(r'\(.*?\)', '', czysta_nazwa_en).strip()
+
+    # Priorytetyzacja czystej nazwy angielskiej
     fraza_glowna = czysta_nazwa_en if czysta_nazwa_en else czysta_nazwa
-    elementy_nav = [fraza_glowna]
-    if czysty_adres and czysty_adres.lower() not in fraza_glowna.lower():
-        elementy_nav.append(czysty_adres)
+
+    elementy_nav = []
+    if fraza_glowna:
+        elementy_nav.append(fraza_glowna)
+
+    if czysty_adres:
+        # ZMIANA: Dodanie adresu tylko jeśli nie jest już częścią nazwy głównej
+        if czysty_adres.lower() not in fraza_glowna.lower():
+            elementy_nav.append(czysty_adres)
+
     if not any("crete" in el.lower() or "kreta" in el.lower() for el in elementy_nav):
         elementy_nav.append("Crete")
 
     pelne_zapytanie = ", ".join([el for el in elementy_nav if el])
 
+    # ZMIANA: Czysty URL tekstowy bez koordynatów GPS, bezpośrednio trafiający w wizytówkę POI
     lat_p, lon_p = sparsuj_wspolrzedne(coords_clean)
     if pelne_zapytanie:
-        if lat_p is not None and lon_p is not None:
-            query_nav = f"{lat_p:.5f},{lon_p:.5f}+({urllib.parse.quote(pelne_zapytanie)})"
-        else:
-            query_nav = urllib.parse.quote(pelne_zapytanie)
+        query_nav = urllib.parse.quote(pelne_zapytanie)
     elif lat_p is not None and lon_p is not None:
         query_nav = f"{lat_p:.5f},{lon_p:.5f}"
     else:
@@ -3978,12 +3987,13 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
         fraza_kroku_nav = ", ".join([c for c in czesci_zapytania if c])
 
+        # ZMIANA: Nawigacja do miejsc zewnętrznych wyłącznie po nazwie i adresie bez prefiksu GPS
         if any(w in nazwa_lower for w in ["domek", "stavros"]):
             query_nav = f"{DOMEK_LAT},{DOMEK_LON}"
-        elif lat_parsed is not None and lon_parsed is not None:
-            query_nav = f"{lat_parsed:.5f},{lon_parsed:.5f}+({urllib.parse.quote(fraza_kroku_nav)})"
         elif fraza_kroku_nav:
             query_nav = urllib.parse.quote(fraza_kroku_nav)
+        elif lat_parsed is not None and lon_parsed is not None:
+            query_nav = f"{lat_parsed:.5f},{lon_parsed:.5f}"
         elif coords_clean:
             query_nav = coords_clean
         else:
