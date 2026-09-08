@@ -624,6 +624,7 @@ def init_db():
                 numer_miejsca TEXT PRIMARY KEY,
                 nazwa TEXT,
                 nazwa_angielska TEXT,
+                adres TEXT,
                 typ TEXT,
                 wspolrzedne TEXT,
                 czas_dojazdu TEXT,
@@ -640,9 +641,13 @@ def init_db():
                 odwiedzone INTEGER DEFAULT 0
             )
         ''')
-        # ZMIANA: Bezpieczna migracja kolumny nazwa_angielska w istniejących bazach
+        # ZMIANA: Bezpieczna migracja kolumn nazwa_angielska oraz adres w istniejących bazach
         try:
             cursor.execute('ALTER TABLE miejsca ADD COLUMN nazwa_angielska TEXT')
+        except Exception:
+            pass
+        try:
+            cursor.execute('ALTER TABLE miejsca ADD COLUMN adres TEXT')
         except Exception:
             pass
 
@@ -771,6 +776,7 @@ def init_db():
                         col_nr = find_col(['numer miejsca', 'numer_miejsca', 'id', 'nr'], df_m)
                         col_nazwa = find_col(['nazwa', 'nazwa miejsca', 'name'], df_m)
                         col_nazwa_en = find_col(['nazwa angielska', 'nazwa_angielska', 'english_name', 'name_en'], df_m)
+                        col_adres = find_col(['adres', 'address', 'ulica', 'lokalizacja'], df_m)
                         col_typ = find_col(['typ', 'type', 'kategoria'], df_m)
                         col_wsp = find_col(['współrzędne', 'wspolrzedne', 'coordinates', 'coords'], df_m)
                         col_dojazd = find_col(['czas dojazdu ze Stavros', 'czas dojazdu', 'czas_dojazdu'], df_m)
@@ -797,6 +803,9 @@ def init_db():
                             nazwa_en_raw = r.get(col_nazwa_en) if col_nazwa_en else ''
                             nazwa_en_m = str(nazwa_en_raw).strip() if pd.notna(nazwa_en_raw) and str(nazwa_en_raw).strip() != 'nan' else nazwa_m
                             
+                            adres_raw = r.get(col_adres) if col_adres else ''
+                            adres_m = str(adres_raw).strip() if pd.notna(adres_raw) and str(adres_raw).strip() != 'nan' else ''
+
                             raw_typ = str(r.get(col_typ, '')).strip() if col_typ and pd.notna(r.get(col_typ)) else ''
                             typ_m = raw_typ if raw_typ in CATEGORIES_CONFIG else kategoryzuj_typ(raw_typ or nazwa_m)
                             
@@ -813,17 +822,19 @@ def init_db():
                             opis_m = str(r.get(col_opis, '')).strip() if col_opis and pd.notna(r.get(col_opis)) else ''
                             zadania_d = str(r.get(col_zadania, '')).strip() if col_zadania and pd.notna(r.get(col_zadania)) else ''
 
+                            # ZMIANA: Zapis adresu z pliku CSV
                             cursor.execute('''
                                 INSERT OR REPLACE INTO miejsca (
-                                    numer_miejsca, nazwa, nazwa_angielska, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
+                                    numer_miejsca, nazwa, nazwa_angielska, adres, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
                                     koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd, ochrona_slonce,
                                     potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci, odwiedzone
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                             ''', (
-                                nr_m, nazwa_m, nazwa_en_m, typ_m, wsp_m, czas_d, orient_c,
+                                nr_m, nazwa_m, nazwa_en_m, adres_m, typ_m, wsp_m, czas_d, orient_c,
                                 koszt_m, godz_otw, koniecz_akc, trud_adhd, ochr_slonce,
                                 potencjal_m, strat_m, opis_m, zadania_d
                             ))
+
                         conn.commit()
                         break
                     except Exception:
@@ -1950,13 +1961,13 @@ def pobierz_nieprzypisane_miejsca():
 def szukaj_miejsca_w_bazie(nazwa_zapytania):
     with get_db() as conn:
         cursor = conn.cursor()
-        # ZMIANA: Priorytetyzacja ścisłego dopasowania po numerze miejsca przed wyszukiwaniem tekstowym LIKE
+        # ZMIANA: Priorytetyzacja ścisłego dopasowania po numerze miejsca z kolumną adres
         zapytanie_str = str(nazwa_zapytania).strip()
         if zapytanie_str.isdigit():
             cursor.execute('''
                 SELECT numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas, 
                        godziny_otwarcia, konieczna_akcja, ochrona_slonce, potencjal_meltdownu, 
-                       strategie_meltdown, opis, odwiedzone
+                       strategie_meltdown, opis, odwiedzone, adres
                 FROM miejsca 
                 WHERE TRIM(numer_miejsca) = ?
             ''', (zapytanie_str,))
@@ -1964,7 +1975,7 @@ def szukaj_miejsca_w_bazie(nazwa_zapytania):
             cursor.execute('''
                 SELECT numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas, 
                        godziny_otwarcia, konieczna_akcja, ochrona_slonce, potencjal_meltdownu, 
-                       strategie_meltdown, opis, odwiedzone
+                       strategie_meltdown, opis, odwiedzone, adres
                 FROM miejsca 
                 WHERE LOWER(nazwa) LIKE LOWER(?) OR TRIM(numer_miejsca) = ?
                 ORDER BY CASE WHEN LOWER(nazwa) = LOWER(?) THEN 0 ELSE 1 END, CAST(numer_miejsca AS INTEGER) ASC
@@ -1975,7 +1986,8 @@ def szukaj_miejsca_w_bazie(nazwa_zapytania):
                 "numer_miejsca": row[0], "nazwa": row[1], "typ": row[2], "wspolrzedne": row[3], 
                 "czas_dojazdu": row[4], "orientacyjny_czas": row[5], "godziny_otwarcia": row[6], 
                 "konieczna_akcja": row[7], "ochrona_slonce": row[8], "potencjal_meltdownu": row[9], 
-                "strategie_meltdown": row[10], "opis": row[11], "odwiedzone": bool(row[12])
+                "strategie_meltdown": row[10], "opis": row[11], "odwiedzone": bool(row[12]),
+                "adres": row[13] if len(row) > 13 and row[13] else ""
             }
     return None
     
@@ -2117,10 +2129,11 @@ def rozwiaz_geolokalizacje_miejsca_kreta(nazwa_miejsca):
             continue
     return None, None
 
+# ZMIANA: Obsługa parametru adres przy rejestracji nowego miejsca
 def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="45 min", 
                         koszt="—", godziny_otwarcia="—", konieczna_akcja="", trudnosc_adhd="Średni", 
                         ochrona_slonce="Standardowa", potencjal_meltdownu="Średni", 
-                        strategie_meltdown="Brak", opis="", zadania_dla_dzieci=""):
+                        strategie_meltdown="Brak", opis="", zadania_dla_dzieci="", adres=""):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT numer_miejsca FROM miejsca WHERE LOWER(nazwa) = ?", (nazwa.strip().lower(),))
@@ -2157,7 +2170,7 @@ def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="4
             # Próba geokodowania z kontekstem
             kontekst_m = ""
             for miasto in ["Heraklion", "Chania", "Rethymno", "Agios Nikolaos", "Ierapetra", "Kissamos"]:
-                if miasto.lower() in nazwa.lower() or miasto.lower() in opis.lower():
+                if miasto.lower() in nazwa.lower() or miasto.lower() in opis.lower() or (adres and miasto.lower() in adres.lower()):
                     kontekst_m = miasto
                     break
             
@@ -2199,12 +2212,12 @@ def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="4
 
         cursor.execute('''
             INSERT INTO miejsca (
-                numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
+                numer_miejsca, nazwa, adres, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
                 koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd, ochrona_slonce,
                 potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci, odwiedzone
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ''', (
-            nowy_nr, nazwa.strip(), kat_norm, wspolrzedne.strip(), czas_dojazdu_z_domku,
+            nowy_nr, nazwa.strip(), str(adres).strip() if adres else "", kat_norm, wsp_czyste, czas_dojazdu_z_domku,
             orientacyjny_czas, koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd,
             ochrona_slonce, potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci
         ))
@@ -2893,6 +2906,7 @@ tools_definitions = [
             },
         ),
     ),
+    # ZMIANA: Dodanie właściwości adres do schematu narzędzia utworz_nowe_miejsce
     types.FunctionDeclaration(
         name="utworz_nowe_miejsce",
         description="Tworzy i zapisuje nowe miejsce w bazie.",
@@ -2900,6 +2914,7 @@ tools_definitions = [
             type=types.Type.OBJECT,
             properties={
                 "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca"),
+                "adres": types.Schema(type=types.Type.STRING, description="Dokładny adres uliczny lub miejscowość, np. 'ul. Kapetan Charalampi 6-8, Heraklion'"),
                 "typ": types.Schema(type=types.Type.STRING, description="Plaża, Must have, Nice to have, Activity, Shop, Other"),
                 "wspolrzedne": types.Schema(type=types.Type.STRING, description="Koordynaty np. '35.5138, 24.0180'"),
                 "orientacyjny_czas": types.Schema(type=types.Type.STRING, description="np. '1.5h'"),

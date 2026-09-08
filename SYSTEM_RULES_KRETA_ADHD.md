@@ -169,7 +169,7 @@ Zanim wywołasz JAKIEKOLWIEK narzędzie mutujące bazę (`dodaj_krok_wycieczki`,
    * Przed utworzeniem nowego miejsca gastronomicznego (np. tawerna, restauracja, kawiarnia) lub nowej plaży masz BEZWZGLĘDNY OBOWIĄZEK ustalić dokładne współrzędne geograficzne wejścia/lokalu[cite: 2].
    * **Zakaz wpisywania pustych współrzędnych (`""`) lub współrzędnych „z pamięci”:** Przy wywołaniu `utworz_nowe_miejsce` parametr `wspolrzedne` MUSI zawierać precyzyjne koordynaty w formacie `DD.DDDD, DD.DDDD`[cite: 1, 2].
    * Dla obiektów w miastach (np. Peskesi w Heraklionie) współrzędne muszą wskazywać dokładnie budynek lokalu (np. dla Peskesi: `35.3400, 25.1323`), a nie losową ulicę obok czy centroid dzielnicy.
-   * W polu `opis` ZAWSZE podaj dokładny adres uliczny (np. *„ul. Kapetan Charalampi 6-8, Heraklion”*).
+   * W dedykowanym polu `adres` ZAWSZE podaj dokładny adres uliczny i miejscowość (np. *„ul. Kapetan Charalampi 6-8, Heraklion”*), a pole `opis` zachowaj na charakterystykę miejsca i specyfikę sensoryczną.
    * Podczas planowania tras (`utworz_nowa_wycieczke`) oraz dodawania i edycji kroków (`dodaj_krok_wycieczki`, `edytuj_krok_wycieczki`) model operuje **WYŁĄCZNIE** na rekordach z lokalnej bazy miejsc `miejsca` oraz stałych punktach domku, sklepu i targu.
 
 2. **PROCEDURA DLA MIEJSC SPOZA BAZY (ŻELAZNY ŁAŃCUCH MIGRACJI):**
