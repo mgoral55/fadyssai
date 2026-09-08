@@ -1506,29 +1506,34 @@ def formatuj_posilki_kroku(df_pos):
             
     return f"<span style='color:#8C5338; font-weight:700;'>{' / '.join(posiłki_str)}</span>" if posiłki_str else ""
 
-def render_action_bar(coords_clean, search_name="", search_name_en=""):
-    # ZMIANA: Hybrydowa nawigacja Google Maps (GPS + Nazwa) oraz precyzyjne wyszukiwanie Google z wykorzystaniem nazwy międzynarodowej
+# ZMIANA: Nawigacja po angielskiej nazwie i adresie z bazy danych
+def render_action_bar(coords_clean, search_name="", search_name_en="", address=""):
     czysta_nazwa = re.sub(r'^\d+[\.\)]\s*', '', str(search_name)).strip() if search_name else ""
     czysta_nazwa_en = re.sub(r'^\d+[\.\)]\s*', '', str(search_name_en)).strip() if search_name_en and str(search_name_en).strip() not in ['None', 'nan'] else ""
-    
-    fraza_search = czysta_nazwa_en if czysta_nazwa_en else czysta_nazwa
-    nazwa_do_etykiety = czysta_nazwa if czysta_nazwa else fraza_search
+    czysty_adres = str(address).strip() if address and str(address).strip() not in ['None', 'nan'] else ""
+
+    # Priorytetyzacja nazwy angielskiej i adresu
+    fraza_glowna = czysta_nazwa_en if czysta_nazwa_en else czysta_nazwa
+    elementy_nav = [fraza_glowna]
+    if czysty_adres and czysty_adres.lower() not in fraza_glowna.lower():
+        elementy_nav.append(czysty_adres)
+    if not any("crete" in el.lower() or "kreta" in el.lower() for el in elementy_nav):
+        elementy_nav.append("Crete")
+
+    pelne_zapytanie = ", ".join([el for el in elementy_nav if el])
 
     lat_p, lon_p = sparsuj_wspolrzedne(coords_clean)
-    if lat_p is not None and lon_p is not None:
-        if nazwa_do_etykiety:
-            query_nav = f"{lat_p:.5f},{lon_p:.5f}+({urllib.parse.quote(nazwa_do_etykiety)})"
+    if pelne_zapytanie:
+        if lat_p is not None and lon_p is not None:
+            query_nav = f"{lat_p:.5f},{lon_p:.5f}+({urllib.parse.quote(pelne_zapytanie)})"
         else:
-            query_nav = f"{lat_p:.5f},{lon_p:.5f}"
-    elif fraza_search:
-        query_nav = urllib.parse.quote(f"{fraza_search}, Crete")
-    elif coords_clean:
-        query_nav = coords_clean
+            query_nav = urllib.parse.quote(pelne_zapytanie)
+    elif lat_p is not None and lon_p is not None:
+        query_nav = f"{lat_p:.5f},{lon_p:.5f}"
     else:
         query_nav = f"{DOMEK_LAT},{DOMEK_LON}"
 
-    # ZMIANA: Wyszukiwanie Google wykorzystuje nazwę angielską (np. Eleutherna Archaeological Museum Crete), eliminując literówki i dając od razu pełną wizytówkę POI
-    google_search_btn = f'<a href="https://www.google.com/search?q={urllib.parse.quote(fraza_search + " Crete")}" target="_blank" class="step-action-vertical-btn"><span>🔍</span><span>Szukaj w Google</span></a>' if fraza_search else ""
+    google_search_btn = f'<a href="https://www.google.com/search?q={urllib.parse.quote(pelne_zapytanie)}" target="_blank" class="step-action-vertical-btn"><span>🔍</span><span>Szukaj w Google</span></a>' if pelne_zapytanie else ""
     
     return f"""
     <div class="step-action-vertical-bar">
@@ -3878,20 +3883,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         
         is_cottage_step = any(w in nazwa_lower for w in ["domek", "powrót", "powrot", "start", "wyjazd"])
 
-        lat_parsed, lon_parsed = sparsuj_wspolrzedne(wspolrzedne)
-        # ZMIANA: Nawigacja dla wszystkich kroków bazuje na współrzędnych GPS (LAT,LON), zapobiegając otwieraniu listy wyników i myleniu filii
-        if lat_parsed is not None and lon_parsed is not None:
-            query_nav = f"{lat_parsed:.5f},{lon_parsed:.5f}"
-        elif any(w in nazwa_lower for w in ["domek", "stavros"]):
-            query_nav = f"{DOMEK_LAT},{DOMEK_LON}"
-        elif coords_clean:
-            query_nav = coords_clean
-        else:
-            czysta_nazwa_nav = re.sub(r'^\d+[\.\)]\s*', '', nazwa).strip()
-            query_nav = urllib.parse.quote(f"{czysta_nazwa_nav}, Crete")
-
-        nav_btn_html = f'<a href="https://www.google.com/maps/search/?api=1&query={query_nav}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>' if (lat_parsed is not None or coords_clean) else ""
-
+        # ZMIANA: Pobranie rekordu z bazy miejsc przed generowaniem linku nawigacji
         matched_place_id = str(k['numer_miejsca']).strip() if (pd.notna(k.get('numer_miejsca')) and str(k.get('numer_miejsca')).strip() not in ['', 'None', 'nan']) else None
         m_dopasowane_krok = None
         if matched_place_id:
@@ -3903,6 +3895,41 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             m_dopasowane_krok = dopasuj_krok_do_bazy_miejsc(nazwa, wspolrzedne, df_wszystkie_miejsca_ref)
             if m_dopasowane_krok is not None:
                 matched_place_id = str(m_dopasowane_krok['numer_miejsca'])
+
+        lat_parsed, lon_parsed = sparsuj_wspolrzedne(wspolrzedne)
+
+        # ZMIANA: Nawigacja po angielskiej nazwie i adresie z bazy danych
+        nazwa_en_db = ""
+        adres_db = ""
+        if m_dopasowane_krok is not None:
+            raw_en = m_dopasowane_krok.get('nazwa_angielska')
+            raw_adr = m_dopasowane_krok.get('adres')
+            nazwa_en_db = str(raw_en).strip() if pd.notna(raw_en) and str(raw_en).strip() not in ['None', 'nan'] else ""
+            adres_db = str(raw_adr).strip() if pd.notna(raw_adr) and str(raw_adr).strip() not in ['None', 'nan'] else ""
+
+        czysta_nazwa_kroku = re.sub(r'^\d+[\.\)]\s*', '', nazwa).strip()
+        miano_kroku = nazwa_en_db if nazwa_en_db else czysta_nazwa_kroku
+
+        czesci_zapytania = [miano_kroku]
+        if adres_db and adres_db.lower() not in miano_kroku.lower():
+            czesci_zapytania.append(adres_db)
+        if not any(w in c.lower() for c in czesci_zapytania for w in ["crete", "kreta"]):
+            czesci_zapytania.append("Crete")
+
+        fraza_kroku_nav = ", ".join([c for c in czesci_zapytania if c])
+
+        if any(w in nazwa_lower for w in ["domek", "stavros"]):
+            query_nav = f"{DOMEK_LAT},{DOMEK_LON}"
+        elif lat_parsed is not None and lon_parsed is not None:
+            query_nav = f"{lat_parsed:.5f},{lon_parsed:.5f}+({urllib.parse.quote(fraza_kroku_nav)})"
+        elif fraza_kroku_nav:
+            query_nav = urllib.parse.quote(fraza_kroku_nav)
+        elif coords_clean:
+            query_nav = coords_clean
+        else:
+            query_nav = f"{DOMEK_LAT},{DOMEK_LON}"
+
+        nav_btn_html = f'<a href="https://www.google.com/maps/search/?api=1&query={query_nav}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>' if (lat_parsed is not None or coords_clean or fraza_kroku_nav) else ""
 
         if any(w in nazwa_lower for w in ["sklep", "market", "zakup", "rynek", "targ", "laiki"]):
             detected_icon = "🛒"
@@ -4924,8 +4951,13 @@ elif st.session_state.active_tab == "zabytek":
                             zapisz_status_zadania(klucz, nowy_stan)
                             st.rerun()
 
-            # ZMIANA: Przekazanie angielskiej nazwy do wyszukiwarki Google
-            html_action_bar = render_action_bar(coords_p, p.get('nazwa', ''), p.get('nazwa_angielska', ''))
+            # ZMIANA: Przekazanie angielskiej nazwy oraz adresu z bazy do nawigacji
+            html_action_bar = render_action_bar(
+                coords_clean=coords_p, 
+                search_name=p.get('nazwa', ''), 
+                search_name_en=p.get('nazwa_angielska', ''), 
+                address=p.get('adres', '')
+            )
             if html_action_bar:
                 st.markdown(html_action_bar, unsafe_allow_html=True)
 
