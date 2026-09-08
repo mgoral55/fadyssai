@@ -623,6 +623,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS miejsca (
                 numer_miejsca TEXT PRIMARY KEY,
                 nazwa TEXT,
+                nazwa_angielska TEXT,
                 typ TEXT,
                 wspolrzedne TEXT,
                 czas_dojazdu TEXT,
@@ -639,6 +640,11 @@ def init_db():
                 odwiedzone INTEGER DEFAULT 0
             )
         ''')
+        # ZMIANA: Bezpieczna migracja kolumny nazwa_angielska w istniejących bazach
+        try:
+            cursor.execute('ALTER TABLE miejsca ADD COLUMN nazwa_angielska TEXT')
+        except Exception:
+            pass
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS krok_wycieczki (
@@ -764,6 +770,7 @@ def init_db():
 
                         col_nr = find_col(['numer miejsca', 'numer_miejsca', 'id', 'nr'], df_m)
                         col_nazwa = find_col(['nazwa', 'nazwa miejsca', 'name'], df_m)
+                        col_nazwa_en = find_col(['nazwa angielska', 'nazwa_angielska', 'english_name', 'name_en'], df_m)
                         col_typ = find_col(['typ', 'type', 'kategoria'], df_m)
                         col_wsp = find_col(['współrzędne', 'wspolrzedne', 'coordinates', 'coords'], df_m)
                         col_dojazd = find_col(['czas dojazdu ze Stavros', 'czas dojazdu', 'czas_dojazdu'], df_m)
@@ -786,6 +793,9 @@ def init_db():
                             
                             nazwa_raw = r.get(col_nazwa) if col_nazwa else ''
                             nazwa_m = str(nazwa_raw).strip() if pd.notna(nazwa_raw) else ''
+
+                            nazwa_en_raw = r.get(col_nazwa_en) if col_nazwa_en else ''
+                            nazwa_en_m = str(nazwa_en_raw).strip() if pd.notna(nazwa_en_raw) and str(nazwa_en_raw).strip() != 'nan' else nazwa_m
                             
                             raw_typ = str(r.get(col_typ, '')).strip() if col_typ and pd.notna(r.get(col_typ)) else ''
                             typ_m = raw_typ if raw_typ in CATEGORIES_CONFIG else kategoryzuj_typ(raw_typ or nazwa_m)
@@ -805,12 +815,12 @@ def init_db():
 
                             cursor.execute('''
                                 INSERT OR REPLACE INTO miejsca (
-                                    numer_miejsca, nazwa, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
+                                    numer_miejsca, nazwa, nazwa_angielska, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
                                     koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd, ochrona_slonce,
                                     potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci, odwiedzone
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                             ''', (
-                                nr_m, nazwa_m, typ_m, wsp_m, czas_d, orient_c,
+                                nr_m, nazwa_m, nazwa_en_m, typ_m, wsp_m, czas_d, orient_c,
                                 koszt_m, godz_otw, koniecz_akc, trud_adhd, ochr_slonce,
                                 potencjal_m, strat_m, opis_m, zadania_d
                             ))
@@ -1485,14 +1495,30 @@ def formatuj_posilki_kroku(df_pos):
             
     return f"<span style='color:#8C5338; font-weight:700;'>{' / '.join(posiłki_str)}</span>" if posiłki_str else ""
 
-def render_action_bar(coords_clean, search_name=""):
-    if search_name:
-        czysta_nazwa_nav = re.sub(r'^\d+[\.\)]\s*', '', str(search_name)).strip()
-        query_nav = urllib.parse.quote(f"{czysta_nazwa_nav}, Crete") if czysta_nazwa_nav else coords_clean
-    else:
-        query_nav = coords_clean
+def render_action_bar(coords_clean, search_name="", search_name_en=""):
+    # ZMIANA: Hybrydowa nawigacja Google Maps (GPS + Nazwa) oraz precyzyjne wyszukiwanie Google z wykorzystaniem nazwy międzynarodowej
+    czysta_nazwa = re.sub(r'^\d+[\.\)]\s*', '', str(search_name)).strip() if search_name else ""
+    czysta_nazwa_en = re.sub(r'^\d+[\.\)]\s*', '', str(search_name_en)).strip() if search_name_en and str(search_name_en).strip() not in ['None', 'nan'] else ""
+    
+    fraza_search = czysta_nazwa_en if czysta_nazwa_en else czysta_nazwa
+    nazwa_do_etykiety = czysta_nazwa if czysta_nazwa else fraza_search
 
-    google_search_btn = f'<a href="https://www.google.com/search?q={search_name} Kreta" target="_blank" class="step-action-vertical-btn"><span>🔍</span><span>Szukaj w Google</span></a>' if search_name else ""
+    lat_p, lon_p = sparsuj_wspolrzedne(coords_clean)
+    if lat_p is not None and lon_p is not None:
+        if nazwa_do_etykiety:
+            query_nav = f"{lat_p:.5f},{lon_p:.5f}+({urllib.parse.quote(nazwa_do_etykiety)})"
+        else:
+            query_nav = f"{lat_p:.5f},{lon_p:.5f}"
+    elif fraza_search:
+        query_nav = urllib.parse.quote(f"{fraza_search}, Crete")
+    elif coords_clean:
+        query_nav = coords_clean
+    else:
+        query_nav = f"{DOMEK_LAT},{DOMEK_LON}"
+
+    # ZMIANA: Wyszukiwanie Google wykorzystuje nazwę angielską (np. Eleutherna Archaeological Museum Crete), eliminując literówki i dając od razu pełną wizytówkę POI
+    google_search_btn = f'<a href="https://www.google.com/search?q={urllib.parse.quote(fraza_search + " Crete")}" target="_blank" class="step-action-vertical-btn"><span>🔍</span><span>Szukaj w Google</span></a>' if fraza_search else ""
+    
     return f"""
     <div class="step-action-vertical-bar">
         <a href="https://www.google.com/maps/search/?api=1&query={query_nav}" target="_blank" class="step-action-vertical-btn"><span>🧭</span><span>Nawiguj do tego miejsca</span></a>
@@ -3838,17 +3864,18 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         is_cottage_step = any(w in nazwa_lower for w in ["domek", "powrót", "powrot", "start", "wyjazd"])
 
         lat_parsed, lon_parsed = sparsuj_wspolrzedne(wspolrzedne)
-        # ZMIANA: Bezwzględna ochrona punktów stałych (Domek, Sklep w Stavros, Rynek) - nawigacja ZAWSZE po koordynatach GPS
-        czy_punkt_staly = any(w in nazwa_lower for w in ["domek", "stavros", "sklep przy domku", "rynek", "targ", "laiki"])
-        
-        if czy_punkt_staly or not lat_parsed or not lon_parsed:
-            query_nav = coords_clean if coords_clean else f"{DOMEK_LAT},{DOMEK_LON}"
+        # ZMIANA: Nawigacja dla wszystkich kroków bazuje na współrzędnych GPS (LAT,LON), zapobiegając otwieraniu listy wyników i myleniu filii
+        if lat_parsed is not None and lon_parsed is not None:
+            query_nav = f"{lat_parsed:.5f},{lon_parsed:.5f}"
+        elif any(w in nazwa_lower for w in ["domek", "stavros"]):
+            query_nav = f"{DOMEK_LAT},{DOMEK_LON}"
+        elif coords_clean:
+            query_nav = coords_clean
         else:
-            # Dla zewnętrznych atrakcji i restauracji nawigacja po nazwie z dopiskiem Krety (POI w Google Maps)
             czysta_nazwa_nav = re.sub(r'^\d+[\.\)]\s*', '', nazwa).strip()
-            query_nav = urllib.parse.quote(f"{czysta_nazwa_nav}, Crete") if czysta_nazwa_nav else coords_clean
+            query_nav = urllib.parse.quote(f"{czysta_nazwa_nav}, Crete")
 
-        nav_btn_html = f'<a href="https://www.google.com/maps/search/?api=1&query={query_nav}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>' if (lat_parsed is not None or czy_punkt_staly) else ""
+        nav_btn_html = f'<a href="https://www.google.com/maps/search/?api=1&query={query_nav}" target="_blank" class="timeline-nav-btn" title="Nawiguj"><span>🧭</span><span>Nawiguj</span></a>' if (lat_parsed is not None or coords_clean) else ""
 
         matched_place_id = str(k['numer_miejsca']).strip() if (pd.notna(k.get('numer_miejsca')) and str(k.get('numer_miejsca')).strip() not in ['', 'None', 'nan']) else None
         m_dopasowane_krok = None
@@ -4322,9 +4349,9 @@ def generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_miejsca_ref):
         evac_badge = f'<div class="evac-badge">🚨 Godzina ewakuacji: <b>{ewakuacja}</b></div>' if ewakuacja and ewakuacja not in ['None', '-', 'nan'] else ''
         warn_box = f'<div class="warn-box">⚠️ <b>Czerwona Strefa:</b> {ostrzezenie}</div>' if ostrzezenie and ostrzezenie not in ['None', '-', 'nan'] else ''
         taktyka_box = f'<div class="tactics-box">🎯 <b>Taktyka:</b> {taktyka_k}</div>' if taktyka_k and taktyka_k not in ['None', '-', 'nan'] else ''
-        # ZMIANA: Etykieta przycisku to wyłącznie "Nawiguj", link pod spodem prowadzi precyzyjnie do koordynatów GPS
+        is_cottage_krok = any(w in nazwa.lower() for w in ["domek", "wyjazd z domku", "powrót do domku", "powrot do domku", "start", "powrót", "powrot"])
         lat_krok, lon_krok = sparsuj_wspolrzedne(wsp)
-        if lat_krok is not None and lon_krok is not None:
+        if lat_krok is not None and lon_krok is not None and not is_cottage_krok:
             geo_query = f"{lat_krok:.5f},{lon_krok:.5f}"
             geo_btn = f'<a href="https://www.google.com/maps/search/?api=1&query={geo_query}" target="_blank" class="btn-geo">🧭 Nawiguj</a>'
         else:
@@ -4882,8 +4909,10 @@ elif st.session_state.active_tab == "zabytek":
                             zapisz_status_zadania(klucz, nowy_stan)
                             st.rerun()
 
-            if coords_p and ',' in coords_p:
-                st.markdown(render_action_bar(coords_p, p.get('nazwa', '')), unsafe_allow_html=True)
+            # ZMIANA: Przekazanie angielskiej nazwy do wyszukiwarki Google
+            html_action_bar = render_action_bar(coords_p, p.get('nazwa', ''), p.get('nazwa_angielska', ''))
+            if html_action_bar:
+                st.markdown(html_action_bar, unsafe_allow_html=True)
 
             btn_vis_label = "✓ Miejsce odwiedzone (przywróć)" if czy_odwiedzone else "🎯 Oznacz jako odwiedzone"
             if st.button(btn_vis_label, key=f"btn_toggle_vis_{docelowy_nr}", use_container_width=True):
