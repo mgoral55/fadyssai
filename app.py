@@ -1311,7 +1311,66 @@ if "flash_toast" in st.session_state and st.session_state["flash_toast"]:
 # --- SIDEBAR CONFIG ---
 with st.sidebar:
     st.markdown("### ⚙️ Konfiguracja CretAi")
-    aktualny_uzytkownik = st.selectbox("Profil użytkownika", options=["Magda", "Michał", "Jurek", "Julia"], index=0)
+    
+    # ZMIANA: Niezawodny mechanizm pamiętania wybranego użytkownika na urządzeniu (localStorage + query_params)
+    dostepni_uzytkownicy = ["Magda", "Michał", "Jurek", "Julia"]
+    
+    # 1. Sprawdź st.query_params
+    user_param = st.query_params.get("user")
+    if user_param in dostepni_uzytkownicy:
+        st.session_state["aktualny_uzytkownik"] = user_param
+    elif "aktualny_uzytkownik" not in st.session_state:
+        st.session_state["aktualny_uzytkownik"] = dostepni_uzytkownicy[0]
+        
+    domyslny_idx = dostepni_uzytkownicy.index(st.session_state["aktualny_uzytkownik"])
+
+    def _on_user_profile_change():
+        nowy_u = st.session_state["sb_profil_uzytkownika"]
+        st.session_state["aktualny_uzytkownik"] = nowy_u
+        st.query_params["user"] = nowy_u
+
+    aktualny_uzytkownik = st.selectbox(
+        "Profil użytkownika", 
+        options=dostepni_uzytkownicy, 
+        index=domyslny_idx,
+        key="sb_profil_uzytkownika",
+        on_change=_on_user_profile_change
+    )
+    
+    # Upewniamy się, że parametr user jest stale obecny w adresie URL
+    if st.query_params.get("user") != aktualny_uzytkownik:
+        st.query_params["user"] = aktualny_uzytkownik
+
+    # Skrypt komunikujący się z nadrzędnym oknem (window.parent.localStorage urządzenia)
+    st.components.v1.html(
+        f"""
+        <script>
+        (function() {{
+            try {{
+                const win = window.parent || window;
+                const currentUser = "{aktualny_uzytkownik}";
+                const storedUser = win.localStorage.getItem("cretai_last_device_user");
+                
+                // Zapisujemy aktywny profil do localStorage telefonu
+                if (storedUser !== currentUser) {{
+                    win.localStorage.setItem("cretai_last_device_user", currentUser);
+                }}
+                
+                // Jeśli w URL nie było parametru user, a w pamięci telefonu jest zapisany inny niż domyślny:
+                const urlParams = new URLSearchParams(win.location.search);
+                if (!urlParams.has("user") && storedUser && storedUser !== currentUser) {{
+                    urlParams.set("user", storedUser);
+                    win.location.search = urlParams.toString();
+                }}
+            }} catch(e) {{
+                console.warn("Storage sync:", e);
+            }}
+        }})();
+        </script>
+        """,
+        height=0
+    )
+    
     wybrany_model = st.selectbox(
         "Model Gemini", 
         options=[
@@ -4602,12 +4661,13 @@ active_zabytek = "active" if st.session_state.active_tab == "zabytek" else ""
 active_map = "active" if st.session_state.active_tab == "map" else ""
 active_route = "active" if st.session_state.active_tab == "route" else ""
 
+# ZMIANA: Przekazywanie parametru aktywnego użytkownika w linkach górnej nawigacji, by nie resetować profilu przy zmianie tabu
 st.markdown(f"""
 <div class="top-sticky-nav-container">
     <div class="custom-top-nav-bar">
-        <a href="?tab=zabytek" target="_self" class="custom-top-nav-btn {active_zabytek}"><span>🏛️</span><span>Miejsca</span></a>
-        <a href="?tab=map" target="_self" class="custom-top-nav-btn {active_map}"><span>🗺️</span><span>Wycieczki</span></a>
-        <a href="?tab=route" target="_self" class="custom-top-nav-btn {active_route}"><span>🚗</span><span>Trasa Dnia</span></a>
+        <a href="?tab=zabytek&user={aktualny_uzytkownik}" target="_self" class="custom-top-nav-btn {active_zabytek}"><span>🏛️</span><span>Miejsca</span></a>
+        <a href="?tab=map&user={aktualny_uzytkownik}" target="_self" class="custom-top-nav-btn {active_map}"><span>🗺️</span><span>Wycieczki</span></a>
+        <a href="?tab=route&user={aktualny_uzytkownik}" target="_self" class="custom-top-nav-btn {active_route}"><span>🚗</span><span>Trasa Dnia</span></a>
     </div>
 </div>
 """, unsafe_allow_html=True)
