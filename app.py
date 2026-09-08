@@ -2134,29 +2134,31 @@ def rozwiaz_geolokalizacje_miejsca_kreta(nazwa_miejsca):
             continue
     return None, None
 
-# ZMIANA: Obsługa parametru adres przy rejestracji nowego miejsca
-def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="45 min", 
+# ZMIANA: Obsługa parametrów nazwa_angielska i adres oraz czyszczenie prefiksów posiłkowych z nazwy
+def utworz_nowe_miejsce(nazwa, nazwa_angielska="", typ="Other", wspolrzedne="", orientacyjny_czas="45 min", 
                         koszt="—", godziny_otwarcia="—", konieczna_akcja="", trudnosc_adhd="Średni", 
                         ochrona_slonce="Standardowa", potencjal_meltdownu="Średni", 
                         strategie_meltdown="Brak", opis="", zadania_dla_dzieci="", adres=""):
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT numer_miejsca FROM miejsca WHERE LOWER(nazwa) = ?", (nazwa.strip().lower(),))
+        # Oczyszczenie nazwy handlowej z prefiksów posiłkowych
+        nazwa_czysta = re.sub(r'(?i)^(obiad|lunch|kolacja|posiłek)\s+(w|we)?\s*', '', str(nazwa)).strip()
+        nazwa_en_czysta = re.sub(r'(?i)^(lunch|dinner|meal)\s+(at|in)?\s*', '', str(nazwa_angielska)).strip() if nazwa_angielska else nazwa_czysta
+
+        cursor.execute("SELECT numer_miejsca FROM miejsca WHERE LOWER(nazwa) = ?", (nazwa_czysta.lower(),))
         istniejace = cursor.fetchone()
         if istniejace:
-            return {"success": False, "error": f"Miejsce o nazwie '{nazwa}' już istnieje w bazie pod numerem #{istniejace[0]}."}
+            return {"success": False, "error": f"Miejsce o nazwie '{nazwa_czysta}' już istnieje w bazie pod numerem #{istniejace[0]}."}
 
         cursor.execute("SELECT MAX(CAST(numer_miejsca AS INTEGER)) FROM miejsca")
         max_row = cursor.fetchone()
         nowy_nr = str((max_row[0] or 0) + 1) if max_row and max_row[0] is not None else "1"
 
-        # ZMIANA: Zawsze próbuj zweryfikować geolokalizację w OSM dla nowych obiektów gastronomicznych/miejsc
         lat_p, lon_p = None, None
         wsp_czyste = str(wspolrzedne).strip() if wspolrzedne else ""
         
-        # Jeśli współrzędne są puste lub jest to tawerna, odpytaj OSM w pierwszej kolejności
-        if not wsp_czyste or any(w in nazwa.lower() for w in ["tavern", "tawern", "ammoudi", "gefyra"]):
-            lat_geo, lon_geo = rozwiaz_geolokalizacje_miejsca_kreta(nazwa)
+        if not wsp_czyste or any(w in nazwa_czysta.lower() for w in ["tavern", "tawern", "ammoudi", "gefyra"]):
+            lat_geo, lon_geo = rozwiaz_geolokalizacje_miejsca_kreta(nazwa_en_czysta or nazwa_czysta)
             if lat_geo is not None and lon_geo is not None:
                 lat_p, lon_p = lat_geo, lon_geo
                 wsp_czyste = f"{lat_p:.4f}, {lon_p:.4f}"
@@ -2170,21 +2172,18 @@ def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="4
             23.40 <= lon_p <= 26.40
         )
 
-        # ZMIANA: Inteligentny fallback koordynatów – zakaz automatycznego przypisywania Stavros dla miejsc na wschodzie Krety
         if not czy_w_granicach:
-            # Próba geokodowania z kontekstem
             kontekst_m = ""
-            for miasto in ["Heraklion", "Chania", "Rethymno", "Agios Nikolaos", "Ierapetra", "Kissamos"]:
-                if miasto.lower() in nazwa.lower() or miasto.lower() in opis.lower() or (adres and miasto.lower() in adres.lower()):
+            for miasto in ["Heraklion", "Chania", "Rethymno", "Agios Nikolaos", "Ierapetra", "Kissamos", "Kournas", "Georgioupoli"]:
+                if miasto.lower() in nazwa_czysta.lower() or miasto.lower() in opis.lower() or (adres and miasto.lower() in adres.lower()):
                     kontekst_m = miasto
                     break
             
-            lat_geo, lon_geo = rozwiaz_geolokalizacje_miejsca_kreta(nazwa, kontekst_miasta=kontekst_m)
+            lat_geo, lon_geo = rozwiaz_geolokalizacje_miejsca_kreta(nazwa_en_czysta or nazwa_czysta, kontekst_miasta=kontekst_m)
             if lat_geo is not None and lon_geo is not None:
                 lat_p, lon_p = lat_geo, lon_geo
                 wsp_czyste = f"{lat_p:.4f}, {lon_p:.4f}"
             else:
-                # Kotwiczenie na współrzędnych ostatniego zwiedzanego punktu (np. muzeum w Heraklionie)
                 cursor.execute('''
                     SELECT wspolrzedne FROM krok_wycieczki 
                     WHERE wspolrzedne IS NOT NULL AND wspolrzedne != '' 
@@ -2198,31 +2197,32 @@ def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="4
                         lat_p, lon_p = lat_fb, lon_fb
                         wsp_czyste = f"{lat_p:.4f}, {lon_p:.4f}"
 
-                # Koordynaty znanych miast jako ostateczny bezpieczny fallback zamiast domku
                 if lat_p is None:
-                    if "heraklion" in nazwa.lower() or "iraklio" in nazwa.lower():
-                        lat_p, lon_p = 35.3387, 25.1332  # Centrum Heraklionu
-                    elif "rethymno" in nazwa.lower():
-                        lat_p, lon_p = 35.3670, 24.4759  # Centrum Rethymno
-                    elif "chania" in nazwa.lower():
-                        lat_p, lon_p = 35.5138, 24.0180  # Centrum Chanii
+                    if "heraklion" in nazwa_czysta.lower() or "iraklio" in nazwa_czysta.lower():
+                        lat_p, lon_p = 35.3387, 25.1332
+                    elif "rethymno" in nazwa_czysta.lower():
+                        lat_p, lon_p = 35.3670, 24.4759
+                    elif "chania" in nazwa_czysta.lower():
+                        lat_p, lon_p = 35.5138, 24.0180
                     else:
                         lat_p, lon_p = DOMEK_LAT, DOMEK_LON
                     wsp_czyste = f"{lat_p:.4f}, {lon_p:.4f}"
+
+        czas_dojazdu_z_domku = "—"
         if lat_p is not None and lon_p is not None:
             tekst_dojazdu, _ = oblicz_czas_przejazdu_osrm(DOMEK_LAT, DOMEK_LON, lat_p, lon_p)
             czas_dojazdu_z_domku = tekst_dojazdu
 
-        kat_norm = kategoryzuj_typ(typ if typ in CATEGORIES_CONFIG else nazwa)
+        kat_norm = kategoryzuj_typ(typ if typ in CATEGORIES_CONFIG else nazwa_czysta)
 
         cursor.execute('''
             INSERT INTO miejsca (
-                numer_miejsca, nazwa, adres, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
+                numer_miejsca, nazwa, nazwa_angielska, adres, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
                 koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd, ochrona_slonce,
                 potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci, odwiedzone
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ''', (
-            nowy_nr, nazwa.strip(), str(adres).strip() if adres else "", kat_norm, wsp_czyste, czas_dojazdu_z_domku,
+            nowy_nr, nazwa_czysta, nazwa_en_czysta, str(adres).strip() if adres else "", kat_norm, wsp_czyste, czas_dojazdu_z_domku,
             orientacyjny_czas, koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd,
             ochrona_slonce, potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci
         ))
@@ -2234,7 +2234,7 @@ def utworz_nowe_miejsce(nazwa, typ="Other", wspolrzedne="", orientacyjny_czas="4
         "action": "utworz_nowe_miejsce", 
         "numer_miejsca": nowy_nr, 
         "czas_dojazdu": czas_dojazdu_z_domku,
-        "message": f"Pomyślnie dodano nowe miejsce #{nowy_nr}: '{nazwa}' (Dojazd z domku: {czas_dojazdu_z_domku})."
+        "message": f"Pomyślnie dodano nowe miejsce #{nowy_nr}: '{nazwa_czysta}' (Dojazd z domku: {czas_dojazdu_z_domku})."
     }
 
 def utworz_nowa_wycieczke(tytul_wycieczki, planowana_data=None, pobudka="06:00", 
@@ -2911,14 +2911,15 @@ tools_definitions = [
             },
         ),
     ),
-    # ZMIANA: Dodanie właściwości adres do schematu narzędzia utworz_nowe_miejsce
+    # ZMIANA: Dodanie właściwości nazwa_angielska i adres do schematu narzędzia utworz_nowe_miejsce
     types.FunctionDeclaration(
         name="utworz_nowe_miejsce",
         description="Tworzy i zapisuje nowe miejsce w bazie.",
         parameters=types.Schema(
             type=types.Type.OBJECT,
             properties={
-                "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa miejsca"),
+                "nazwa": types.Schema(type=types.Type.STRING, description="Oficjalna polska nazwa handlowa miejsca (np. 'Tawerna Kariatis', bez przedrostków 'Obiad w...')"),
+                "nazwa_angielska": types.Schema(type=types.Type.STRING, description="Oficjalna międzynarodowa/angielska nazwa handlowa dla Google Maps (np. 'Kariatis Restaurant')"),
                 "adres": types.Schema(type=types.Type.STRING, description="Dokładny adres uliczny lub miejscowość, np. 'ul. Kapetan Charalampi 6-8, Heraklion'"),
                 "typ": types.Schema(type=types.Type.STRING, description="Plaża, Must have, Nice to have, Activity, Shop, Other"),
                 "wspolrzedne": types.Schema(type=types.Type.STRING, description="Koordynaty np. '35.5138, 24.0180'"),
