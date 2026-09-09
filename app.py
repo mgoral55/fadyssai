@@ -1,7 +1,6 @@
 import sqlite3
 import pandas as pd
 import streamlit as st
-# ZMIANA: Usunięcie brakującego i nieużywanego pakietu extra_streamlit_components oraz duplikatów google.genai
 from google import genai
 from google.genai import types
 import folium
@@ -48,6 +47,47 @@ def get_db():
     conn.execute('PRAGMA journal_mode=WAL;')
     conn.execute('PRAGMA busy_timeout = 30000;')
     return conn
+    
+# ZMIANA: Zapis kopii zapasowej do dedykowanych plików backupu z zachowaniem nienaruszalności plików bazowych
+def zsynchronizuj_baze_do_csv():
+    try:
+        with sqlite3.connect('cretai.db', timeout=15.0) as conn:
+            df_m = pd.read_sql('SELECT * FROM miejsca', conn)
+            if not df_m.empty:
+                df_m.to_csv('miejsca_backup.csv', index=False, encoding='utf-8')
+            
+            # ZMIANA: Czysty zrzut bez duplikacji kroków (mode='w' nadpisuje plik, GROUP BY k.id eliminuje iloczyn posiłków)
+            q_wyc = '''
+                SELECT 
+                    w.id AS id_wycieczki,
+                    w.tytul_wycieczki,
+                    w.calosciowy_opis_wycieczki,
+                    w.calosciowa_taktyka_dnia,
+                    w.pobudka AS godzina_pobudki,
+                    w.szacowany_czas_ogarniania_rano,
+                    k.krok_wycieczki,
+                    k.numer_miejsca,
+                    k.nazwa,
+                    k.wspolrzedne,
+                    k.okienko_zwiedzania,
+                    k.godzina_ewakuacji,
+                    k.czerwona_strefa_ostrzezenie,
+                    k.strefa_luzu_i_regeneracji,
+                    k.podsumowanie_taktyki,
+                    MAX(p.rodzaj_posilku) AS rodzaj_posilku,
+                    MAX(p.sugerowana_godzina) AS godzina_posilku,
+                    MAX(p.opis) AS nazwa_posilku
+                FROM wycieczka w
+                JOIN krok_wycieczki k ON w.id = k.id_wycieczki
+                LEFT JOIN posilki_kroku p ON k.id = p.id_kroku
+                GROUP BY k.id
+                ORDER BY CAST(w.id AS INTEGER) ASC, CAST(k.krok_wycieczki AS INTEGER) ASC
+            '''
+            df_w = pd.read_sql(q_wyc, conn)
+            if not df_w.empty:
+                df_w.to_csv('wycieczki_backup.csv', index=False, encoding='utf-8')
+    except Exception as e:
+        print(f"Błąd synchronizacji bazy do CSV: {e}")
 
 def zaokraglij_do_5_minut(minuty):
     return int(round(minuty / 5.0) * 5)
@@ -597,6 +637,8 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
             WHERE id = ?
         ''', (pobudka_z_bazy, dt_wyjazd.strftime("%H:%M"), dt_powrot.strftime("%H:%M"), str(czas_trwania_h), str(id_wycieczki)))
         conn.commit()
+    # ZMIANA: Zrzut do plików roboczych CSV po każdej synchronizacji i przeliczeniu trasy
+    zsynchronizuj_baze_do_csv()
 
 # --- INICJALIZACJA BAZY DANYCH ---
 def init_db():
@@ -769,10 +811,12 @@ def init_db():
         wycieczka_count = cursor.fetchone()[0]
 
         if miejsca_count == 0 and wycieczka_count == 0:
-            if os.path.exists('miejsca.csv'):
+            # ZMIANA: Priorytet odczytu z dynamicznego backupu przed nienaruszalnym plikiem fabrycznym
+            plik_miejsca = 'miejsca_backup.csv' if os.path.exists('miejsca_backup.csv') else ('miejsca.csv' if os.path.exists('miejsca.csv') else None)
+            if plik_miejsca:
                 for enc in ['utf-8', 'utf-8-sig', 'cp1250', 'iso-8859-2']:
                     try:
-                        df_m = pd.read_csv('miejsca.csv', encoding=enc)
+                        df_m = pd.read_csv(plik_miejsca, encoding=enc)
                         df_m.columns = [str(col).strip() for col in df_m.columns]
                         
                         def find_col(possible_names, df):
@@ -849,10 +893,12 @@ def init_db():
                     except Exception:
                         continue
 
-            if os.path.exists('wycieczki.csv'):
+            # ZMIANA: Priorytet odczytu wycieczek z dynamicznego backupu przed nienaruszalnym plikiem fabrycznym
+            plik_wycieczki = 'wycieczki_backup.csv' if os.path.exists('wycieczki_backup.csv') else ('wycieczki.csv' if os.path.exists('wycieczki.csv') else None)
+            if plik_wycieczki:
                 for enc in ['utf-8', 'utf-8-sig', 'cp1250', 'iso-8859-2']:
                     try:
-                        df_csv = pd.read_csv('wycieczki.csv', encoding=enc)
+                        df_csv = pd.read_csv(plik_wycieczki, encoding=enc)
                         df_csv.columns = [str(col).strip() for col in df_csv.columns]
                         dzisiaj_str = date.today().strftime("%Y-%m-%d")
                         unikalne_wycieczki = df_csv['id_wycieczki'].unique()
@@ -1033,6 +1079,14 @@ def zapisz_uzytkownika_urzadzenia(device_id, uzytkownik):
 
 # --- MODUŁ PRZYWRACANIA BAZY Z PLIKÓW CSV ---
 def resetuj_i_przywroc_baze_z_csv():
+    # ZMIANA: Usunięcie plików backupu, aby twardy reset faktycznie odtwarzał stan pierwotny
+    for plik_kopii in ['miejsca_backup.csv', 'wycieczki_backup.csv']:
+        if os.path.exists(plik_kopii):
+            try:
+                os.remove(plik_kopii)
+            except Exception:
+                pass
+
     with get_db() as conn:
         cursor = conn.cursor()
         tabele = [
@@ -4304,8 +4358,8 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         if st.button("📋 Klonuj", key=f"btn_dup_trip_{wycieczka_id}", use_container_width=True):
             nowe_id = duplikuj_wycieczke(wycieczka_id)
             if nowe_id:
+                # ZMIANA: Klonowana wycieczka nie staje się automatycznie Trasą Dnia – pozostaje kopią roboczą
                 st.session_state["selected_trip_from_click"] = nowe_id
-                ustaw_aktywna_wycieczke_id(nowe_id)
                 st.session_state["flash_toast"] = f"📋 Skopiowano wycieczkę jako #{nowe_id}!"
                 st.rerun()
 
