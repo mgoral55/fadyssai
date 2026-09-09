@@ -4237,12 +4237,25 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             nazwa_en_db = str(raw_en).strip() if pd.notna(raw_en) and str(raw_en).strip() not in ['None', 'nan'] else ""
             adres_db = str(raw_adr).strip() if pd.notna(raw_adr) and str(raw_adr).strip() not in ['None', 'nan'] else ""
 
+        # ZMIANA: Usunięcie dopisków w nawiasach oraz prefiksów numeracji z nazwy kroku (ujednolicenie z render_action_bar)
         czysta_nazwa_kroku = re.sub(r'^\d+[\.\)]\s*', '', nazwa).strip()
-        miano_kroku = nazwa_en_db if nazwa_en_db else czysta_nazwa_kroku
+        czysta_nazwa_kroku = re.sub(r'\(.*?\)', '', czysta_nazwa_kroku).strip()
+        
+        czysta_nazwa_en = re.sub(r'^\d+[\.\)]\s*', '', nazwa_en_db).strip() if nazwa_en_db else ""
+        czysta_nazwa_en = re.sub(r'\(.*?\)', '', czysta_nazwa_en).strip()
 
-        czesci_zapytania = [miano_kroku]
+        miano_kroku = czysta_nazwa_en if czysta_nazwa_en else czysta_nazwa_kroku
+
+        czesci_zapytania = []
+        if miano_kroku:
+            czesci_zapytania.append(miano_kroku)
+            
         if adres_db and adres_db.lower() not in miano_kroku.lower():
-            czesci_zapytania.append(adres_db)
+            # ZMIANA: Usunięcie nawiasów również z ewentualnego adresu
+            adres_clean = re.sub(r'\(.*?\)', '', adres_db).strip()
+            if adres_clean:
+                czesci_zapytania.append(adres_clean)
+
         if not any(w in c.lower() for c in czesci_zapytania for w in ["crete", "kreta"]):
             czesci_zapytania.append("Crete")
 
