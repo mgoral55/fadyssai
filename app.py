@@ -1,6 +1,9 @@
 import sqlite3
 import pandas as pd
 import streamlit as st
+import extra_streamlit_components as stx
+from google import genai
+from google.genai import types
 from google import genai
 from google.genai import types
 import folium
@@ -740,11 +743,19 @@ def init_db():
         ''')
         cursor.execute('INSERT OR IGNORE INTO aktywna_wycieczka (id, aktualne_id_wycieczki) VALUES (1, "1")')
         
-        # ZMIANA: Tabela przechowująca klucz API dla konkretnego użytkownika (per user)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS konfiguracja_uzytkownika (
                 uzytkownik TEXT PRIMARY KEY,
                 gemini_api_key TEXT
+            )
+        ''')
+
+        # ZMIANA: Tabela per-urządzenie (kluczowana unikalnym fingerprintem klienta)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS profil_urzadzenia (
+                device_id TEXT PRIMARY KEY,
+                uzytkownik TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
 
@@ -973,7 +984,6 @@ def pobierz_api_key_uzytkownika(uzytkownik):
         row = cursor.fetchone()
         return str(row[0]).strip() if row and row[0] else ""
 
-# ZMIANA: Zapis lub aktualizacja klucza API dla danego profilu w bazie danych
 def zapisz_api_key_uzytkownika(uzytkownik, key_val):
     with get_db() as conn:
         cursor = conn.cursor()
@@ -983,6 +993,45 @@ def zapisz_api_key_uzytkownika(uzytkownik, key_val):
             ON CONFLICT(uzytkownik) DO UPDATE SET gemini_api_key = excluded.gemini_api_key
         ''', (str(uzytkownik), str(key_val).strip()))
         conn.commit()
+
+# ZMIANA: Pobranie unikalnego identyfikatora urządzenia klienta z nagłówków żądania HTTP Streamlit
+import hashlib
+
+def pobierz_id_biezacego_urzadzenia():
+    try:
+        if hasattr(st, "context") and hasattr(st.context, "headers"):
+            headers = st.context.headers
+            ip = headers.get("x-forwarded-for") or headers.get("remote-addr") or "local"
+            ua = headers.get("user-agent") or "browser"
+            return hashlib.md5(f"{ip}_{ua}".encode()).hexdigest()
+    except Exception:
+        pass
+    return "default_device"
+
+def pobierz_uzytkownika_urzadzenia(device_id):
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT uzytkownik FROM profil_urzadzenia WHERE device_id = ?", (str(device_id),))
+            row = cursor.fetchone()
+            if row and row[0]:
+                return str(row[0]).strip()
+    except Exception:
+        pass
+    return None
+
+def zapisz_uzytkownika_urzadzenia(device_id, uzytkownik):
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO profil_urzadzenia (device_id, uzytkownik)
+                VALUES (?, ?)
+                ON CONFLICT(device_id) DO UPDATE SET uzytkownik = excluded.uzytkownik, updated_at = CURRENT_TIMESTAMP
+            ''', (str(device_id), str(uzytkownik).strip()))
+            conn.commit()
+    except Exception:
+        pass
 
 # --- MODUŁ PRZYWRACANIA BAZY Z PLIKÓW CSV ---
 def resetuj_i_przywroc_baze_z_csv():
@@ -1308,26 +1357,34 @@ if "flash_toast" in st.session_state and st.session_state["flash_toast"]:
     st.toast(st.session_state["flash_toast"], icon="🧭")
     st.session_state["flash_toast"] = None
 
-# --- SIDEBAR CONFIG ---
 with st.sidebar:
     st.markdown("### ⚙️ Konfiguracja CretAi")
     
-    # ZMIANA: Niezawodny mechanizm pamiętania wybranego użytkownika na urządzeniu (localStorage + query_params)
     dostepni_uzytkownicy = ["Magda", "Michał", "Jurek", "Julia"]
-    
-    # 1. Sprawdź st.query_params
-    user_param = st.query_params.get("user")
-    if user_param in dostepni_uzytkownicy:
-        st.session_state["aktualny_uzytkownik"] = user_param
-    elif "aktualny_uzytkownik" not in st.session_state:
-        st.session_state["aktualny_uzytkownik"] = dostepni_uzytkownicy[0]
-        
-    domyslny_idx = dostepni_uzytkownicy.index(st.session_state["aktualny_uzytkownik"])
+
+    # ZMIANA: Niezawodny odczyt profilu przypisanego do danego telefonu/przeglądarki
+    current_device_id = pobierz_id_biezacego_urzadzenia()
+    saved_device_user = pobierz_uzytkownika_urzadzenia(current_device_id)
+
+    # Hierarchia: URL (?user=...) -> Zapisany profil urządzenia -> Session State -> Pierwszy z listy
+    param_user = st.query_params.get("user")
+    if param_user in dostepni_uzytkownicy:
+        aktywny_profil = param_user
+    elif saved_device_user in dostepni_uzytkownicy:
+        aktywny_profil = saved_device_user
+    elif "aktualny_uzytkownik" in st.session_state and st.session_state["aktualny_uzytkownik"] in dostepni_uzytkownicy:
+        aktywny_profil = st.session_state["aktualny_uzytkownik"]
+    else:
+        aktywny_profil = dostepni_uzytkownicy[0]
+
+    st.session_state["aktualny_uzytkownik"] = aktywny_profil
+    domyslny_idx = dostepni_uzytkownicy.index(aktywny_profil)
 
     def _on_user_profile_change():
         nowy_u = st.session_state["sb_profil_uzytkownika"]
         st.session_state["aktualny_uzytkownik"] = nowy_u
         st.query_params["user"] = nowy_u
+        zapisz_uzytkownika_urzadzenia(current_device_id, nowy_u)
 
     aktualny_uzytkownik = st.selectbox(
         "Profil użytkownika", 
@@ -1336,40 +1393,10 @@ with st.sidebar:
         key="sb_profil_uzytkownika",
         on_change=_on_user_profile_change
     )
-    
-    # Upewniamy się, że parametr user jest stale obecny w adresie URL
-    if st.query_params.get("user") != aktualny_uzytkownik:
-        st.query_params["user"] = aktualny_uzytkownik
 
-    # Skrypt komunikujący się z nadrzędnym oknem (window.parent.localStorage urządzenia)
-    st.components.v1.html(
-        f"""
-        <script>
-        (function() {{
-            try {{
-                const win = window.parent || window;
-                const currentUser = "{aktualny_uzytkownik}";
-                const storedUser = win.localStorage.getItem("cretai_last_device_user");
-                
-                // Zapisujemy aktywny profil do localStorage telefonu
-                if (storedUser !== currentUser) {{
-                    win.localStorage.setItem("cretai_last_device_user", currentUser);
-                }}
-                
-                // Jeśli w URL nie było parametru user, a w pamięci telefonu jest zapisany inny niż domyślny:
-                const urlParams = new URLSearchParams(win.location.search);
-                if (!urlParams.has("user") && storedUser && storedUser !== currentUser) {{
-                    urlParams.set("user", storedUser);
-                    win.location.search = urlParams.toString();
-                }}
-            }} catch(e) {{
-                console.warn("Storage sync:", e);
-            }}
-        }})();
-        </script>
-        """,
-        height=0
-    )
+    # Upewniamy się, że obecny wybór jest trwale skojarzony z tym urządzeniem
+    if saved_device_user != aktualny_uzytkownik:
+        zapisz_uzytkownika_urzadzenia(current_device_id, aktualny_uzytkownik)
     
     wybrany_model = st.selectbox(
         "Model Gemini", 
@@ -4093,10 +4120,10 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             ostrzezenie_val = str(k.get('czerwona_strefa_ostrzezenie', '')).strip()
             warn_html = f'<div class="step-warn-box"><div class="step-warn-title">⚠️ Ostrzeżenie (Czerwona strefa)</div><div class="step-warn-text">{ostrzezenie_val}</div></div>' if (ostrzezenie_val and ostrzezenie_val not in ["None", "Brak"]) else ""
 
-            place_link_html = ""
             if matched_place_id:
                 cur_tab = "route" if st.session_state.active_tab == "route" else "map"
-                place_url = f"?tab=zabytek&place={matched_place_id}&return_tab={cur_tab}&return_trip={wycieczka_id}"
+                # ZMIANA: Doklejenie parametru &user= zapobiegające resetowi sesji
+                place_url = f"?tab=zabytek&place={matched_place_id}&return_tab={cur_tab}&return_trip={wycieczka_id}&user={aktualny_uzytkownik}"
                 place_link_html = (
                     f'<a href="{place_url}" target="_self" class="step-action-vertical-btn" '
                     f'style="background-color: #FAF8F2 !important; border: 2px solid #8C5338 !important; color: #8C5338 !important; margin-bottom: 8px; font-weight: 900; text-decoration: none;">'
@@ -4824,9 +4851,10 @@ elif st.session_state.active_tab == "zabytek":
 
     if ret_tab and ret_trip:
         if ret_tab == "map":
-            powrot_url = f"?tab=map&return_trip={ret_trip}"
+            # ZMIANA: Przekazywanie parametru user przy powrotach
+            powrot_url = f"?tab=map&return_trip={ret_trip}&user={aktualny_uzytkownik}"
         else:
-            powrot_url = f"?tab={ret_tab}"
+            powrot_url = f"?tab={ret_tab}&user={aktualny_uzytkownik}"
         nazwa_docelowa = "Trasy Dnia" if ret_tab == "route" else f"Wycieczki #{ret_trip}"
         
         st.markdown(f"""
