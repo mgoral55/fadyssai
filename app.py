@@ -1142,71 +1142,81 @@ def ustaw_status_odwiedzenia_dla_wycieczki(wycieczka_id, nowy_status):
     st.cache_data.clear()
 
 # --- 1. DESIGN SYSTEM I KONFIGURACJA STRONY ---
-st.set_page_config(page_title="CretAi - Kreta", layout="centered", page_icon="🧭")
+# ZMIANA: Czysty page_title="CretAi" bez myślników, aby instalator PWA Androida nie brał Streamlit jako fallbacku
+st.set_page_config(page_title="CretAi", layout="centered", page_icon="🧭")
 
-# ZMIANA: Wstrzyknięcie manifestu PWA bezpośrednio do window.parent.document.head z podmianą domyślnego manifestu Streamlita
+# ZMIANA: Podmiana manifestu PWA na Data URI Base64 w window.parent.document z pełnym czyszczeniem linków Streamlit
 pwa_manifest_script = """
 <script>
 (function() {
     try {
-        const targetDoc = window.parent ? window.parent.document : document;
-        
-        // 1. Wymuszenie tytułu strony nadrzędnej (często brane przez instalator jako fallback)
-        targetDoc.title = "CretAi";
+        const doc = (window.parent && window.parent.document) ? window.parent.document : document;
+        const win = window.parent || window;
 
-        // 2. Usunięcie domyślnego manifestu Streamlita, jeśli istnieje
-        const oldManifests = targetDoc.querySelectorAll('link[rel="manifest"]');
-        oldManifests.forEach(el => el.remove());
+        // 1. Tytuł aplikacji dla instalatora Androida
+        doc.title = "CretAi";
 
-        // 3. Budowa nowego manifestu PWA z nazwą CretAi
-        const manifestObj = {
+        // 2. Usunięcie wszystkich dotychczasowych linków do manifestu Streamlita
+        const existingManifests = doc.querySelectorAll('link[rel="manifest"]');
+        existingManifests.forEach(el => el.remove());
+
+        // 3. Budowa obiektu manifestu PWA dedykowanego CretAi
+        const manifestData = {
             "name": "CretAi",
             "short_name": "CretAi",
-            "start_url": window.parent.location.origin + window.parent.location.pathname,
+            "start_url": win.location.href,
+            "id": "cretai-pwa-app",
             "display": "standalone",
+            "orientation": "portrait",
             "background_color": "#B4C29D",
             "theme_color": "#2E251E",
+            "description": "Planer i przewodnik AuDHD po Krecie",
             "icons": [
                 {
                     "src": "https://cdn-icons-png.flaticon.com/512/854/854878.png",
                     "sizes": "192x192",
-                    "type": "image/png"
+                    "type": "image/png",
+                    "purpose": "any maskable"
                 },
                 {
                     "src": "https://cdn-icons-png.flaticon.com/512/854/854878.png",
                     "sizes": "512x512",
-                    "type": "image/png"
+                    "type": "image/png",
+                    "purpose": "any maskable"
                 }
             ]
         };
 
-        const manifestBlob = new Blob([JSON.stringify(manifestObj)], {type: 'application/json'});
-        const manifestUrl = URL.createObjectURL(manifestBlob);
+        // 4. Utworzenie Data URI (Chrome na Androidzie odczytuje Data URI bez opóźnień sieciowych)
+        const manifestJsonStr = JSON.stringify(manifestData);
+        const manifestBase64 = "data:application/manifest+json;base64," + btoa(unescape(encodeURIComponent(manifestJsonStr)));
 
-        const newLink = targetDoc.createElement('link');
-        newLink.rel = 'manifest';
-        newLink.href = manifestUrl;
-        targetDoc.head.appendChild(newLink);
+        const newManifestLink = doc.createElement('link');
+        newManifestLink.rel = 'manifest';
+        newManifestLink.href = manifestBase64;
+        doc.head.appendChild(newManifestLink);
 
-        // 4. Meta tagi dla przeglądarek mobilnych
-        let appNameMeta = targetDoc.querySelector('meta[name="application-name"]');
-        if (!appNameMeta) {
-            appNameMeta = targetDoc.createElement('meta');
-            appNameMeta.name = 'application-name';
-            targetDoc.head.appendChild(appNameMeta);
-        }
-        appNameMeta.content = 'CretAi';
+        // 5. Wymuszenie meta tagów identyfikacyjnych
+        const metas = [
+            { name: "application-name", content: "CretAi" },
+            { name: "apple-mobile-web-app-title", content: "CretAi" },
+            { name: "mobile-web-app-capable", content: "yes" },
+            { name: "apple-mobile-web-app-capable", content: "yes" },
+            { name: "theme-color", content: "#2E251E" }
+        ];
 
-        let appleMeta = targetDoc.querySelector('meta[name="apple-mobile-web-app-title"]');
-        if (!appleMeta) {
-            appleMeta = targetDoc.createElement('meta');
-            appleMeta.name = 'apple-mobile-web-app-title';
-            targetDoc.head.appendChild(appleMeta);
-        }
-        appleMeta.content = 'CretAi';
+        metas.forEach(metaInfo => {
+            let m = doc.querySelector(`meta[name="${metaInfo.name}"]`);
+            if (!m) {
+                m = doc.createElement('meta');
+                m.name = metaInfo.name;
+                doc.head.appendChild(m);
+            }
+            m.content = metaInfo.content;
+        });
 
     } catch (e) {
-        console.error("Błąd wstrzykiwania manifestu PWA CretAi:", e);
+        console.warn("Błąd wstrzykiwania manifestu PWA:", e);
     }
 })();
 </script>
