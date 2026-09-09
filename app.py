@@ -1,9 +1,7 @@
 import sqlite3
 import pandas as pd
 import streamlit as st
-import extra_streamlit_components as stx
-from google import genai
-from google.genai import types
+# ZMIANA: Usunięcie brakującego i nieużywanego pakietu extra_streamlit_components oraz duplikatów google.genai
 from google import genai
 from google.genai import types
 import folium
