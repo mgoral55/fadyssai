@@ -1144,6 +1144,40 @@ def ustaw_status_odwiedzenia_dla_wycieczki(wycieczka_id, nowy_status):
 # --- 1. DESIGN SYSTEM I KONFIGURACJA STRONY ---
 st.set_page_config(page_title="CretAi - Kreta", layout="centered", page_icon="🧭")
 
+# ZMIANA: Dynamiczny manifest PWA gwarantujący instalację na Androidzie z nazwą "CretAi" zamiast "Streamlit"
+pwa_manifest_script = """
+<script>
+(function() {
+    const manifest = {
+        "name": "CretAi - Przewodnik i Planer AuDHD",
+        "short_name": "CretAi",
+        "start_url": window.location.origin + window.location.pathname,
+        "display": "standalone",
+        "background_color": "#B4C29D",
+        "theme_color": "#2E251E",
+        "icons": [
+            {
+                "src": "https://cdn-icons-png.flaticon.com/512/854/854878.png",
+                "sizes": "512x512",
+                "type": "image/png"
+            }
+        ]
+    };
+    const stringManifest = JSON.stringify(manifest);
+    const blob = new Blob([stringManifest], {type: 'application/json'});
+    const manifestURL = URL.createObjectURL(blob);
+    let link = document.querySelector('link[rel="manifest"]');
+    if (!link) {
+        link = document.createElement('link');
+        link.rel = 'manifest';
+        document.head.appendChild(link);
+    }
+    link.href = manifestURL;
+})();
+</script>
+"""
+st.components.v1.html(pwa_manifest_script, height=0)
+
 st.markdown("""
 <style>
 header[data-testid="stHeader"] { background-color: transparent !important; box-shadow: none !important; }
@@ -1414,7 +1448,22 @@ with st.sidebar:
     
     dostepni_uzytkownicy = ["Magda", "Michał", "Jurek", "Julia"]
 
-    # ZMIANA: Niezawodny odczyt profilu przypisanego do danego telefonu/przeglądarki
+    # ZMIANA: Odczyt i synchronizacja profilu z pamięcią lokalną telefonu (localStorage)
+    sync_user_js = """
+    <script>
+    (function() {
+        const storedUser = window.localStorage.getItem('cretai_active_user');
+        const urlParams = new URLSearchParams(window.location.search);
+        const currentUserParam = urlParams.get('user');
+        if (storedUser && !currentUserParam) {
+            urlParams.set('user', storedUser);
+            window.location.search = urlParams.toString();
+        }
+    })();
+    </script>
+    """
+    st.components.v1.html(sync_user_js, height=0)
+
     current_device_id = pobierz_id_biezacego_urzadzenia()
     saved_device_user = pobierz_uzytkownika_urzadzenia(current_device_id)
 
@@ -1445,6 +1494,14 @@ with st.sidebar:
         key="sb_profil_uzytkownika",
         on_change=_on_user_profile_change
     )
+
+    # ZMIANA: Utrwalenie wybranego profilu w localStorage po każdej zmianie lub wejściu
+    persist_user_js = f"""
+    <script>
+    window.localStorage.setItem('cretai_active_user', '{aktualny_uzytkownik}');
+    </script>
+    """
+    st.components.v1.html(persist_user_js, height=0)
 
     # Upewniamy się, że obecny wybór jest trwale skojarzony z tym urządzeniem
     if saved_device_user != aktualny_uzytkownik:
