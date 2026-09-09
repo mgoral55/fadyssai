@@ -1,6 +1,42 @@
 import sqlite3
 import pandas as pd
 import streamlit as st
+
+# ZMIANA: Fizyczna podmiana manifest.json w zasobach statycznych Streamlita, aby WebAPK na Androidzie zawsze widział CretAi
+def _wymus_manifest_cretai():
+    try:
+        import pathlib
+        st_dir = pathlib.Path(st.__file__).parent / "static"
+        manifest_file = st_dir / "manifest.json"
+        if st_dir.exists():
+            manifest_content = {
+                "name": "CretAi",
+                "short_name": "CretAi",
+                "start_url": "./",
+                "display": "standalone",
+                "background_color": "#B4C29D",
+                "theme_color": "#2E251E",
+                "icons": [
+                    {
+                        "src": "https://cdn-icons-png.flaticon.com/512/854/854878.png",
+                        "sizes": "192x192",
+                        "type": "image/png",
+                        "purpose": "any maskable"
+                    },
+                    {
+                        "src": "https://cdn-icons-png.flaticon.com/512/854/854878.png",
+                        "sizes": "512x512",
+                        "type": "image/png",
+                        "purpose": "any maskable"
+                    }
+                ]
+            }
+            manifest_file.write_text(json.dumps(manifest_content, indent=2), encoding="utf-8")
+    except Exception as e:
+        print(f"Brak możliwości modyfikacji statycznego manifest.json: {e}")
+
+_wymus_manifest_cretai()
+
 from google import genai
 from google.genai import types
 import folium
