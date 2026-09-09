@@ -1984,26 +1984,40 @@ def zmien_status_zakupu(id_zakupu, status):
         conn.cursor().execute('UPDATE zakupy SET kupione = ? WHERE id = ?', (1 if status else 0, id_zakupu))
         conn.commit()
 
+# ZMIANA: Bezpieczne parsowanie id_kroku (zarówno int, jak i nazwa tekstowa) zapobiegające ValueError
+def _rozwiaz_id_kroku_zakupow(cursor, id_wycieczki, id_kroku_raw):
+    if not id_kroku_raw or str(id_kroku_raw).strip() in ['', 'None', 'nan']:
+        return None
+    k_info = znajdz_id_kroku_w_db(cursor, id_wycieczki, id_kroku_raw)
+    if k_info:
+        return k_info[0]
+    try:
+        return int(re.sub(r'[^\d]', '', str(id_kroku_raw)))
+    except Exception:
+        return None
+
 def dodaj_produkt_zakupow(id_wycieczki, nazwa_produktu, id_kroku=None, ilosc="1"):
     with get_db() as conn:
         cursor = conn.cursor()
+        real_krok_id = _rozwiaz_id_kroku_zakupow(cursor, id_wycieczki, id_kroku)
         cursor.execute('''
             INSERT INTO zakupy (id_wycieczki, id_kroku, nazwa_produktu, ilosc, kupione)
             VALUES (?, ?, ?, ?, 0)
-        ''', (str(id_wycieczki), int(id_kroku) if id_kroku else None, str(nazwa_produktu).strip(), str(ilosc).strip()))
+        ''', (str(id_wycieczki), real_krok_id, str(nazwa_produktu).strip(), str(ilosc).strip()))
         conn.commit()
     return {"success": True, "action": "dodaj_produkt_zakupow", "message": f"Dodano produkt: {nazwa_produktu}"}
 
 def dodaj_wiele_produktow_zakupow(id_wycieczki, produkty, id_kroku=None):
     with get_db() as conn:
         cursor = conn.cursor()
+        real_krok_id = _rozwiaz_id_kroku_zakupow(cursor, id_wycieczki, id_kroku)
         for prod in produkty:
             nazwa = prod.get("nazwa") if isinstance(prod, dict) else str(prod)
             ilosc = prod.get("ilosc", "1") if isinstance(prod, dict) else "1"
             cursor.execute('''
                 INSERT INTO zakupy (id_wycieczki, id_kroku, nazwa_produktu, ilosc, kupione)
                 VALUES (?, ?, ?, ?, 0)
-            ''', (str(id_wycieczki), int(id_kroku) if id_kroku else None, str(nazwa).strip(), str(ilosc).strip()))
+            ''', (str(id_wycieczki), real_krok_id, str(nazwa).strip(), str(ilosc).strip()))
         conn.commit()
     return {"success": True, "action": "dodaj_wiele_produktow_zakupow", "message": f"Dodano {len(produkty)} produktów do listy zakupów."}
 
@@ -2306,8 +2320,15 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
                         f"Jest to teren otwarty bez cienia. Ryzyko meltdownu i udaru cieplnego."
                     )
 
+        # ZMIANA: Sprawdzanie luki głodu > 4h z uwzględnieniem chronologii i wykluczeniem transferów lotniskowych
         with get_db() as conn:
             cursor = conn.cursor()
+            cursor.execute('SELECT tytul_wycieczki, calosciowy_opis_wycieczki FROM wycieczka WHERE id = ?', (str(id_wycieczki),))
+            w_info = cursor.fetchone()
+            tytul_w = str(w_info[0]).lower() if w_info else ""
+            opis_w = str(w_info[1]).lower() if w_info and w_info[1] else ""
+            is_transfer = any(w in tytul_w or w in opis_w for w in ["transfer", "lotnisk", "airport"])
+
             cursor.execute('''
                 SELECT p.rodzaj_posilku, p.sugerowana_godzina, k.okienko_zwiedzania, k.nazwa
                 FROM posilki_kroku p
@@ -2317,13 +2338,22 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
             ''', (str(id_wycieczki),))
             glowne_posilki = cursor.fetchall()
         
-        if glowne_posilki:
-            ostatni_posilek = glowne_posilki[-1]
-            pos_godz_str = ostatni_posilek[1] or (ostatni_posilek[2].split("-")[0].strip() if ostatni_posilek[2] else None)
-            g_pos = sparsuj_godzine_minuty(pos_godz_str)
-            if g_pos:
-                pos_dec = g_pos[0] + g_pos[1] / 60.0
-                if (godz_dec - pos_dec) > 4.0:
+        # W transferze wieczornym (start po 18:00) pierwszy postój na prowiant/kolację nie jest blokowany brakiem śniadania w Stavros
+        if glowne_posilki and not (is_transfer and godz_dec >= 18.0):
+            # Filtrujemy posiłki, które chronologicznie poprzedzają planowany punkt
+            posilki_przed = []
+            for p in glowne_posilki:
+                p_godz_raw = p[1] or (p[2].split("-")[0].strip() if p[2] else None)
+                p_parsed = sparsuj_godzine_minuty(p_godz_raw)
+                if p_parsed:
+                    p_dec = p_parsed[0] + p_parsed[1] / 60.0
+                    if p_dec <= godz_dec:
+                        posilki_przed.append((p, p_dec, p_godz_raw))
+
+            if posilki_przed:
+                ostatni_posilek, pos_dec, pos_godz_str = posilki_przed[-1]
+                roznica_h = godz_dec - pos_dec
+                if roznica_h > 4.0:
                     return False, (
                         f"⛔ ODMOWA: Od ostatniego posiłku stabilizującego ({ostatni_posilek[0]} w punkcie '{ostatni_posilek[3]}', ok. {pos_godz_str}) "
                         f"do planowanego punktu '{nazwa_nowego_miejsca}' ({planowane_okienko}) mija ponad 4.0 godziny. "
@@ -2331,18 +2361,24 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
                         f"💡 PROPOZYCJA: Zaplanuj Lunchbox mały, ciepły obiad na mieście w cieniu lub Lunchbox duży przed '{nazwa_nowego_miejsca}'."
                     )
 
-        # ZMIANA: Strażnik obecności obiadu przy jakiejkolwiek mutacji w długim planie dnia (trasa >= 5h lub powrót >= 14:00)
-        cursor.execute('SELECT pobudka, czas_wyjazdu, szacowana_godzina_powrotu FROM wycieczka WHERE id = ?', (str(id_wycieczki),))
+        # ZMIANA: Strażnik obecności obiadu - wyłączony dla transferów i wyjazdów wieczornych (po 18:00)
+        cursor.execute('SELECT pobudka, czas_wyjazdu, szacowana_godzina_powrotu, tytul_wycieczki, calosciowy_opis_wycieczki FROM wycieczka WHERE id = ?', (str(id_wycieczki),))
         w_row = cursor.fetchone()
         if w_row:
             g_wyjazd = sparsuj_godzine_minuty(w_row[1] or '07:00')
             g_powrot = sparsuj_godzine_minuty(w_row[2] or '17:00')
+            tytul_check = str(w_row[3]).lower() if len(w_row) > 3 and w_row[3] else ""
+            opis_check = str(w_row[4]).lower() if len(w_row) > 4 and w_row[4] else ""
+            czy_trasa_transf = any(w in tytul_check or w in opis_check for w in ["transfer", "lotnisk", "airport"])
+
             if g_wyjazd and g_powrot:
                 czas_trwania_h = (g_powrot[0] + g_powrot[1] / 60.0) - (g_wyjazd[0] + g_wyjazd[1] / 60.0)
                 if czas_trwania_h < 0:
                     czas_trwania_h += 24.0
 
-                if czas_trwania_h >= 5.0 or g_powrot[0] >= 14:
+                wyjazd_dec = g_wyjazd[0] + g_wyjazd[1] / 60.0
+                # Wymóg obiadu dotyczy wyłącznie tras dziennych (start przed 18:00) nietransferowych
+                if not czy_trasa_transf and wyjazd_dec < 18.0 and (czas_trwania_h >= 5.0 or (g_powrot[0] >= 14 and g_powrot[0] < 22)):
                     cursor.execute('''
                         SELECT COUNT(*) 
                         FROM posilki_kroku p
@@ -2509,19 +2545,33 @@ def utworz_nowa_wycieczke(tytul_wycieczki, planowana_data=None, pobudka="06:00",
             ) VALUES (?, ?, ?, ?, '0', '17:00', ?, ?, ?, NULL, '0.5h', 0)
         ''', (nowe_id, tytul_wycieczki, opis, taktyka_dnia, pobudka, czas_wyjazdu, data_val))
 
-        # ZMIANA: Automatyczne tworzenie szkieletu zamkniętej pętli (Start + Powrót) zapobiegające urwanym trasom
+        # ZMIANA: Obsługa wycieczek transferowych (np. z lotniska) bez sztywnego narzucania pobudki w domku
+        tytul_l = str(tytul_wycieczki).lower()
+        opis_l = str(opis).lower()
+        czy_transfer_z_lotniska = any(w in tytul_l or w in opis_l for w in ["lotnisk", "airport", "transfer"]) and not any(w in tytul_l for w in ["na lotnisko", "wylot"])
+
+        if czy_transfer_z_lotniska:
+            # Koordynaty lotniska Heraklion (HER): 35.3397, 25.1803
+            lat_start, lon_start = 35.3397, 25.1803
+            nazwa_start = "Lotnisko Heraklion (Przylot i odbiór auta)"
+            opis_start = "Lądowanie, odbiór bagaży, formalności i pobranie auta z klimatyzacją"
+        else:
+            lat_start, lon_start = DOMEK_LAT, DOMEK_LON
+            nazwa_start = "Nasz Domek (Start)"
+            opis_start = "Poranne przygotowanie i bezpieczne śniadanie"
+
         cursor.execute('''
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, numer_miejsca, nazwa, wspolrzedne, okienko_zwiedzania, opis)
-            VALUES (?, 0, NULL, 'Nasz Domek (Start)', ?, ?, 'Poranne przygotowanie i bezpieczne śniadanie')
-        ''', (nowe_id, f"{DOMEK_LAT}, {DOMEK_LON}", f"{pobudka} - {czas_wyjazdu}"))
+            VALUES (?, 0, NULL, ?, ?, ?, ?)
+        ''', (nowe_id, nazwa_start, f"{lat_start}, {lon_start}", f"{pobudka} - {czas_wyjazdu}", opis_start))
         id_start = cursor.lastrowid
         
-        cursor.execute('''
-            INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
-            VALUES (?, 'śniadanie', 'w domku', ?, 'Śniadanie')
-        ''', (id_start, pobudka))
+        if not czy_transfer_z_lotniska:
+            cursor.execute('''
+                INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
+                VALUES (?, 'śniadanie', 'w domku', ?, 'Śniadanie')
+            ''', (id_start, pobudka))
 
-        # ZMIANA: Punkt powrotny z kolacją na stałe zamykający dzień w domku
         cursor.execute('''
             INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, numer_miejsca, nazwa, wspolrzedne, okienko_zwiedzania, opis)
             VALUES (?, 999, NULL, 'Nasz Domek (Powrót)', ?, '17:00 - 18:00', 'Wypoczynek, regeneracja i bezpieczna kolacja')
@@ -3627,16 +3677,20 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                             st.write("🔌 Łączenie z API Gemini...")
                             client = get_gemini_client(api_key_input)
                             
+                            # ZMIANA: Walidacja treści zapobiegająca "ValueError: contents are required"
                             contents = []
-                            for m in chat_historia_z_db[-2:]:
-                                role = "model" if m["role"] in ["assistant", "model"] else "user"
-                                contents.append(types.Content(role=role, parts=[types.Part.from_text(text=m["content"])]))
-                            
-                            contents.append(types.Content(role="user", parts=[types.Part.from_text(text=prompt)]))
+                            for m in chat_historia_z_db[-12:]:
+                                text_val = str(m.get("content", "")).strip()
+                                if text_val:
+                                    role = "model" if m["role"] in ["assistant", "model"] else "user"
+                                    contents.append(types.Content(role=role, parts=[types.Part.from_text(text=text_val)]))
+
+                            if not contents:
+                                contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt.strip())])]
 
                             # ZMIANA: Programowe wykrycie trybu ratunkowego (Hangry Emergency)
                             prompt_l = prompt.lower()
-                            czy_polecenie_zapisu = any(w in prompt_l for w in ["dodaj", "zapisz", "wstaw", "wybieram", "utworz"])
+                            czy_polecenie_zapisu = any(w in prompt_l for w in ["dodaj", "zapisz", "wstaw", "wybieram", "utworz", "akceptuj"])
                             slowa_alarmowe = ["stop", "histeri", "głód", "glod", "hangry", "na skraju", "gdzie zjeść", "gdzie zjesc", "meltdown"]
                             is_emergency = any(w in prompt_l for w in slowa_alarmowe) and not czy_polecenie_zapisu
 
@@ -3668,20 +3722,22 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                                     max_output_tokens=1024 if is_emergency else 2048
                                 )
 
+                            # ZMIANA: Zwiększenie limitu pętli do 4, aby model mógł sprawdzić POI, zapisać wycieczkę, dodać kroki i wygenerować tekst
+                            max_loops = 1 if is_emergency else 4
+
                             assistant_reply = ""
                             executed_actions = []
                             has_db_mutations = False
                             executed_tool_signatures = set()
 
-                            # ZMIANA: Zastąpienie 3 zduplikowanych pętli for jedną zwięzłą pętlą (max 2 tury)
-                            max_loops = 1 if is_emergency else 2
+                            # ZMIANA: Zwiększenie max_loops do 4 w celu pełnej atomowej obsługi narzędzi (miejsce -> krok -> zakupy -> podsumowanie)
+                            max_loops = 1 if is_emergency else 4
                             assistant_reply = ""
                             executed_actions = []
                             has_db_mutations = False
                             executed_tool_signatures = set()
 
                             for loop_idx in range(max_loops):
-                                # ZMIANA: Dynamiczny, rotujący status sensoryczny AuDHD eliminujący uczucie martwego zawieszenia
                                 status_placeholder = st.empty()
                                 status_komunikaty = [
                                     "🧠 Sprawdzam strefy cienia i okno sjesty...",
@@ -3691,7 +3747,6 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                                 ]
                                 status_placeholder.markdown(f"*{random.choice(status_komunikaty)}*")
                                 
-                                # ZMIANA: Odporny mechanizm retry z backoffem i kaskadowym fallbackiem modeli przy błędach 503 / 429
                                 kandydaci_modeli = [wybrany_model]
                                 for zapas in ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]:
                                     if zapas not in kandydaci_modeli:
@@ -3768,7 +3823,6 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                                         if not call_name.startswith("szukaj_") and not call_name.startswith("sprawdz_") and not call_name.startswith("pobierz_"):
                                             has_db_mutations = True
                                         
-                                        # ZMIANA: Automatyczne przełączenie aktywnej wycieczki w sesji po utworzeniu nowej trasy
                                         if "utworz_nowe_miejsce" in call_name:
                                             st.write(f"📍 Dodano do bazy: **{args.get('nazwa', 'nowe miejsce')}**")
                                         elif "utworz_nowa_wycieczke" in call_name:
@@ -3779,6 +3833,8 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                                                 st.session_state["selected_trip_from_click"] = nowe_w_id
                                         elif "dodaj_krok" in call_name:
                                             st.write(f"➕ Dołączono przystanek: **{args.get('nazwa_z_bazy', '')}**")
+                                        elif "dodaj_produkt" in call_name or "dodaj_wiele_produktow" in call_name:
+                                            st.write("🛒 Zaktualizowano listę zakupów...")
                                         elif "edytuj_wycieczke" in call_name:
                                             st.write("⏱️ Zaktualizowano parametry trasy...")
                                         elif "edytuj_krok" in call_name:
@@ -3786,14 +3842,18 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                                         else:
                                             st.write("⚙️ Przetwarzam...")
                                         
+                                        payload_resp = wynik_bazy if isinstance(wynik_bazy, dict) else {"result": str(wynik_bazy)}
                                         function_responses_parts.append(
                                             types.Part.from_function_response(
                                                 name=call_name, 
-                                                response={"result": wynik_bazy}
+                                                response={"result": payload_resp}
                                             )
                                         )
                                     
-                                    contents.append(types.Content(role="user", parts=function_responses_parts))
+                                    if function_responses_parts:
+                                        contents.append(types.Content(role="user", parts=function_responses_parts))
+                                    else:
+                                        break
                                 else:
                                     if candidate and candidate.content and candidate.content.parts:
                                         assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
@@ -3801,19 +3861,28 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                                         assistant_reply = response.text
                                     break
 
-                            # ZMIANA: Ochrona przed fałszywym potwierdzeniem akcji bazodanowej (Zero CRUD Halucynacji)
+                            # ZMIANA: Zero fałszywych potwierdzeń CRUD – blokada bezprawnych deklaracji sukcesu
                             if not has_db_mutations:
                                 zakazane_frazy = [
                                     "zaktualizowałem plan", "zaktualizowałam plan", "zaktualizowano plan",
                                     "jest teraz zaplanowany", "zmieniłem godziny", "zmieniłam godziny",
-                                    "przesunąłem", "przesunęłam", "zapisano w bazie"
+                                    "przesunąłem", "przesunęłam", "zapisano w bazie", "finalizuję zapis"
                                 ]
                                 if any(fraz in assistant_reply.lower() for fraz in zakazane_frazy):
                                     assistant_reply = (
-                                        "⛔ Nie wprowadziłem zmian w bazie. Planowanie tego punktu w oknie 11:30–15:30 "
-                                        "narusza zasadę ochrony przed pełnym słońcem i grozi przebodźcowaniem. "
-                                        "Pozostajemy przy pierwotnym, bezpiecznym harmonogramie."
+                                        "⚠️ Nie wprowadzono zmian w bazie danych. "
+                                        "Aby dodać ten punkt i produkty, sprecyzuj dokładną nazwę lub potwierdź dodanie do trasy."
                                     )
+                                    
+                            if not assistant_reply.strip() and not has_db_mutations:
+                                if candidate and candidate.content and candidate.content.parts:
+                                    teksty_czesci = [p.text.strip() for p in candidate.content.parts if hasattr(p, 'text') and p.text]
+                                    if teksty_czesci:
+                                        assistant_reply = "\n\n".join(teksty_czesci)
+
+                                if not assistant_reply.strip():
+                                    prompt_skrot = (prompt[:65] + '...') if len(prompt) > 65 else prompt
+                                    assistant_reply = f"Przyjąłem: *„{prompt_skrot}”*. Jakie konkretne pozycje lub godziny dopasowujemy do planu?"
                                     
                             # ZMIANA: Dynamiczny, czysty fallback bez hardkodowanych greckich atrakcji w kodzie Pythona
                             if not assistant_reply.strip() and not has_db_mutations:
@@ -3822,14 +3891,14 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                                     if teksty_czesci:
                                         assistant_reply = "\n\n".join(teksty_czesci)
 
-                                # Ostateczna asekuracja w razie pustego payloadu z API - naturalny dialog zamiast martwego szablonu
+                                # ZMIANA: Usunięcie usypiającego komunikatu "finalizuję zapis" maskującego brak wykonania narzędzi CRUD
                                 if not assistant_reply.strip():
-                                    prompt_skrot = (prompt[:65] + '...') if len(prompt) > 65 else prompt
-                                    assistant_reply = (
-                                        f"Przyjrzałem się Twojemu pomysłowi (*„{prompt_skrot}”*). "
-                                        f"Chętnie pomogę to ułożyć z uwzględnieniem bezpiecznych godzin i cienia! "
-                                        f"Napisz, o której godzinie najwygodniej byłoby Wam wyruszyć ze Stavros i czy planujemy obiad w tawernie, czy prowiant w domku?"
-                                    )
+                                    prompt_czysty = prompt.strip().lower()
+                                    if any(slowo in prompt_czysty for slowo in ["tak", "zapisz", "akceptuj", "potwierdzam", "zgoda"]):
+                                        assistant_reply = "⚠️ Zaakceptowano plan, jednak operacja w bazie wymaga ponowienia. Wpisz: *„Dodaj piekarnię i zakupy do wycieczki”*, aby wymusić zapis do bazy."
+                                    else:
+                                        prompt_skrot = (prompt[:65] + '...') if len(prompt) > 65 else prompt
+                                        assistant_reply = f"Przyjąłem: *„{prompt_skrot}”*. Jakie konkretne godziny lub przystanki dopasowujemy do planu?"
                                     
                             if not assistant_reply.strip() and has_db_mutations:
                                 user_friendly_actions = []
@@ -4118,12 +4187,17 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         (posilki_wszystkie_df['id_kroku'] == int(kroki_df.iloc[0]['id']))
     ] if not kroki_df.empty else pd.DataFrame()
 
-    if not df_pos_pobudka.empty:
-        pobudka_posilki_tekst = formatuj_posilki_kroku(df_pos_pobudka)
-    else:
-        pobudka_posilki_tekst = f"<span style='color:#8C5338; font-weight:700;'>Śniadanie - ok {pobudka_val}</span>"
+    # ZMIANA: Wykrycie wycieczki transferowej (np. z lotniska), aby nie wyświetlać sztucznej pobudki ze śniadaniem
+    pierwszy_krok_nazwa = str(kroki_df.iloc[0]['nazwa']).lower() if not kroki_df.empty else ""
+    czy_trasa_transferowa = any(w in str(tytul_wycieczki).lower() or w in str(w_gen.get('calosciowy_opis_wycieczki', '')).lower() for w in ["lotnisk", "airport", "transfer"]) or any(w in pierwszy_krok_nazwa for w in ["lotnisk", "airport", "przylot"])
 
-    timeline_full_html.append(render_timeline_row_simple(pobudka_val, "⏰", "badge-pobudka", "Pobudka", pobudka_posilki_tekst))
+    if not czy_trasa_transferowa:
+        if not df_pos_pobudka.empty:
+            pobudka_posilki_tekst = formatuj_posilki_kroku(df_pos_pobudka)
+        else:
+            pobudka_posilki_tekst = f"<span style='color:#8C5338; font-weight:700;'>Śniadanie - ok {pobudka_val}</span>"
+
+        timeline_full_html.append(render_timeline_row_simple(pobudka_val, "⏰", "badge-pobudka", "Pobudka", pobudka_posilki_tekst))
 
     for idx, (_, k) in enumerate(kroki_df.iterrows()):
         krok_row_id = int(k['id'])
