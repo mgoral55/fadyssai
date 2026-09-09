@@ -3699,7 +3699,7 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                                         assistant_reply = response.text
                                     break
 
-                            # ZMIANA: Zabezpieczenie przed halucynacją potwierdzenia bez fizycznej modyfikacji bazy
+                            # ZMIANA: Ochrona przed fałszywym potwierdzeniem akcji bazodanowej (Zero CRUD Halucynacji)
                             if not has_db_mutations:
                                 zakazane_frazy = [
                                     "zaktualizowałem plan", "zaktualizowałam plan", "zaktualizowano plan",
@@ -3708,26 +3708,26 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                                 ]
                                 if any(fraz in assistant_reply.lower() for fraz in zakazane_frazy):
                                     assistant_reply = (
-                                        "⛔ Nie wprowadziłem zmian w bazie. Planowanie tego miejsca w oknie 11:30–15:30 "
+                                        "⛔ Nie wprowadziłem zmian w bazie. Planowanie tego punktu w oknie 11:30–15:30 "
                                         "narusza zasadę ochrony przed pełnym słońcem i grozi przebodźcowaniem. "
                                         "Pozostajemy przy pierwotnym, bezpiecznym harmonogramie."
                                     )
                                     
-                            # ZMIANA: Eliminacja sztywnego komunikatu w ciemno; wymuszenie konkretnego dialogu doradczego
+                            # ZMIANA: Dynamiczny, czysty fallback bez hardkodowanych greckich atrakcji w kodzie Pythona
                             if not assistant_reply.strip() and not has_db_mutations:
-                                for p_cand in (candidate.content.parts if candidate and candidate.content and candidate.content.parts else []):
-                                    if hasattr(p_cand, 'text') and p_cand.text and p_cand.text.strip():
-                                        assistant_reply = p_cand.text.strip()
-                                        break
+                                if candidate and candidate.content and candidate.content.parts:
+                                    teksty_czesci = [p.text.strip() for p in candidate.content.parts if hasattr(p, 'text') and p.text]
+                                    if teksty_czesci:
+                                        assistant_reply = "\n\n".join(teksty_czesci)
+
+                                # Ostateczna asekuracja w razie pustego payloadu z API - naturalny dialog zamiast martwego szablonu
                                 if not assistant_reply.strip():
-                                    if any(w in prompt.lower() for w in ["obiad", "lunch", "zjeść", "zjesc", "tawern"]):
-                                        assistant_reply = (
-                                            "Sprawdziłem trasę! W porze sjesty (od 12:00) najlepiej sprawdzi się zacieniona, "
-                                            "rodzinna tawerna z safe foods (kurczak, ryby, pieczone ziemniaki, pita) lub duży lunchbox w cieniu. "
-                                            "Wolicie tradycyjną tawernę na trasie, czy przygotowujemy prowiant w domku?"
-                                        )
-                                    else:
-                                        assistant_reply = "Przeanalizowałem plan trasy pod kątem sensoryki AuDHD. Na co macie ochotę lub jaki punkt programu dopracowujemy?"
+                                    prompt_skrot = (prompt[:65] + '...') if len(prompt) > 65 else prompt
+                                    assistant_reply = (
+                                        f"Przyjrzałem się Twojemu pomysłowi (*„{prompt_skrot}”*). "
+                                        f"Chętnie pomogę to ułożyć z uwzględnieniem bezpiecznych godzin i cienia! "
+                                        f"Napisz, o której godzinie najwygodniej byłoby Wam wyruszyć ze Stavros i czy planujemy obiad w tawernie, czy prowiant w domku?"
+                                    )
                                     
                             if not assistant_reply.strip() and has_db_mutations:
                                 user_friendly_actions = []
@@ -4072,9 +4072,19 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
         fraza_kroku_nav = ", ".join([c for c in czesci_zapytania if c])
 
-        # ZMIANA: Nawigacja do miejsc zewnętrznych wyłącznie po nazwie i adresie bez prefiksu GPS
+        # ZMIANA: Nawigacja do rynku w Chanii ściśle wg harmonogramu LAIKI_SCHEDULE z paska bocznego
+        is_market_krok = any(w in nazwa_lower for w in ["rynek", "targ", "laiki"])
+
         if any(w in nazwa_lower for w in ["domek", "stavros"]):
             query_nav = f"{DOMEK_LAT},{DOMEK_LON}"
+        elif is_market_krok:
+            rynek_krok_info, _ = pobierz_dane_rynku_dla_daty(planowana_data_val)
+            if rynek_krok_info and rynek_krok_info.get("coords"):
+                query_nav = rynek_krok_info["coords"].replace(" ", "")
+            elif coords_clean:
+                query_nav = coords_clean
+            else:
+                query_nav = "35.5118,24.0239"
         elif fraza_kroku_nav:
             query_nav = urllib.parse.quote(fraza_kroku_nav)
         elif lat_parsed is not None and lon_parsed is not None:
@@ -4126,7 +4136,20 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             opis_kroku_cottage = "" if is_wyjazd else (posilki_tekst if posilki_tekst else "Wypoczynek i relaks")
             badge_icon_cottage = "🚗" if is_wyjazd else "🏠"
             badge_class_cottage = "badge-wyjazd" if is_wyjazd else "badge-powrot"
-            timeline_full_html.append(render_timeline_row_simple(godzina_cottage, badge_icon_cottage, badge_class_cottage, nazwa, opis_kroku_cottage, nav_btn_html=""))
+            # ZMIANA: Dodanie przycisku nawigacji GPS do domku przy kroku powrotnym
+            nav_btn_cottage = (
+                f'<a href="https://www.google.com/maps/search/?api=1&query={DOMEK_LAT},{DOMEK_LON}" '
+                f'target="_blank" class="timeline-nav-btn" title="Nawiguj do domku"><span>🧭</span><span>Nawiguj</span></a>'
+            ) if not is_wyjazd else ""
+
+            timeline_full_html.append(render_timeline_row_simple(
+                godzina_cottage, 
+                badge_icon_cottage, 
+                badge_class_cottage, 
+                nazwa, 
+                opis_kroku_cottage, 
+                nav_btn_html=nav_btn_cottage
+            ))
         
         elif is_custom_flat:
             opis_kroku_cust = str(k.get('opis', '')).strip()
