@@ -144,12 +144,14 @@ Zanim wywołasz JAKIEKOLWIEK narzędzie mutujące bazę (`dodaj_krok_wycieczki`,
    * **Sklep przy domku:** `35.586222, 24.091861`[cite: 1, 2]
 
 2. **Harmonogram Targów w Chanii (Laiki Agora):**
-   * Poniedziałek: Plac Markopoulou (`35.5118, 24.0239`)[cite: 1, 2]
-   * Wtorek: Plac Agias Marinas (`35.4962, 24.0148`)[cite: 1, 2]
-   * Środa: ul. Therisou 1 (`35.5057, 24.0094`)[cite: 1, 2]
-   * Czwartek: Nea Chora (`35.5147, 24.0076`)[cite: 1, 2]
-   * Piątek / Niedziela: NIECZYNNE[cite: 1, 2]
-   * Sobota: ul. Minoos (`35.5166, 24.0237`)[cite: 1, 2]
+   * Poniedziałek: Plac Markopoulou / ul. Malinou (`35.5066, 24.0284`)
+   * Wtorek: ul. Plastira / okolice Ag. Marinas (`35.4993, 24.0278`)
+   * Środa: ul. Therisou / dawny Biochym (`35.5073, 24.0164`)
+   * Czwartek: Nea Chora / Akti Kanari (`35.5169, 24.0120`)
+   * Piątek: Kolymbari / region Chanii (`35.5349, 23.7829`)
+   * Sobota: ul. Minoos przy murach weneckich (`35.5152, 24.0238`)
+   * Niedziela: NIECZYNNE
+   * **Żelazna zasada godzinowa:** Targi funkcjonują w godzinach ok. 07:00–14:00. Przyjazd po 13:00 nie ma sensu – sprzedawcy pakują stoiska, brakuje świeżych produktów, a otwarta przestrzeń w zenicie upału stanowi skrajne ryzyko przebodźcowania i przegrzania dzieci. Rekomenduj wizytę wyłącznie do 11:30–12:00.
 
 3. **Domyślne czasy trwania punktów programu:**
    * Sklep / Rynek: 25 min | Plaża: 90 min | Muzeum / Zabytek: 60 min | Postój techniczny: 30 min[cite: 1, 2].

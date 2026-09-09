@@ -25,14 +25,14 @@ DOMEK_LAT, DOMEK_LON = 35.5914, 24.0918
 SKLEP_LAT, SKLEP_LON = 35.586222, 24.091861
 MARKET_LAT, MARKET_LON = 35.532585622784076, 24.075806829428785
 
-# ZMIANA: Deklaracja harmonogramu i funkcji rynków na górze pliku przed ich wywołaniem w st.sidebar
+# ZMIANA: Aktualizacja dokładnych współrzędnych i dodanie piątkowego targu do harmonogramu
 LAIKI_SCHEDULE = {
-    0: {"dzien_pl": "Poniedziałek", "opis_miejsca": "Plac Markopoulou / ul. Malinou", "coords": "35.5118, 24.0239"},
-    1: {"dzien_pl": "Wtorek", "opis_miejsca": "Plac Agias Marinas / ul. Plastira", "coords": "35.4962, 24.0148"},
-    2: {"dzien_pl": "Środa", "opis_miejsca": "ul. Therisou 1 / dawny Biochym", "coords": "35.5057, 24.0094"},
-    3: {"dzien_pl": "Czwartek", "opis_miejsca": "Nea Chora – dawna ABEA / Akti Kanari", "coords": "35.5147, 24.0076"},
-    4: None,
-    5: {"dzien_pl": "Sobota", "opis_miejsca": "ul. Minoos przy murach weneckich", "coords": "35.5166, 24.0237"},
+    0: {"dzien_pl": "Poniedziałek", "opis_miejsca": "Plac Markopoulou / ul. Malinou", "coords": "35.5066, 24.0284"},
+    1: {"dzien_pl": "Wtorek", "opis_miejsca": "ul. Plastira / okolice Ag. Marinas", "coords": "35.4993, 24.0278"},
+    2: {"dzien_pl": "Środa", "opis_miejsca": "ul. Therisou / dawny Biochym", "coords": "35.5073, 24.0164"},
+    3: {"dzien_pl": "Czwartek", "opis_miejsca": "Nea Chora / Akti Kanari", "coords": "35.5169, 24.0120"},
+    4: {"dzien_pl": "Piątek", "opis_miejsca": "Kolymbari / region Chanii", "coords": "35.5349, 23.7829"},
+    5: {"dzien_pl": "Sobota", "opis_miejsca": "ul. Minoos przy murach weneckich", "coords": "35.5152, 24.0238"},
     6: None
 }
 
@@ -2130,6 +2130,12 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
     
     g_start = sparsuj_godzine_minuty(planowane_okienko.split("-")[0].strip()) if "-" in str(planowane_okienko) else sparsuj_godzine_minuty(str(planowane_okienko))
     if g_start:
+        # ZMIANA: Strażnik godzinowy targu Laiki Agora (brak sensu wizyty po 13:00)
+        if any(w in nazwa_l for w in ['rynek', 'targ', 'laiki']):
+            g_test = sparsuj_godzine_minuty(planowane_okienko.split("-")[0].strip()) if "-" in str(planowane_okienko) else sparsuj_godzine_minuty(str(planowane_okienko))
+            if g_test and (g_test[0] + g_test[1]/60.0) >= 13.0:
+                return False, "⛔ OSTRZEŻENIE: Targ w Chanii po 13:00 już się zwija. Stoiska są pakowane, a w pełnym słońcu panuje bałagan i hałas. Zaplanuj rynek rano (optymalnie 08:30–11:00)."
+    
         # ZMIANA: Zmienna godz_dec zadeklarowana bezwarunkowo na poziomie g_start, zapobiegając UnboundLocalError
         godz_dec = g_start[0] + g_start[1] / 60.0
 
