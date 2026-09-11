@@ -1,0 +1,9 @@
+.git
+.claude
+sources/
+__pycache__/
+*.pyc
+data/
+cretai.db
+miejsca_backup.csv
+wycieczki_backup.csv

@@ -1,0 +1,7 @@
+[server]
+# Streamlit odrzuca uścisk WebSocket z nieznanego Origin, więc bez tego wpisu
+# aplikacja za tunelem Cloudflare wisi na "Please wait...". Localhost jest dozwolony zawsze.
+corsAllowedOrigins = ["https://crete.mroczkowski.cc"]
+
+[browser]
+gatherUsageStats = false

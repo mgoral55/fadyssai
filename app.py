@@ -42,8 +42,14 @@ def pobierz_dane_rynku_dla_daty(data_str):
     return LAIKI_SCHEDULE.get(weekday), weekday
 
 # --- 0. BAZA DANYCH (CONCURRENCY & WAL) ---
+# Stan zapisywalny (baza + backupy CSV) trafia do CRETAI_DATA_DIR, aby przetrwać odtworzenie kontenera.
+DATA_DIR = os.environ.get("CRETAI_DATA_DIR", ".")
+DB_PATH = os.path.join(DATA_DIR, "cretai.db")
+MIEJSCA_BACKUP = os.path.join(DATA_DIR, "miejsca_backup.csv")
+WYCIECZKI_BACKUP = os.path.join(DATA_DIR, "wycieczki_backup.csv")
+
 def get_db():
-    conn = sqlite3.connect('cretai.db', timeout=30.0)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.execute('PRAGMA journal_mode=WAL;')
     conn.execute('PRAGMA busy_timeout = 30000;')
     return conn
@@ -51,10 +57,10 @@ def get_db():
 # ZMIANA: Zapis kopii zapasowej do dedykowanych plików backupu z zachowaniem nienaruszalności plików bazowych
 def zsynchronizuj_baze_do_csv():
     try:
-        with sqlite3.connect('cretai.db', timeout=15.0) as conn:
+        with sqlite3.connect(DB_PATH, timeout=15.0) as conn:
             df_m = pd.read_sql('SELECT * FROM miejsca', conn)
             if not df_m.empty:
-                df_m.to_csv('miejsca_backup.csv', index=False, encoding='utf-8')
+                df_m.to_csv(MIEJSCA_BACKUP, index=False, encoding='utf-8')
             
             # ZMIANA: Czysty zrzut bez duplikacji kroków (mode='w' nadpisuje plik, GROUP BY k.id eliminuje iloczyn posiłków)
             q_wyc = '''
@@ -85,7 +91,7 @@ def zsynchronizuj_baze_do_csv():
             '''
             df_w = pd.read_sql(q_wyc, conn)
             if not df_w.empty:
-                df_w.to_csv('wycieczki_backup.csv', index=False, encoding='utf-8')
+                df_w.to_csv(WYCIECZKI_BACKUP, index=False, encoding='utf-8')
     except Exception as e:
         print(f"Błąd synchronizacji bazy do CSV: {e}")
 
@@ -812,7 +818,7 @@ def init_db():
 
         if miejsca_count == 0 and wycieczka_count == 0:
             # ZMIANA: Priorytet odczytu z dynamicznego backupu przed nienaruszalnym plikiem fabrycznym
-            plik_miejsca = 'miejsca_backup.csv' if os.path.exists('miejsca_backup.csv') else ('miejsca.csv' if os.path.exists('miejsca.csv') else None)
+            plik_miejsca = MIEJSCA_BACKUP if os.path.exists(MIEJSCA_BACKUP) else ('miejsca.csv' if os.path.exists('miejsca.csv') else None)
             if plik_miejsca:
                 for enc in ['utf-8', 'utf-8-sig', 'cp1250', 'iso-8859-2']:
                     try:
@@ -894,7 +900,7 @@ def init_db():
                         continue
 
             # ZMIANA: Priorytet odczytu wycieczek z dynamicznego backupu przed nienaruszalnym plikiem fabrycznym
-            plik_wycieczki = 'wycieczki_backup.csv' if os.path.exists('wycieczki_backup.csv') else ('wycieczki.csv' if os.path.exists('wycieczki.csv') else None)
+            plik_wycieczki = WYCIECZKI_BACKUP if os.path.exists(WYCIECZKI_BACKUP) else ('wycieczki.csv' if os.path.exists('wycieczki.csv') else None)
             if plik_wycieczki:
                 for enc in ['utf-8', 'utf-8-sig', 'cp1250', 'iso-8859-2']:
                     try:
@@ -1080,7 +1086,7 @@ def zapisz_uzytkownika_urzadzenia(device_id, uzytkownik):
 # --- MODUŁ PRZYWRACANIA BAZY Z PLIKÓW CSV ---
 def resetuj_i_przywroc_baze_z_csv():
     # ZMIANA: Usunięcie plików backupu, aby twardy reset faktycznie odtwarzał stan pierwotny
-    for plik_kopii in ['miejsca_backup.csv', 'wycieczki_backup.csv']:
+    for plik_kopii in [MIEJSCA_BACKUP, WYCIECZKI_BACKUP]:
         if os.path.exists(plik_kopii):
             try:
                 os.remove(plik_kopii)

@@ -1,1 +1,6 @@
 cretai.db
+data/
+miejsca_backup.csv
+wycieczki_backup.csv
+__pycache__/
+*.pyc
