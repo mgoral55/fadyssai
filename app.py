@@ -1,12 +1,12 @@
 import sqlite3
 import pandas as pd
 import streamlit as st
-from google import genai
-from google.genai import types
 import folium
 from branca.element import Element
 from streamlit_folium import st_folium
 import os
+import shutil
+import subprocess
 import urllib.request
 import json
 import re
@@ -14,7 +14,6 @@ import math
 import base64
 import random
 import unicodedata
-import time as py_time
 from datetime import datetime, date, time, timedelta
 
 # Stałe koordynatów
@@ -789,13 +788,6 @@ def init_db():
         ''')
         cursor.execute('INSERT OR IGNORE INTO aktywna_wycieczka (id, aktualne_id_wycieczki) VALUES (1, "1")')
         
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS konfiguracja_uzytkownika (
-                uzytkownik TEXT PRIMARY KEY,
-                gemini_api_key TEXT
-            )
-        ''')
-
         # ZMIANA: Tabela per-urządzenie (kluczowana unikalnym fingerprintem klienta)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS profil_urzadzenia (
@@ -1025,24 +1017,6 @@ def init_db():
         conn.commit()
 
 init_db()
-
-# ZMIANA: Pobieranie zapisanego klucza API dla danego profilu z bazy danych
-def pobierz_api_key_uzytkownika(uzytkownik):
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT gemini_api_key FROM konfiguracja_uzytkownika WHERE uzytkownik = ?", (str(uzytkownik),))
-        row = cursor.fetchone()
-        return str(row[0]).strip() if row and row[0] else ""
-
-def zapisz_api_key_uzytkownika(uzytkownik, key_val):
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO konfiguracja_uzytkownika (uzytkownik, gemini_api_key)
-            VALUES (?, ?)
-            ON CONFLICT(uzytkownik) DO UPDATE SET gemini_api_key = excluded.gemini_api_key
-        ''', (str(uzytkownik), str(key_val).strip()))
-        conn.commit()
 
 # ZMIANA: Pobranie unikalnego identyfikatora urządzenia klienta z nagłówków żądania HTTP Streamlit
 import hashlib
@@ -1494,6 +1468,184 @@ if "flash_toast" in st.session_state and st.session_state["flash_toast"]:
     st.toast(st.session_state["flash_toast"], icon="🧭")
     st.session_state["flash_toast"] = None
 
+
+# --- WARSTWA MODELU AI: Claude Code CLI ---
+# Aplikacja nie przechowuje żadnego tokenu. Uwierzytelnienie obsługuje lokalne CLI
+# (poświadczenia w katalogu ~/.claude albo zmienna ANTHROPIC_API_KEY w środowisku).
+CLAUDE_CLI_BIN = os.environ.get("CLAUDE_CLI_BIN", "claude")
+CLAUDE_MODEL_DOMYSLNY = "claude-opus-5"
+CLAUDE_MODELE_ZAPASOWE = ["claude-sonnet-5", "claude-haiku-4-5-20251001"]
+CLAUDE_TIMEOUT_S = int(os.environ.get("CLAUDE_CLI_TIMEOUT_S", "240"))
+
+# Ile historii czatu trafia do modelu (okno wiadomości i twardy limit znaków)
+HISTORIA_MAX_WIADOMOSCI = 60
+HISTORIA_MAX_ZNAKOW = 40000
+
+# Model nie ma własnych narzędzi, więc zleca je aplikacji przez ustrukturyzowany JSON.
+SCHEMAT_ODPOWIEDZI_AI = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "odpowiedz": {
+            "type": "string",
+            "description": "Tekst dla rodzica. Pusty string, gdy zlecasz narzędzia i czekasz na ich wyniki."
+        },
+        "wywolania_narzedzi": {
+            "type": "array",
+            "description": "Narzędzia do wykonania w tej turze. Pusta lista, gdy odpowiadasz finalnie.",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "narzedzie": {"type": "string", "description": "Nazwa narzędzia z katalogu"},
+                    "argumenty": {"type": "object", "description": "Argumenty zgodne ze schematem narzędzia"}
+                },
+                "required": ["narzedzie", "argumenty"]
+            }
+        }
+    },
+    "required": ["odpowiedz", "wywolania_narzedzi"]
+}
+
+
+class BladModeluAI(RuntimeError):
+    """Błąd wywołania Claude Code CLI z kodem ułatwiającym komunikat dla rodzica."""
+
+    def __init__(self, komunikat, kod="cli"):
+        super().__init__(komunikat)
+        self.kod = kod
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def sciezka_claude_cli():
+    return shutil.which(CLAUDE_CLI_BIN) or ""
+
+
+def zbuduj_protokol_narzedzi():
+    """Kontrakt JSON i katalog narzędzi dopisywany do promptu systemowego."""
+    katalog = json.dumps(tools_definitions, ensure_ascii=False)
+    return (
+        'PROTOKÓŁ NARZĘDZI (obowiązkowy):\n'
+        'Odpowiadasz wyłącznie obiektem JSON: '
+        '{"odpowiedz": "...", "wywolania_narzedzi": [{"narzedzie": "...", "argumenty": {...}}]}\n'
+        '- Nie masz dostępu do plików, powłoki ani internetu. Jedyny sposób odczytu i zapisu danych to narzędzia z katalogu poniżej.\n'
+        '- Sam tekst niczego nie zapisuje. Każda zmiana w bazie wymaga wpisu w "wywolania_narzedzi".\n'
+        '- Gdy zlecasz narzędzia, ustaw "odpowiedz" na "" — tekst dla rodzica napiszesz w kolejnej turze, po otrzymaniu wyników.\n'
+        '- Gdy nie potrzebujesz narzędzi, ustaw "wywolania_narzedzi" na [] i napisz pełną odpowiedź w "odpowiedz".\n'
+        '- Używaj wyłącznie nazw narzędzi i nazw argumentów z katalogu. Nie wymyślaj nowych.\n\n'
+        'KATALOG NARZĘDZI (JSON Schema):\n' + katalog
+    )
+
+
+def przytnij_historie_czatu(historia, max_wiadomosci=HISTORIA_MAX_WIADOMOSCI, max_znakow=HISTORIA_MAX_ZNAKOW):
+    """Zwraca najnowszy fragment historii mieszczący się w limicie wiadomości i znaków."""
+    okno = [m for m in (historia or []) if str(m.get("content", "")).strip()][-max_wiadomosci:]
+    przyciete = []
+    budzet = max_znakow
+    for m in reversed(okno):
+        dlugosc = len(str(m.get("content", "")))
+        if przyciete and dlugosc > budzet:
+            break
+        budzet -= dlugosc
+        przyciete.append(m)
+    return list(reversed(przyciete))
+
+
+def zbuduj_tresc_rozmowy(historia, biezacy_prompt, wyniki_narzedzi=None):
+    """Składa historię czatu i wyniki narzędzi w jedną wiadomość wejściową dla CLI."""
+    linie = []
+    for m in historia:
+        tekst = str(m.get("content", "")).strip()
+        if not tekst:
+            continue
+        rola = "ASYSTENT" if m.get("role") in ("assistant", "model") else "RODZIC"
+        linie.append(f"[{rola}]: {tekst}")
+
+    if not linie:
+        linie.append(f"[RODZIC]: {str(biezacy_prompt).strip()}")
+
+    tresc = "HISTORIA ROZMOWY (od najstarszej wiadomości):\n" + "\n".join(linie)
+    tresc += f"\n\nAKTUALNE POLECENIE RODZICA: {str(biezacy_prompt).strip()}"
+
+    if wyniki_narzedzi:
+        tresc += (
+            "\n\nWYNIKI NARZĘDZI WYKONANYCH W TEJ TURZE (JSON):\n"
+            + json.dumps(wyniki_narzedzi, ensure_ascii=False, default=str)
+            + "\n\nDokończ zadanie: zleć kolejne narzędzia albo napisz finalną odpowiedź w polu \"odpowiedz\"."
+            + " Nie powtarzaj narzędzia, które już zwróciło wynik."
+        )
+    return tresc
+
+
+def wywolaj_model_claude(system_prompt, tresc_uzytkownika, model=None):
+    """Jedno wywołanie Claude Code CLI w trybie print ze strukturalnym wyjściem JSON."""
+    sciezka = sciezka_claude_cli()
+    if not sciezka:
+        raise BladModeluAI(f"Nie znaleziono Claude Code CLI ('{CLAUDE_CLI_BIN}') w PATH.", kod="brak_cli")
+
+    model = model or CLAUDE_MODEL_DOMYSLNY
+    zapasowe = [m for m in CLAUDE_MODELE_ZAPASOWE if m != model]
+
+    cmd = [
+        sciezka, "-p",
+        "--model", model,
+        # Bez CLAUDE.md, wtyczek, hooków i serwerów MCP - liczy się sam model.
+        "--safe-mode",
+        # Model nie dostaje wbudowanych narzędzi (pliki, powłoka, sieć).
+        "--tools", "",
+        "--no-session-persistence",
+        "--output-format", "json",
+        "--system-prompt", system_prompt,
+        "--json-schema", json.dumps(SCHEMAT_ODPOWIEDZI_AI, ensure_ascii=False),
+    ]
+    if zapasowe:
+        cmd += ["--fallback-model", ",".join(zapasowe)]
+
+    try:
+        proces = subprocess.run(
+            cmd,
+            input=tresc_uzytkownika,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=CLAUDE_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        raise BladModeluAI(f"Model nie odpowiedział w ciągu {CLAUDE_TIMEOUT_S}s.", kod="timeout")
+    except OSError as e:
+        raise BladModeluAI(f"Nie udało się uruchomić Claude CLI: {e}", kod="brak_cli")
+
+    surowe = (proces.stdout or "").strip()
+    try:
+        koperta = json.loads(surowe) if surowe else None
+    except json.JSONDecodeError:
+        koperta = None
+
+    if not isinstance(koperta, dict):
+        detal = (proces.stderr or surowe or "brak wyjścia").strip()
+        raise BladModeluAI(f"Nieczytelna odpowiedź CLI (kod {proces.returncode}): {detal[:400]}", kod="cli")
+
+    if koperta.get("is_error") or koperta.get("subtype") != "success":
+        detal = str(
+            koperta.get("result")
+            or koperta.get("api_error_status")
+            or koperta.get("subtype")
+            or "nieznany błąd"
+        )
+        raise BladModeluAI(detal[:400], kod=str(koperta.get("subtype") or "cli"))
+
+    dane = koperta.get("structured_output")
+    if not isinstance(dane, dict):
+        try:
+            dane = json.loads(koperta.get("result") or "")
+        except (TypeError, json.JSONDecodeError):
+            dane = None
+
+    if not isinstance(dane, dict):
+        raise BladModeluAI("Model nie zwrócił odpowiedzi w wymaganym formacie JSON.", kod="schemat")
+
+    return dane
+
 with st.sidebar:
     st.markdown("### ⚙️ Konfiguracja CretAi")
     
@@ -1558,31 +1710,23 @@ with st.sidebar:
     if saved_device_user != aktualny_uzytkownik:
         zapisz_uzytkownika_urzadzenia(current_device_id, aktualny_uzytkownik)
     
+    # ZMIANA: Wybór modelu Claude zamiast Gemini - domyślnie Opus 5
     wybrany_model = st.selectbox(
-        "Model Gemini", 
+        "Model Claude",
         options=[
-            "gemini-3.5-flash",
-            "gemini-3.1-flash-lite",
-            "gemini-3.5-flash-lite",
-            "gemini-3.6-flash"
-        ], 
-        index=1
-    )
-    # ZMIANA: Odczyt klucza powiązanego z użytkownikiem z bazy SQLite lub fallback do env
-    zapisany_klucz_db = pobierz_api_key_uzytkownika(aktualny_uzytkownik)
-    domyslny_klucz = zapisany_klucz_db if zapisany_klucz_db else os.environ.get("GEMINI_API_KEY", "")
-
-    api_key_input = st.text_input(
-        "Gemini API Key", 
-        value=domyslny_klucz, 
-        type="password", 
-        key=f"api_key_field_{aktualny_uzytkownik}"
+            "claude-opus-5",
+            "claude-sonnet-5",
+            "claude-haiku-4-5-20251001"
+        ],
+        index=0
     )
 
-    # ZMIANA: Automatyczny zapis nowego klucza w bazie dla aktywnego profilu
-    if api_key_input != zapisany_klucz_db and api_key_input.strip():
-        zapisz_api_key_uzytkownika(aktualny_uzytkownik, api_key_input)
-        
+    # ZMIANA: Koniec z kluczem API w aplikacji - uwierzytelnia lokalne Claude Code CLI
+    if sciezka_claude_cli():
+        st.caption("🤖 Doradca AI: Claude Code CLI (logowanie po stronie CLI).")
+    else:
+        st.warning("⚠️ Brak Claude Code CLI w PATH — doradca AI jest niedostępny.")
+
     # ZMIANA: Rozszerzona szybka nawigacja (Domek, Sklep przy domku, Market, Rynek w Chanii)
     st.markdown("<div style='margin-top: 14px; border-top: 1.5px solid #D6D2C4; padding-top: 10px;'></div>", unsafe_allow_html=True)
     st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 6px;'>🧭 Szybka nawigacja</div>", unsafe_allow_html=True)
@@ -1798,17 +1942,24 @@ def render_action_bar(coords_clean, search_name="", search_name_en="", address="
     """
 
 def formatuj_komunikat_bledu_ai(e):
-    kod = getattr(e, 'code', None) or getattr(e, 'status_code', None)
+    kod = getattr(e, 'kod', None) or getattr(e, 'code', None) or getattr(e, 'status_code', None)
     msg = str(e)
-    # ZMIANA: Obsługa przeciążenia 503 (High Demand) i 429 dla przejrzystości rodzica
-    if "503" in msg or kod == 503 or "UNAVAILABLE" in msg or "high demand" in msg.lower():
-        return "⏳ Chwilowe przeciążenie serwera AI (503)", "Serwery Gemini są w tym momencie mocno obciążone. Spróbuj wysłać wiadomość ponownie za kilka sekund lub wybierz w menu bocznym model gemini-3.5-flash."
-    if "429" in msg or kod == 429 or "RESOURCE_EXHAUSTED" in msg:
-        return "⏳ Przekroczono limit zapytań (429 Rate Limit)", "Wyczerpano chwilowy limit zapytań na minutę. Odczekaj chwilę."
-    if "401" in msg or "403" in msg or kod in [401, 403]:
-        return "🔑 Błąd uwierzytelnienia klucza API", "Wprowadzony klucz API jest nieprawidłowy lub wygasł."
+    msg_l = msg.lower()
+
+    # ZMIANA: Komunikaty dopasowane do Claude Code CLI (brak CLI, timeout, limity Anthropic)
+    if kod == "brak_cli":
+        return "🔌 Brak Claude Code CLI", "Doradca AI działa przez lokalne Claude Code CLI. Zainstaluj je w kontenerze i zaloguj (`claude login`) albo ustaw ANTHROPIC_API_KEY w środowisku."
+    if kod == "timeout":
+        return "⏳ Model odpowiadał zbyt długo", "Zapytanie przekroczyło limit czasu. Spróbuj ponownie lub wybierz w menu bocznym szybszy model."
+    if kod == "schemat":
+        return "🧩 Nieczytelna odpowiedź modelu", "Model nie zwrócił poprawnego JSON-a. Powtórz polecenie, najlepiej krócej i konkretniej."
+    if "529" in msg or "503" in msg or "overloaded" in msg_l or "high demand" in msg_l:
+        return "⏳ Chwilowe przeciążenie serwera AI", "Serwery Anthropic są mocno obciążone. Spróbuj za kilka sekund lub wybierz w menu bocznym model claude-sonnet-5."
+    if "429" in msg or "rate limit" in msg_l or "usage limit" in msg_l:
+        return "⏳ Przekroczono limit zapytań", "Wyczerpano chwilowy limit Claude. Odczekaj chwilę i wyślij wiadomość ponownie."
+    if "401" in msg or "403" in msg or "authentication" in msg_l or "unauthorized" in msg_l or "invalid api key" in msg_l:
+        return "🔑 Błąd uwierzytelnienia Claude CLI", "Sesja Claude Code wygasła. Zaloguj CLI ponownie (`claude login`) albo zaktualizuj ANTHROPIC_API_KEY."
     return f"⚠️ Chwilowy problem z połączeniem ({type(e).__name__})", f"Szczegóły: {msg}"
-    return f"⚠️ Błąd połączenia z API ({type(e).__name__})", f"Szczegóły: {msg}"
 
 # --- FUNKCJE POGODOWE ---
 @st.cache_data(ttl=28800)
@@ -2407,7 +2558,7 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
     return True, ""
 
 # --- OPERACJE NA KROKACH I WYCIECZKACH ---
-# ZMIANA: Lekki resolver geolokalizacji OSM dla Krety z czyszczeniem nazwy (brak narzutu Gemini SDK)
+# ZMIANA: Lekki resolver geolokalizacji OSM dla Krety z czyszczeniem nazwy (bez odpytywania modelu)
 def rozwiaz_geolokalizacje_miejsca_kreta(nazwa_miejsca):
     if not nazwa_miejsca:
         return None, None
@@ -3199,292 +3350,290 @@ def usun_wycieczke(id_wycieczki):
 
 # --- DEKLARACJE FUNKCJI NARZĘDZIOWYCH DLA MODELU AI ---
 tools_definitions = [
-    types.FunctionDeclaration(
-        name="szukaj_miejsca_w_bazie",
-        description="Wyszukuje miejsce w lokalnej bazie danych CretAi. Zwraca dane, współrzędne i analizę AuDHD.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "nazwa_zapytania": types.Schema(type=types.Type.STRING, description="Nazwa miejsca lub numer"),
+    {
+        "name": "szukaj_miejsca_w_bazie",
+        "description": "Wyszukuje miejsce w lokalnej bazie danych CretAi. Zwraca dane, współrzędne i analizę AuDHD.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "nazwa_zapytania": {"type": "string", "description": "Nazwa miejsca lub numer"},
             },
-            required=["nazwa_zapytania"]
-        ),
-    ),
-    # ZMIANA: Deklaracja narzędzia do listowania miejsc dla zapytań o region/miasto/kategorię
-    types.FunctionDeclaration(
-        name="pobierz_miejsca_z_bazy",
-        description="Wyszukuje i listuje miejsca z bazy danych wg słowa kluczowego (np. 'Chania', 'Rethymno') lub kategorii.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "fraza_wyszukiwania": types.Schema(type=types.Type.STRING, description="Nazwa miasta, regionu lub atrakcji, np. 'Chania'"),
-                "kategoria": types.Schema(type=types.Type.STRING, description="Opcjonalna kategoria: 'Plaża', 'Must have', 'Shop', 'Activity'"),
+            "required": ["nazwa_zapytania"],
+        },
+    },
+    {
+        "name": "pobierz_miejsca_z_bazy",
+        "description": "Wyszukuje i listuje miejsca z bazy danych wg słowa kluczowego (np. 'Chania', 'Rethymno') lub kategorii.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "fraza_wyszukiwania": {"type": "string", "description": "Nazwa miasta, regionu lub atrakcji, np. 'Chania'"},
+                "kategoria": {"type": "string", "description": "Opcjonalna kategoria: 'Plaża', 'Must have', 'Shop', 'Activity'"},
             },
-        ),
-    ),
-    # ZMIANA: Dodanie właściwości nazwa_angielska i adres do schematu narzędzia utworz_nowe_miejsce
-    types.FunctionDeclaration(
-        name="utworz_nowe_miejsce",
-        description="Tworzy i zapisuje nowe miejsce w bazie.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "nazwa": types.Schema(type=types.Type.STRING, description="Oficjalna polska nazwa handlowa miejsca (np. 'Tawerna Kariatis', bez przedrostków 'Obiad w...')"),
-                "nazwa_angielska": types.Schema(type=types.Type.STRING, description="Oficjalna międzynarodowa/angielska nazwa handlowa dla Google Maps (np. 'Kariatis Restaurant')"),
-                "adres": types.Schema(type=types.Type.STRING, description="Dokładny adres uliczny lub miejscowość, np. 'ul. Kapetan Charalampi 6-8, Heraklion'"),
-                "typ": types.Schema(type=types.Type.STRING, description="Plaża, Must have, Nice to have, Activity, Shop, Other"),
-                "wspolrzedne": types.Schema(type=types.Type.STRING, description="Koordynaty np. '35.5138, 24.0180'"),
-                "orientacyjny_czas": types.Schema(type=types.Type.STRING, description="np. '1.5h'"),
-                "koszt": types.Schema(type=types.Type.STRING, description="Koszt 2+2"),
-                "godziny_otwarcia": types.Schema(type=types.Type.STRING, description="Godziny otwarcia"),
-                "konieczna_akcja": types.Schema(type=types.Type.STRING, description="Akcja wymagana"),
-                "trudnosc_adhd": types.Schema(type=types.Type.STRING, description="'Niski', 'Średni', 'Wysoki'"),
-                "ochrona_slonce": types.Schema(type=types.Type.STRING, description="Ochrona przed słońcem"),
-                "potencjal_meltdownu": types.Schema(type=types.Type.STRING, description="'Niski', 'Średni', 'Wysoki'"),
-                "strategie_meltdown": types.Schema(type=types.Type.STRING, description="Taktyka wyciszenia i cienia"),
-                "opis": types.Schema(type=types.Type.STRING, description="Krótki opis"),
-                "zadania_dla_dzieci": types.Schema(type=types.Type.STRING, description="Misje dla dzieci rozdzielone nową linią"),
+        },
+    },
+    {
+        "name": "utworz_nowe_miejsce",
+        "description": "Tworzy i zapisuje nowe miejsce w bazie.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "nazwa": {"type": "string", "description": "Oficjalna polska nazwa handlowa miejsca (np. 'Tawerna Kariatis', bez przedrostków 'Obiad w...')"},
+                "nazwa_angielska": {"type": "string", "description": "Oficjalna międzynarodowa/angielska nazwa handlowa dla Google Maps (np. 'Kariatis Restaurant')"},
+                "adres": {"type": "string", "description": "Dokładny adres uliczny lub miejscowość, np. 'ul. Kapetan Charalampi 6-8, Heraklion'"},
+                "typ": {"type": "string", "description": "Plaża, Must have, Nice to have, Activity, Shop, Other"},
+                "wspolrzedne": {"type": "string", "description": "Koordynaty np. '35.5138, 24.0180'"},
+                "orientacyjny_czas": {"type": "string", "description": "np. '1.5h'"},
+                "koszt": {"type": "string", "description": "Koszt 2+2"},
+                "godziny_otwarcia": {"type": "string", "description": "Godziny otwarcia"},
+                "konieczna_akcja": {"type": "string", "description": "Akcja wymagana"},
+                "trudnosc_adhd": {"type": "string", "description": "'Niski', 'Średni', 'Wysoki'"},
+                "ochrona_slonce": {"type": "string", "description": "Ochrona przed słońcem"},
+                "potencjal_meltdownu": {"type": "string", "description": "'Niski', 'Średni', 'Wysoki'"},
+                "strategie_meltdown": {"type": "string", "description": "Taktyka wyciszenia i cienia"},
+                "opis": {"type": "string", "description": "Krótki opis"},
+                "zadania_dla_dzieci": {"type": "string", "description": "Misje dla dzieci rozdzielone nową linią"},
             },
-            required=["nazwa", "typ", "wspolrzedne", "ochrona_slonce", "potencjal_meltdownu", "strategie_meltdown", "opis", "zadania_dla_dzieci"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="utworz_nowa_wycieczke",
-        description="Tworzy nową wycieczkę ze szkieletem bazy w Stavros.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Tytuł trasy"),
-                "planowana_data": types.Schema(type=types.Type.STRING, description="RRRR-MM-DD"),
-                "pobudka": types.Schema(type=types.Type.STRING, description="Godzina pobudki np. '06:00'"),
-                "czas_wyjazdu": types.Schema(type=types.Type.STRING, description="Godzina wyjazdu np. '06:30'"),
-                "opis": types.Schema(type=types.Type.STRING, description="Cel trasy"),
-                "taktyka_dnia": types.Schema(type=types.Type.STRING, description="Całościowa taktyka dnia (zarządzanie przebodźcowaniem, sjesta, strefy cienia)")
+            "required": ["nazwa", "typ", "wspolrzedne", "ochrona_slonce", "potencjal_meltdownu", "strategie_meltdown", "opis", "zadania_dla_dzieci"],
+        },
+    },
+    {
+        "name": "utworz_nowa_wycieczke",
+        "description": "Tworzy nową wycieczkę ze szkieletem bazy w Stavros.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tytul_wycieczki": {"type": "string", "description": "Tytuł trasy"},
+                "planowana_data": {"type": "string", "description": "RRRR-MM-DD"},
+                "pobudka": {"type": "string", "description": "Godzina pobudki np. '06:00'"},
+                "czas_wyjazdu": {"type": "string", "description": "Godzina wyjazdu np. '06:30'"},
+                "opis": {"type": "string", "description": "Cel trasy"},
+                "taktyka_dnia": {"type": "string", "description": "Całościowa taktyka dnia (zarządzanie przebodźcowaniem, sjesta, strefy cienia)"},
             },
-            required=["tytul_wycieczki"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="sprawdz_pogode",
-        description="Pobiera prognozę pogody dla podanych współrzędnych i daty.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "wspolrzedne": types.Schema(type=types.Type.STRING, description="Koordynaty np. '35.2980, 25.1631'"),
-                "planowana_data": types.Schema(type=types.Type.STRING, description="RRRR-MM-DD"),
-                "okienko_czasowe": types.Schema(type=types.Type.STRING, description="Okienko np. '12:00 - 14:00'"),
+            "required": ["tytul_wycieczki"],
+        },
+    },
+    {
+        "name": "sprawdz_pogode",
+        "description": "Pobiera prognozę pogody dla podanych współrzędnych i daty.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "wspolrzedne": {"type": "string", "description": "Koordynaty np. '35.2980, 25.1631'"},
+                "planowana_data": {"type": "string", "description": "RRRR-MM-DD"},
+                "okienko_czasowe": {"type": "string", "description": "Okienko np. '12:00 - 14:00'"},
             },
-            required=["wspolrzedne", "planowana_data"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="dodaj_notatke",
-        description="Dodaje notatkę do wycieczki lub miejsca.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "zawartosc": types.Schema(type=types.Type.STRING, description="Treść"),
-                "typ_notatki": types.Schema(type=types.Type.STRING, description="'text', 'link' lub 'list'"),
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "id_miejsca": types.Schema(type=types.Type.STRING, description="Numer miejsca"),
-                "tytul": types.Schema(type=types.Type.STRING, description="Tytuł"),
+            "required": ["wspolrzedne", "planowana_data"],
+        },
+    },
+    {
+        "name": "dodaj_notatke",
+        "description": "Dodaje notatkę do wycieczki lub miejsca.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "zawartosc": {"type": "string", "description": "Treść"},
+                "typ_notatki": {"type": "string", "description": "'text', 'link' lub 'list'"},
+                "id_wycieczki": {"type": "string", "description": "ID wycieczki"},
+                "id_miejsca": {"type": "string", "description": "Numer miejsca"},
+                "tytul": {"type": "string", "description": "Tytuł"},
             },
-            required=["zawartosc"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="edytuj_wycieczke",
-        description="Aktualizuje parametry wycieczki. Służy do automatycznego odświeżania celu wycieczki oraz całościowej taktyki dnia po każdej modyfikacji planu kroków.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "tytul_wycieczki": types.Schema(type=types.Type.STRING, description="Nowy lub zaktualizowany tytuł"),
-                "calosciowy_opis_wycieczki": types.Schema(type=types.Type.STRING, description="Zaktualizowany cel całej wycieczki, podsumowujący nowy przebieg dnia"),
-                "calosciowa_taktyka_dnia": types.Schema(type=types.Type.STRING, description="Zaktualizowana taktyka całościowa dnia: bezpieczne strefy cienia w 11:30–15:30, ewakuacja, Safe Foods, regeneracja AuDHD"),
-                "planowana_data": types.Schema(type=types.Type.STRING, description="RRRR-MM-DD"),
-                "czas_wyjazdu": types.Schema(type=types.Type.STRING, description="Godzina np. '06:30'"),
-                "szacowany_czas_ogarniania_rano": types.Schema(type=types.Type.STRING, description="np. '0.5h' lub '45m'"),
+            "required": ["zawartosc"],
+        },
+    },
+    {
+        "name": "edytuj_wycieczke",
+        "description": "Aktualizuje parametry wycieczki. Służy do automatycznego odświeżania celu wycieczki oraz całościowej taktyki dnia po każdej modyfikacji planu kroków.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "ID wycieczki"},
+                "tytul_wycieczki": {"type": "string", "description": "Nowy lub zaktualizowany tytuł"},
+                "calosciowy_opis_wycieczki": {"type": "string", "description": "Zaktualizowany cel całej wycieczki, podsumowujący nowy przebieg dnia"},
+                "calosciowa_taktyka_dnia": {"type": "string", "description": "Zaktualizowana taktyka całościowa dnia: bezpieczne strefy cienia w 11:30–15:30, ewakuacja, Safe Foods, regeneracja AuDHD"},
+                "planowana_data": {"type": "string", "description": "RRRR-MM-DD"},
+                "czas_wyjazdu": {"type": "string", "description": "Godzina np. '06:30'"},
+                "szacowany_czas_ogarniania_rano": {"type": "string", "description": "np. '0.5h' lub '45m'"},
             },
-            required=["id"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="usun_wycieczke",
-        description="Usuwa wycieczkę z bazy danych.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+            "required": ["id"],
+        },
+    },
+    {
+        "name": "usun_wycieczke",
+        "description": "Usuwa wycieczkę z bazy danych.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id_wycieczki": {"type": "string", "description": "ID wycieczki"},
             },
-            required=["id_wycieczki"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="dodaj_krok_wycieczki",
-        description="Dodaje miejsce z bazy jako krok wycieczki, opcjonalnie bezpośrednio przed lub po wskazanym innym kroku.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "nazwa_z_bazy": types.Schema(type=types.Type.STRING, description="Nazwa miejsca"),
-                "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Okienko np. '13:00 - 14:30'"),
-                "podsumowanie_taktyki": types.Schema(type=types.Type.STRING, description="Taktyka"),
-                "wzgledem_kroku": types.Schema(type=types.Type.STRING, description="Nazwa lub ID kroku referencyjnego, jeśli chcesz wstawić przed/po nim"),
-                "relacja": types.Schema(type=types.Type.STRING, description="'przed' lub 'po' (domyślnie 'przed')"),
+            "required": ["id_wycieczki"],
+        },
+    },
+    {
+        "name": "dodaj_krok_wycieczki",
+        "description": "Dodaje miejsce z bazy jako krok wycieczki, opcjonalnie bezpośrednio przed lub po wskazanym innym kroku.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id_wycieczki": {"type": "string", "description": "ID wycieczki"},
+                "nazwa_z_bazy": {"type": "string", "description": "Nazwa miejsca"},
+                "okienko_zwiedzania": {"type": "string", "description": "Okienko np. '13:00 - 14:30'"},
+                "podsumowanie_taktyki": {"type": "string", "description": "Taktyka"},
+                "wzgledem_kroku": {"type": "string", "description": "Nazwa lub ID kroku referencyjnego, jeśli chcesz wstawić przed/po nim"},
+                "relacja": {"type": "string", "description": "'przed' lub 'po' (domyślnie 'przed')"},
             },
-            required=["id_wycieczki", "nazwa_z_bazy"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="pobierz_pelny_plan_wycieczki",
-        description="Pobiera pełną listę kroków wycieczki po kolei z ich ID bazy, kolejnością, godzinami i posiłkami.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
+            "required": ["id_wycieczki", "nazwa_z_bazy"],
+        },
+    },
+    {
+        "name": "pobierz_pelny_plan_wycieczki",
+        "description": "Pobiera pełną listę kroków wycieczki po kolei z ich ID bazy, kolejnością, godzinami i posiłkami.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id_wycieczki": {"type": "string", "description": "ID wycieczki"},
             },
-            required=["id_wycieczki"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="pobierz_liste_dostepnych_wycieczek",
-        description="Zwraca kompletną listę wszystkich zarejestrowanych w bazie wycieczek wraz z ich ID, dokładnymi tytułami i szacowaną godziną powrotu.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={},
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="pobierz_nieprzypisane_miejsca",
-        description="Zwraca listę wszystkich miejsc z bazy, które nie zostały jeszcze przypisane do żadnej zaplanowanej wycieczki.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={},
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="przenies_krok_wycieczki",
-        description="Przenosi istniejący krok przed lub po innym kroku (albo na podany indeks) i automatycznie przelicza godziny dojazdów i buforów.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "krok_identyfikator": types.Schema(type=types.Type.STRING, description="ID lub nazwa kroku do przestawienia"),
-                "wzgledem_kroku": types.Schema(type=types.Type.STRING, description="Nazwa lub ID kroku punktu odniesienia"),
-                "relacja": types.Schema(type=types.Type.STRING, description="'przed' lub 'po'"),
-                "docelowa_pozycja": types.Schema(type=types.Type.INTEGER, description="Opcjonalny indeks liczbowy"),
+            "required": ["id_wycieczki"],
+        },
+    },
+    {
+        "name": "pobierz_liste_dostepnych_wycieczek",
+        "description": "Zwraca kompletną listę wszystkich zarejestrowanych w bazie wycieczek wraz z ich ID, dokładnymi tytułami i szacowaną godziną powrotu.",
+        "parameters": {
+            "type": "object",
+            "properties": {
             },
-            required=["id_wycieczki", "krok_identyfikator"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="zamien_kroki_miejscami",
-        description="Zamienia kolejnością dwa kroki w wycieczce i przelicza czasy.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "krok_a": types.Schema(type=types.Type.STRING, description="ID lub nazwa pierwszego kroku"),
-                "krok_b": types.Schema(type=types.Type.STRING, description="ID lub nazwa drugiego kroku"),
+        },
+    },
+    {
+        "name": "pobierz_nieprzypisane_miejsca",
+        "description": "Zwraca listę wszystkich miejsc z bazy, które nie zostały jeszcze przypisane do żadnej zaplanowanej wycieczki.",
+        "parameters": {
+            "type": "object",
+            "properties": {
             },
-            required=["id_wycieczki", "krok_a", "krok_b"]
-        ),
-    ),
-    # ZMIANA: Dodanie flagi pomin_ostrzezenie_slonce do schematu narzędzia edytuj_krok_wycieczki
-    types.FunctionDeclaration(
-        name="edytuj_krok_wycieczki",
-        description="Edytuje okienko czasowe wybranego kroku. Jeśli przesunięcie tworzy ryzyko (luka głodu >4h lub pełne słońce), najpierw zapytaj rodzica o zgodę w dialogu i dopiero po potwierdzeniu przekaż pomin_ostrzezenie_slonce=True.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID lub nazwa kroku"),
-                "okienko_zwiedzania": types.Schema(type=types.Type.STRING, description="Okienko np. '15:00 - 16:00'"),
-                "pomin_ostrzezenie_slonce": types.Schema(type=types.Type.BOOLEAN, description="Domyślnie False. Ustaw True TYLKO wtedy, gdy rodzic wyraźnie potwierdził realizację mimo ostrzeżenia.")
+        },
+    },
+    {
+        "name": "przenies_krok_wycieczki",
+        "description": "Przenosi istniejący krok przed lub po innym kroku (albo na podany indeks) i automatycznie przelicza godziny dojazdów i buforów.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id_wycieczki": {"type": "string", "description": "ID wycieczki"},
+                "krok_identyfikator": {"type": "string", "description": "ID lub nazwa kroku do przestawienia"},
+                "wzgledem_kroku": {"type": "string", "description": "Nazwa lub ID kroku punktu odniesienia"},
+                "relacja": {"type": "string", "description": "'przed' lub 'po'"},
+                "docelowa_pozycja": {"type": "integer", "description": "Opcjonalny indeks liczbowy"},
             },
-            required=["id_wycieczki", "krok_wycieczki", "okienko_zwiedzania"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="usun_krok_wycieczki",
-        description="Usuwa krok z trasy. Jeśli krok zawierał posiłek kotwiczący (obiad/lunchbox), domyślnie zwróci błąd strażnika (Hangry Guard).",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "krok_wycieczki": types.Schema(type=types.Type.STRING, description="ID lub nazwa kroku"),
-                # ZMIANA: Twarda blokada samowolnego używania flagi pominięcia w pierwszej turze dialogu
-                "pomin_ostrzezenie_posilku": types.Schema(type=types.Type.BOOLEAN, description="KRYTYCZNE: Domyślnie ZAWSZE False. Ustaw True WYŁĄCZNIE wtedy, gdy rodzic w kolejnej turze bezpośrednio potwierdził: 'usuń mimo ryzyka' lub 'wiem o luce 4h, usuń'."),
+            "required": ["id_wycieczki", "krok_identyfikator"],
+        },
+    },
+    {
+        "name": "zamien_kroki_miejscami",
+        "description": "Zamienia kolejnością dwa kroki w wycieczce i przelicza czasy.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id_wycieczki": {"type": "string", "description": "ID wycieczki"},
+                "krok_a": {"type": "string", "description": "ID lub nazwa pierwszego kroku"},
+                "krok_b": {"type": "string", "description": "ID lub nazwa drugiego kroku"},
             },
-            required=["id_wycieczki", "krok_wycieczki"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="zarzadzaj_posilkiem_kroku",
-        description="Dodaje posiłek stabilizujący (śniadanie, obiad, kolacja, lunchbox_maly, lunchbox_duzy).",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "id_kroku": types.Schema(type=types.Type.STRING, description="ID kroku wycieczki"),
-                "rodzaj_posilku": types.Schema(type=types.Type.STRING, description="'śniadanie', 'obiad', 'kolacja', 'lunchbox_maly', 'lunchbox_duzy'"),
-                "miejsce": types.Schema(type=types.Type.STRING, description="'w domku', 'z domu (lunchbox)', 'restauracja'"),
-                "sugerowana_godzina": types.Schema(type=types.Type.STRING, description="Godzina posiłku"),
-                "opis": types.Schema(type=types.Type.STRING, description="Opis (Safe Foods)")
+            "required": ["id_wycieczki", "krok_a", "krok_b"],
+        },
+    },
+    {
+        "name": "edytuj_krok_wycieczki",
+        "description": "Edytuje okienko czasowe wybranego kroku. Jeśli przesunięcie tworzy ryzyko (luka głodu >4h lub pełne słońce), najpierw zapytaj rodzica o zgodę w dialogu i dopiero po potwierdzeniu przekaż pomin_ostrzezenie_slonce=True.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id_wycieczki": {"type": "string", "description": "ID wycieczki"},
+                "krok_wycieczki": {"type": "string", "description": "ID lub nazwa kroku"},
+                "okienko_zwiedzania": {"type": "string", "description": "Okienko np. '15:00 - 16:00'"},
+                "pomin_ostrzezenie_slonce": {"type": "boolean", "description": "Domyślnie False. Ustaw True TYLKO wtedy, gdy rodzic wyraźnie potwierdził realizację mimo ostrzeżenia."},
             },
-            required=["id_wycieczki", "id_kroku", "rodzaj_posilku"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="usun_posilek",
-        description="Usuwa posiłek z bazy po jego ID.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_posilku": types.Schema(type=types.Type.STRING, description="ID posiłku"),
+            "required": ["id_wycieczki", "krok_wycieczki", "okienko_zwiedzania"],
+        },
+    },
+    {
+        "name": "usun_krok_wycieczki",
+        "description": "Usuwa krok z trasy. Jeśli krok zawierał posiłek kotwiczący (obiad/lunchbox), domyślnie zwróci błąd strażnika (Hangry Guard).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id_wycieczki": {"type": "string", "description": "ID wycieczki"},
+                "krok_wycieczki": {"type": "string", "description": "ID lub nazwa kroku"},
+                "pomin_ostrzezenie_posilku": {"type": "boolean", "description": "KRYTYCZNE: Domyślnie ZAWSZE False. Ustaw True WYŁĄCZNIE wtedy, gdy rodzic w kolejnej turze bezpośrednio potwierdził: 'usuń mimo ryzyka' lub 'wiem o luce 4h, usuń'."},
             },
-            required=["id_posilku"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="dodaj_produkt_zakupow",
-        description="Dodaje produkt do listy zakupów.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "nazwa_produktu": types.Schema(type=types.Type.STRING, description="Nazwa produktu"),
-                "id_kroku": types.Schema(type=types.Type.STRING, description="ID kroku sklepu"),
-                "ilosc": types.Schema(type=types.Type.STRING, description="Ilość"),
+            "required": ["id_wycieczki", "krok_wycieczki"],
+        },
+    },
+    {
+        "name": "zarzadzaj_posilkiem_kroku",
+        "description": "Dodaje posiłek stabilizujący (śniadanie, obiad, kolacja, lunchbox_maly, lunchbox_duzy).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id_wycieczki": {"type": "string", "description": "ID wycieczki"},
+                "id_kroku": {"type": "string", "description": "ID kroku wycieczki"},
+                "rodzaj_posilku": {"type": "string", "description": "'śniadanie', 'obiad', 'kolacja', 'lunchbox_maly', 'lunchbox_duzy'"},
+                "miejsce": {"type": "string", "description": "'w domku', 'z domu (lunchbox)', 'restauracja'"},
+                "sugerowana_godzina": {"type": "string", "description": "Godzina posiłku"},
+                "opis": {"type": "string", "description": "Opis (Safe Foods)"},
             },
-            required=["id_wycieczki", "nazwa_produktu"]
-        ),
-    ),
-    types.FunctionDeclaration(
-        name="dodaj_wiele_produktow_zakupow",
-        description="Dodaje listę produktów do zakupów.",
-        parameters=types.Schema(
-            type=types.Type.OBJECT,
-            properties={
-                "id_wycieczki": types.Schema(type=types.Type.STRING, description="ID wycieczki"),
-                "produkty": types.Schema(
-                    type=types.Type.ARRAY,
-                    items=types.Schema(
-                        type=types.Type.OBJECT,
-                        properties={
-                            "nazwa": types.Schema(type=types.Type.STRING, description="Nazwa produktu"),
-                            "ilosc": types.Schema(type=types.Type.STRING, description="Ilość")
+            "required": ["id_wycieczki", "id_kroku", "rodzaj_posilku"],
+        },
+    },
+    {
+        "name": "usun_posilek",
+        "description": "Usuwa posiłek z bazy po jego ID.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id_posilku": {"type": "string", "description": "ID posiłku"},
+            },
+            "required": ["id_posilku"],
+        },
+    },
+    {
+        "name": "dodaj_produkt_zakupow",
+        "description": "Dodaje produkt do listy zakupów.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id_wycieczki": {"type": "string", "description": "ID wycieczki"},
+                "nazwa_produktu": {"type": "string", "description": "Nazwa produktu"},
+                "id_kroku": {"type": "string", "description": "ID kroku sklepu"},
+                "ilosc": {"type": "string", "description": "Ilość"},
+            },
+            "required": ["id_wycieczki", "nazwa_produktu"],
+        },
+    },
+    {
+        "name": "dodaj_wiele_produktow_zakupow",
+        "description": "Dodaje listę produktów do zakupów.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "id_wycieczki": {"type": "string", "description": "ID wycieczki"},
+                "produkty": {
+                    "type": "array",
+                    "description": "Lista składników",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "nazwa": {"type": "string", "description": "Nazwa produktu"},
+                            "ilosc": {"type": "string", "description": "Ilość"},
                         },
-                        required=["nazwa"]
-                    ),
-                    description="Lista składników"
-                ),
-                "id_kroku": types.Schema(type=types.Type.STRING, description="ID kroku sklepu")
+                        "required": ["nazwa"],
+                    },
+                },
+                "id_kroku": {"type": "string", "description": "ID kroku sklepu"},
             },
-            required=["id_wycieczki", "produkty"]
-        ),
-    )
+            "required": ["id_wycieczki", "produkty"],
+        },
+    },
 ]
 
 NARZEDZIA_DISPATCHER = {
@@ -3514,7 +3663,12 @@ def wykonaj_narzedzie_bazy(call_name, args):
     handler = NARZEDZIA_DISPATCHER.get(call_name)
     if not handler:
         return {"success": False, "error": f"Nierozpoznane narzędzie: {call_name}"}
-    res = handler(args)
+    # ZMIANA: Błędne argumenty modelu wracają do niego jako wynik, zamiast wywracać cały czat
+    try:
+        res = handler(args)
+    except TypeError as e:
+        return {"success": False, "error": f"Błędne argumenty narzędzia {call_name}: {e}"}
+    return res if isinstance(res, dict) else {"success": True, "result": str(res)}
     return res if isinstance(res, dict) else {"success": True, "result": str(res)}
 
 def wczytaj_kontekst_zewnetrzny(id_wycieczki):
@@ -3576,48 +3730,6 @@ def sprobuj_wykonac_komende_lokalnie(prompt, id_wycieczki):
     return None
     
 # --- GŁÓWNY WIDOK CZATU AI ---
-@st.cache_resource
-def get_gemini_client(api_key):
-    return genai.Client(api_key=api_key)
-    
-# ZMIANA: Implementacja Context Caching dla przyspieszenia TTFT i odciążenia przetwarzania LLM
-@st.cache_resource(ttl=3600, show_spinner=False)
-def pobierz_lub_utworz_prompt_cache(api_key, model_name):
-    """Tworzy lub pobiera zcache'owany kontekst systemowy z regułami AuDHD i narzędziami."""
-    try:
-        rules_path = "SYSTEM_RULES_KRETA_ADHD.md"
-        base_rules = ""
-        if os.path.exists(rules_path):
-            with open(rules_path, "r", encoding="utf-8") as rf:
-                base_rules = rf.read()
-        
-        # Jeśli reguły nie istnieją lub model jest w trybie Lite, pomijamy Context Cache
-        if not base_rules:
-            return None
-
-        client = get_gemini_client(api_key)
-        
-        # Utworzenie cache na poziomie Gemini API (TTL: 60 minut)
-        cache = client.caches.create(
-            model=model_name,
-            config=types.CreateCachedContentConfig(
-                contents=[
-                    types.Content(
-                        role="user",
-                        parts=[types.Part.from_text(text=f"BAZOWE ZASADY SYSTEMOWE I PROTOKOŁY AuDHD:\n{base_rules}")]
-                    )
-                ],
-                tools=[types.Tool(function_declarations=tools_definitions)],
-                ttl="3600s",
-                display_name=f"cretai_rules_cache_{model_name}"
-            )
-        )
-        return cache.name
-    except Exception:
-        # Bezpieczny fallback w przypadku modeli nieobsługujących cache lub braku minimalnej liczby tokenów
-        return None
-
-# --- GŁÓWNY WIDOK CZATU AI ---
 def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
     akt_wyc_id = str(id_wycieczki) if id_wycieczki else pobierz_aktywna_wycieczke_id()
     
@@ -3645,6 +3757,8 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
         prompt = st.chat_input(f"Napisz np. 'zaplanuj nową wycieczkę', 'zmień taktykę dnia'...", key=f"chat_input_{uzytkownik}_{akt_wyc_id}_{'inline' if inline else 'float'}")
         if prompt:
             zapisz_wiadomosc_w_db(uzytkownik, "user", prompt)
+            # ZMIANA: Ponowny odczyt historii, aby model dostał także świeżo zapisane polecenie rodzica
+            chat_historia_z_db = pobierz_historie_czatu_z_db(uzytkownik)
 
             odpowiedz_lokalna = sprobuj_wykonac_komende_lokalnie(prompt, akt_wyc_id)
 
@@ -3653,8 +3767,8 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                 st.session_state["flash_toast"] = "⚡ Zaktualizowano listę zakupów!"
                 st.rerun()
 
-            if not api_key_input:
-                st.warning("⚠️ Wprowadź klucz API w menu bocznym, aby korzystać z doradcy AI.")
+            if not sciezka_claude_cli():
+                st.warning("⚠️ Brak Claude Code CLI w kontenerze — doradca AI jest niedostępny.")
                 if not inline:
                     st.markdown('</div>', unsafe_allow_html=True)
                 return
@@ -3680,19 +3794,7 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
 
                     try:
                         with st.status("🧭 Przygotowuję plan...", expanded=True) as status:
-                            st.write("🔌 Łączenie z API Gemini...")
-                            client = get_gemini_client(api_key_input)
-                            
-                            # ZMIANA: Walidacja treści zapobiegająca "ValueError: contents are required"
-                            contents = []
-                            for m in chat_historia_z_db[-12:]:
-                                text_val = str(m.get("content", "")).strip()
-                                if text_val:
-                                    role = "model" if m["role"] in ["assistant", "model"] else "user"
-                                    contents.append(types.Content(role=role, parts=[types.Part.from_text(text=text_val)]))
-
-                            if not contents:
-                                contents = [types.Content(role="user", parts=[types.Part.from_text(text=prompt.strip())])]
+                            st.write(f"🔌 Uruchamiam Claude Code CLI ({wybrany_model})...")
 
                             # ZMIANA: Programowe wykrycie trybu ratunkowego (Hangry Emergency)
                             prompt_l = prompt.lower()
@@ -3700,48 +3802,26 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                             slowa_alarmowe = ["stop", "histeri", "głód", "glod", "hangry", "na skraju", "gdzie zjeść", "gdzie zjesc", "meltdown"]
                             is_emergency = any(w in prompt_l for w in slowa_alarmowe) and not czy_polecenie_zapisu
 
-                            # ZMIANA: Odcięcie zbędnych narzędzi i odchudzenie promptu w kryzysie (ochrona limitu tokenów i 429 RPM)
-                            narzedzia_call = None if is_emergency else [types.Tool(function_declarations=tools_definitions)]
-                            aktywny_system_prompt = (
-                                "Jesteś ratownikiem rodziców dzieci z ADHD na Krecie w trybie awaryjnym (skrajny głód/meltdown). "
-                                "Odpowiedz natychmiast i zwięźle w 1 kroku: podaj 1-2 najbliższe zacienione tawerny z parkingiem na 2 auta "
-                                "i bezpiecznym jedzeniem (safe foods). Zakaz używania narzędzi."
-                            ) if is_emergency else system_prompt
-
-                            # ZMIANA: Wykorzystanie prompt caching w konfiguracji zapytania z płynnym fallbackiem
-                            cached_name = None
-                            if not is_emergency:
-                                cached_name = pobierz_lub_utworz_prompt_cache(api_key_input, wybrany_model)
-
-                            if cached_name and not is_emergency:
-                                config = types.GenerateContentConfig(
-                                    cached_content=cached_name,
-                                    system_instruction=f"Rola: Planer wycieczek - Kreta dla rodzica {uzytkownik}. Data: {dzisiaj_str}. Aktywna wycieczka ID: {akt_wyc_id}.\n{zewnetrzny_kontekst}",
-                                    temperature=0.1,
-                                    max_output_tokens=2048
+                            # ZMIANA: W kryzysie odcinamy katalog narzędzi i skracamy prompt do samej instrukcji ratunkowej
+                            if is_emergency:
+                                aktywny_system_prompt = (
+                                    "Jesteś ratownikiem rodziców dzieci z ADHD na Krecie w trybie awaryjnym (skrajny głód/meltdown). "
+                                    "Odpowiedz natychmiast i zwięźle w 1 kroku: podaj 1-2 najbliższe zacienione tawerny z parkingiem na 2 auta "
+                                    "i bezpiecznym jedzeniem (safe foods). Zakaz używania narzędzi.\n\n"
+                                    'Odpowiadasz wyłącznie obiektem JSON: {"odpowiedz": "<tekst dla rodzica>", "wywolania_narzedzi": []}'
                                 )
                             else:
-                                config = types.GenerateContentConfig(
-                                    tools=narzedzia_call,
-                                    system_instruction=aktywny_system_prompt,
-                                    temperature=0.1,
-                                    max_output_tokens=1024 if is_emergency else 2048
-                                )
+                                aktywny_system_prompt = f"{system_prompt}\n\n{zbuduj_protokol_narzedzi()}"
 
-                            # ZMIANA: Zwiększenie limitu pętli do 4, aby model mógł sprawdzić POI, zapisać wycieczkę, dodać kroki i wygenerować tekst
+                            # ZMIANA: Limit pętli 4, aby model zdążył sprawdzić POI, zapisać wycieczkę, dodać kroki i podsumować
                             max_loops = 1 if is_emergency else 4
 
                             assistant_reply = ""
                             executed_actions = []
                             has_db_mutations = False
                             executed_tool_signatures = set()
-
-                            # ZMIANA: Zwiększenie max_loops do 4 w celu pełnej atomowej obsługi narzędzi (miejsce -> krok -> zakupy -> podsumowanie)
-                            max_loops = 1 if is_emergency else 4
-                            assistant_reply = ""
-                            executed_actions = []
-                            has_db_mutations = False
-                            executed_tool_signatures = set()
+                            wyniki_narzedzi = []
+                            historia_dla_modelu = przytnij_historie_czatu(chat_historia_z_db)
 
                             for loop_idx in range(max_loops):
                                 status_placeholder = st.empty()
@@ -3752,120 +3832,76 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                                     "💡 Dopasowuję bezpieczny harmonogram dnia..."
                                 ]
                                 status_placeholder.markdown(f"*{random.choice(status_komunikaty)}*")
-                                
-                                kandydaci_modeli = [wybrany_model]
-                                for zapas in ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite"]:
-                                    if zapas not in kandydaci_modeli:
-                                        kandydaci_modeli.append(zapas)
 
-                                response = None
-                                ostatni_wyjatek = None
+                                odpowiedz_modelu = wywolaj_model_claude(
+                                    aktywny_system_prompt,
+                                    zbuduj_tresc_rozmowy(historia_dla_modelu, prompt, wyniki_narzedzi),
+                                    model=wybrany_model
+                                )
 
-                                for model_target in kandydaci_modeli:
-                                    for proba in range(3):
-                                        try:
-                                            cfg_wywolania = config
-                                            if model_target != wybrany_model and hasattr(cfg_wywolania, 'cached_content'):
-                                                cfg_wywolania = types.GenerateContentConfig(
-                                                    tools=narzedzia_call,
-                                                    system_instruction=aktywny_system_prompt,
-                                                    temperature=0.1,
-                                                    max_output_tokens=1024 if is_emergency else 2048
-                                                )
+                                tekst_modelu = str(odpowiedz_modelu.get("odpowiedz") or "").strip()
+                                calls = odpowiedz_modelu.get("wywolania_narzedzi") or []
+                                if is_emergency or not isinstance(calls, list):
+                                    calls = []
 
-                                            response = client.models.generate_content(
-                                                model=model_target,
-                                                contents=contents,
-                                                config=cfg_wywolania
-                                            )
-                                            if response:
-                                                break
-                                        except Exception as api_err:
-                                            ostatni_wyjatek = api_err
-                                            err_str = str(api_err).lower()
-                                            if any(err_code in err_str for err_code in ["503", "unavailable", "high demand", "overloaded", "429", "resource_exhausted"]):
-                                                py_time.sleep(1.2 * (proba + 1))
-                                                continue
-                                            else:
-                                                raise api_err
-                                    if response:
-                                        break
+                                if tekst_modelu:
+                                    assistant_reply = tekst_modelu
 
-                                if response is None and ostatni_wyjatek is not None:
-                                    raise ostatni_wyjatek
-
-                                candidate = response.candidates[0] if response and response.candidates else None
-                                calls = []
-                                if hasattr(response, 'function_calls') and response.function_calls:
-                                    calls = response.function_calls
-                                elif candidate and candidate.content and candidate.content.parts:
-                                    for p_part in candidate.content.parts:
-                                        if hasattr(p_part, 'function_call') and p_part.function_call:
-                                            calls.append(p_part.function_call)
-
-                                if calls and not is_emergency:
-                                    is_looping = False
-                                    for c in calls:
-                                        c_sig = f"{c.name}:{str(sorted(c.args.items())) if c.args else ''}"
-                                        if c_sig in executed_tool_signatures:
-                                            is_looping = True
-                                            break
-                                        executed_tool_signatures.add(c_sig)
-
-                                    if is_looping:
-                                        if candidate and candidate.content and candidate.content.parts:
-                                            assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
-                                        break
-
-                                    if candidate and candidate.content:
-                                        contents.append(candidate.content)
-                                    
-                                    function_responses_parts = []
-                                    for call in calls:
-                                        call_name, args = call.name, call.args or {}
-                                        wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
-                                        msg = wynik_bazy.get('message', wynik_bazy) if isinstance(wynik_bazy, dict) else str(wynik_bazy)
-                                        executed_actions.append(f"{call_name}: {msg}")
-                                        if not call_name.startswith("szukaj_") and not call_name.startswith("sprawdz_") and not call_name.startswith("pobierz_"):
-                                            has_db_mutations = True
-                                        
-                                        if "utworz_nowe_miejsce" in call_name:
-                                            st.write(f"📍 Dodano do bazy: **{args.get('nazwa', 'nowe miejsce')}**")
-                                        elif "utworz_nowa_wycieczke" in call_name:
-                                            st.write(f"🧭 Przygotowano szkielet trasy: **{args.get('tytul_wycieczki', '')}**")
-                                            if isinstance(wynik_bazy, dict) and wynik_bazy.get("id_wycieczki"):
-                                                nowe_w_id = str(wynik_bazy["id_wycieczki"])
-                                                st.session_state["target_trip_id"] = nowe_w_id
-                                                st.session_state["selected_trip_from_click"] = nowe_w_id
-                                        elif "dodaj_krok" in call_name:
-                                            st.write(f"➕ Dołączono przystanek: **{args.get('nazwa_z_bazy', '')}**")
-                                        elif "dodaj_produkt" in call_name or "dodaj_wiele_produktow" in call_name:
-                                            st.write("🛒 Zaktualizowano listę zakupów...")
-                                        elif "edytuj_wycieczke" in call_name:
-                                            st.write("⏱️ Zaktualizowano parametry trasy...")
-                                        elif "edytuj_krok" in call_name:
-                                            st.write("⏱️ Zaktualizowano okienko zwiedzania...")
-                                        else:
-                                            st.write("⚙️ Przetwarzam...")
-                                        
-                                        payload_resp = wynik_bazy if isinstance(wynik_bazy, dict) else {"result": str(wynik_bazy)}
-                                        function_responses_parts.append(
-                                            types.Part.from_function_response(
-                                                name=call_name, 
-                                                response={"result": payload_resp}
-                                            )
-                                        )
-                                    
-                                    if function_responses_parts:
-                                        contents.append(types.Content(role="user", parts=function_responses_parts))
-                                    else:
-                                        break
-                                else:
-                                    if candidate and candidate.content and candidate.content.parts:
-                                        assistant_reply = "".join([p_text.text for p_text in candidate.content.parts if hasattr(p_text, "text") and p_text.text])
-                                    elif hasattr(response, 'text') and response.text:
-                                        assistant_reply = response.text
+                                if not calls:
                                     break
+
+                                # ZMIANA: Twarde przerwanie, gdy model zapętla się na tym samym wywołaniu
+                                is_looping = False
+                                for c in calls:
+                                    if not isinstance(c, dict):
+                                        continue
+                                    args_c = c.get("argumenty") if isinstance(c.get("argumenty"), dict) else {}
+                                    c_sig = f"{c.get('narzedzie')}:{json.dumps(args_c, ensure_ascii=False, sort_keys=True, default=str)}"
+                                    if c_sig in executed_tool_signatures:
+                                        is_looping = True
+                                        break
+                                    executed_tool_signatures.add(c_sig)
+
+                                if is_looping:
+                                    break
+
+                                for call in calls:
+                                    if not isinstance(call, dict):
+                                        continue
+                                    call_name = str(call.get("narzedzie") or "")
+                                    args = call.get("argumenty") if isinstance(call.get("argumenty"), dict) else {}
+
+                                    wynik_bazy = wykonaj_narzedzie_bazy(call_name, args)
+                                    msg = wynik_bazy.get('message', wynik_bazy) if isinstance(wynik_bazy, dict) else str(wynik_bazy)
+                                    executed_actions.append(f"{call_name}: {msg}")
+                                    if not call_name.startswith("szukaj_") and not call_name.startswith("sprawdz_") and not call_name.startswith("pobierz_"):
+                                        has_db_mutations = True
+
+                                    if "utworz_nowe_miejsce" in call_name:
+                                        st.write(f"📍 Dodano do bazy: **{args.get('nazwa', 'nowe miejsce')}**")
+                                    elif "utworz_nowa_wycieczke" in call_name:
+                                        st.write(f"🧭 Przygotowano szkielet trasy: **{args.get('tytul_wycieczki', '')}**")
+                                        if isinstance(wynik_bazy, dict) and wynik_bazy.get("id_wycieczki"):
+                                            nowe_w_id = str(wynik_bazy["id_wycieczki"])
+                                            st.session_state["target_trip_id"] = nowe_w_id
+                                            st.session_state["selected_trip_from_click"] = nowe_w_id
+                                    elif "dodaj_krok" in call_name:
+                                        st.write(f"➕ Dołączono przystanek: **{args.get('nazwa_z_bazy', '')}**")
+                                    elif "dodaj_produkt" in call_name or "dodaj_wiele_produktow" in call_name:
+                                        st.write("🛒 Zaktualizowano listę zakupów...")
+                                    elif "edytuj_wycieczke" in call_name:
+                                        st.write("⏱️ Zaktualizowano parametry trasy...")
+                                    elif "edytuj_krok" in call_name:
+                                        st.write("⏱️ Zaktualizowano okienko zwiedzania...")
+                                    else:
+                                        st.write("⚙️ Przetwarzam...")
+
+                                    # ZMIANA: Wyniki narzędzi wracają do modelu w kolejnym wywołaniu CLI
+                                    wyniki_narzedzi.append({
+                                        "narzedzie": call_name,
+                                        "argumenty": args,
+                                        "wynik": wynik_bazy if isinstance(wynik_bazy, dict) else {"result": str(wynik_bazy)}
+                                    })
 
                             # ZMIANA: Zero fałszywych potwierdzeń CRUD – blokada bezprawnych deklaracji sukcesu
                             if not has_db_mutations:
@@ -3881,30 +3917,13 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                                     )
                                     
                             if not assistant_reply.strip() and not has_db_mutations:
-                                if candidate and candidate.content and candidate.content.parts:
-                                    teksty_czesci = [p.text.strip() for p in candidate.content.parts if hasattr(p, 'text') and p.text]
-                                    if teksty_czesci:
-                                        assistant_reply = "\n\n".join(teksty_czesci)
-
-                                if not assistant_reply.strip():
+                                # ZMIANA: Bez hardkodowanych atrakcji i bez udawania zapisu - dopytujemy rodzica o konkret
+                                prompt_czysty = prompt.strip().lower()
+                                if any(slowo in prompt_czysty for slowo in ["tak", "zapisz", "akceptuj", "potwierdzam", "zgoda"]):
+                                    assistant_reply = "⚠️ Zaakceptowano plan, jednak operacja w bazie wymaga ponowienia. Wpisz: *„Dodaj piekarnię i zakupy do wycieczki”*, aby wymusić zapis do bazy."
+                                else:
                                     prompt_skrot = (prompt[:65] + '...') if len(prompt) > 65 else prompt
-                                    assistant_reply = f"Przyjąłem: *„{prompt_skrot}”*. Jakie konkretne pozycje lub godziny dopasowujemy do planu?"
-                                    
-                            # ZMIANA: Dynamiczny, czysty fallback bez hardkodowanych greckich atrakcji w kodzie Pythona
-                            if not assistant_reply.strip() and not has_db_mutations:
-                                if candidate and candidate.content and candidate.content.parts:
-                                    teksty_czesci = [p.text.strip() for p in candidate.content.parts if hasattr(p, 'text') and p.text]
-                                    if teksty_czesci:
-                                        assistant_reply = "\n\n".join(teksty_czesci)
-
-                                # ZMIANA: Usunięcie usypiającego komunikatu "finalizuję zapis" maskującego brak wykonania narzędzi CRUD
-                                if not assistant_reply.strip():
-                                    prompt_czysty = prompt.strip().lower()
-                                    if any(slowo in prompt_czysty for slowo in ["tak", "zapisz", "akceptuj", "potwierdzam", "zgoda"]):
-                                        assistant_reply = "⚠️ Zaakceptowano plan, jednak operacja w bazie wymaga ponowienia. Wpisz: *„Dodaj piekarnię i zakupy do wycieczki”*, aby wymusić zapis do bazy."
-                                    else:
-                                        prompt_skrot = (prompt[:65] + '...') if len(prompt) > 65 else prompt
-                                        assistant_reply = f"Przyjąłem: *„{prompt_skrot}”*. Jakie konkretne godziny lub przystanki dopasowujemy do planu?"
+                                    assistant_reply = f"Przyjąłem: *„{prompt_skrot}”*. Jakie konkretne godziny lub przystanki dopasowujemy do planu?"
                                     
                             if not assistant_reply.strip() and has_db_mutations:
                                 user_friendly_actions = []

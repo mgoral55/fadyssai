@@ -7,5 +7,6 @@ services:
       - "127.0.0.1:8501:8501"
     volumes:
       - ./data:/app/data
-    environment:
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # Poświadczenia Claude Code CLI z hosta: `claude` logowany raz na serwerze,
+      # kontener korzysta z tej samej sesji zamiast własnego tokenu.
+      - /root/.claude:/root/.claude

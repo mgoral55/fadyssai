@@ -73,11 +73,40 @@ Dodanie kolejnej osoby = dopisanie jej adresu do `include` w polityce
 (`PUT /accounts/{account_id}/access/apps/{app_id}/policies/{policy_id}`). Aplikacja
 nie ma własnego logowania, więc polityka Access jest jedyną kontrolą dostępu.
 
+## Doradca AI: Claude Code CLI
+
+Aplikacja nie ma własnego klucza do modelu. Warstwa AI uruchamia w kontenerze
+`claude -p` (Claude Code CLI, domyślnie model `claude-opus-5`) i czyta wynik jako JSON.
+Narzędzia bazy danych nie są narzędziami CLI — model zleca je w polu
+`wywolania_narzedzi`, a Python wykonuje je lokalnie na SQLite. CLI startuje z
+`--safe-mode` i `--tools ""`, więc nie ma dostępu do plików, powłoki ani sieci.
+
+Zamiast tokenu w zmiennej środowiskowej kontener dzieli sesję z CLI zalogowanym
+na hoście: `/root/.claude` jest montowane do kontenera, a samą binarkę `claude`
+dostarcza obraz (Node + `@anthropic-ai/claude-code` w przypiętej wersji).
+
+Logowanie robi się raz, na serwerze:
+
+```
+npm install -g @anthropic-ai/claude-code@2.1.220
+claude
+```
+
+W sesji interaktywnej `claude` wypisuje adres logowania i czeka na kod — po
+zatwierdzeniu poświadczenia lądują w `/root/.claude` i kontener widzi je przez
+montowanie. Wygasłą sesję odnawia się tym samym poleceniem na hoście.
+
+Weryfikacja w kontenerze:
+
+```
+docker compose exec magda-crete claude -p --model claude-opus-5 'odpowiedz OK'
+```
+
 ## Uwagi eksploatacyjne
 
 - `HEALTHCHECK` z `Dockerfile` odpytuje `/_stcore/health` z wnętrza kontenera, więc
   bramka Access mu nie przeszkadza. Publicznie ten endpoint jest już za logowaniem —
   zewnętrzny monitoring uptime'u nie przepuści go bez tokenu usługi (service token).
-- `GEMINI_API_KEY` wchodzi do kontenera ze środowiska compose i nie jest w repo.
-  To kolejny powód, żeby aplikacja nie stała otwarta — funkcje AI zużywają limit.
+- Poświadczenia Claude leżą w `/root/.claude` na hoście i nie ma ich w repo ani w obrazie.
+  To kolejny powód, żeby aplikacja nie stała otwarta — funkcje AI zużywają limit konta.
 - Po zmianie kodu: `git pull && docker compose up -d --build` w `/opt/magda-crete`.

@@ -4,7 +4,17 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
     TZ=Europe/Warsaw \
-    CRETAI_DATA_DIR=/app/data
+    CRETAI_DATA_DIR=/app/data \
+    HOME=/root \
+    CLAUDE_CONFIG_DIR=/root/.claude
+
+# Doradca AI woła Claude Code CLI (`claude -p`) zamiast SDK dostawcy modelu,
+# więc obraz potrzebuje Node.js i samego CLI w przypiętej wersji.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends nodejs npm \
+    && npm install -g @anthropic-ai/claude-code@2.1.220 \
+    && npm cache clean --force \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
