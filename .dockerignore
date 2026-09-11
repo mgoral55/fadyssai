@@ -7,3 +7,6 @@ data/
 cretai.db
 miejsca_backup.csv
 wycieczki_backup.csv
+test_plan_kroki.py
+requirements-dev.txt
+.pytest_cache/

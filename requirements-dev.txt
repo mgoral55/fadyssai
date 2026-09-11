@@ -1,0 +1,3 @@
+# Zależności wyłącznie do testów lokalnych i CI (nie trafiają do obrazu).
+-r requirements.txt
+pytest==9.1.1

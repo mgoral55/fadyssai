@@ -19,6 +19,9 @@ from datetime import datetime, date, time, timedelta
 # Stałe koordynatów
 DOMEK_LAT, DOMEK_LON = 35.5914, 24.0918
 SKLEP_LAT, SKLEP_LON = 35.586222, 24.091861
+
+# ZMIANA: Granica godzinowa oddzielajaca obiad od kolacji - posilek w lokalu od 17:00 to kolacja.
+GODZINA_GRANICZNA_KOLACJI = 17.0
 MARKET_LAT, MARKET_LON = 35.532585622784076, 24.075806829428785
 
 # ZMIANA: Aktualizacja dokładnych współrzędnych i dodanie piątkowego targu do harmonogramu
@@ -350,18 +353,14 @@ def _reindex_kroki(cursor, id_wycieczki):
     for idx, (k_id,) in enumerate(kroki):
         cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (idx, k_id))
 
-def _wstaw_krok_do_wycieczki(cursor, id_wycieczki, nazwa, wspolrzedne, okienko, opis, numer_miejsca=None, podsumowanie_taktyki=None, pozycja="koniec"):
+def _wstaw_krok_do_wycieczki(cursor, id_wycieczki, nazwa, wspolrzedne, okienko, opis, numer_miejsca=None, podsumowanie_taktyki=None, pozycja="koniec", indeks_docelowy=None):
     cursor.execute('''
-        SELECT id, nazwa, CAST(krok_wycieczki AS INTEGER) as nr 
-        FROM krok_wycieczki 
-        WHERE id_wycieczki = ? 
+        SELECT id, nazwa, CAST(krok_wycieczki AS INTEGER) as nr
+        FROM krok_wycieczki
+        WHERE id_wycieczki = ?
         ORDER BY nr ASC, id ASC
     ''', (str(id_wycieczki),))
     rows = cursor.fetchall()
-    
-    nazwa_lower = nazwa.lower()
-    is_shop = any(w in nazwa_lower for w in ["sklep", "market"])
-    is_market = any(w in nazwa_lower for w in ["rynek", "targ", "laiki"])
 
     cursor.execute('''
         INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, numer_miejsca, nazwa, wspolrzedne, okienko_zwiedzania, podsumowanie_taktyki, opis)
@@ -369,61 +368,29 @@ def _wstaw_krok_do_wycieczki(cursor, id_wycieczki, nazwa, wspolrzedne, okienko, 
     ''', (str(id_wycieczki), numer_miejsca, nazwa, wspolrzedne, okienko, podsumowanie_taktyki, opis))
     nowy_id = cursor.lastrowid
 
-    start_cottage = []
-    morning_shops = []
-    morning_markets = []
-    middle_steps = []
-    evening_markets = []
-    evening_shops = []
-    end_cottage = []
+    # ZMIANA: Kolejnosc juz zapisanych krokow jest nienaruszalna - wyliczamy wylacznie pozycje nowego kroku.
+    # Poprzedni sorter kubelkowy (morning_shops / evening_shops / middle_steps) przestawial wczesniej
+    # zapisane kroki przy kazdym kolejnym dodaniu, przez co np. kolacja przestawala byc ostatnim punktem dnia.
+    kolejnosc = [r[0] for r in rows]
+    total = len(kolejnosc)
 
-    total = len(rows)
-    for idx, (r_id, r_nazwa, _) in enumerate(rows):
-        r_low = str(r_nazwa).lower()
-        if idx == 0 and any(w in r_low for w in ["domek", "start", "wyjazd"]):
-            start_cottage.append((r_id, r_nazwa))
-        elif idx == total - 1 and any(w in r_low for w in ["domek", "powrót", "powrot"]):
-            end_cottage.append((r_id, r_nazwa))
-        elif any(w in r_low for w in ["sklep", "market"]):
-            if idx <= 2:
-                morning_shops.append((r_id, r_nazwa))
-            else:
-                evening_shops.append((r_id, r_nazwa))
-        elif any(w in r_low for w in ["rynek", "targ", "laiki"]):
-            if idx <= 2:
-                morning_markets.append((r_id, r_nazwa))
-            else:
-                evening_markets.append((r_id, r_nazwa))
-        else:
-            middle_steps.append((r_id, r_nazwa))
-
-    nowy_element = (nowy_id, nazwa)
-    if pozycja == "start":
-        if is_shop:
-            morning_shops.append(nowy_element)
-        elif is_market:
-            morning_markets.append(nowy_element)
-        else:
-            morning_shops.append(nowy_element)
-    else:
-        if is_shop:
-            evening_shops.append(nowy_element)
-        elif is_market:
-            evening_markets.append(nowy_element)
-        else:
-            evening_shops.append(nowy_element)
-
-    uporzadkowana_lista = (
-        start_cottage +
-        morning_shops +
-        morning_markets +
-        middle_steps +
-        evening_markets +
-        evening_shops +
-        end_cottage
+    pierwszy_to_start = total > 0 and any(
+        w in str(rows[0][1]).lower() for w in ["domek", "start", "wyjazd", "lotnisk", "przylot"]
+    )
+    ostatni_to_powrot = total > 1 and any(
+        w in str(rows[-1][1]).lower() for w in ["powrot", "powr\u00f3t", "domek"]
     )
 
-    for index_docelowy, (item_id, _) in enumerate(uporzadkowana_lista):
+    if indeks_docelowy is not None:
+        idx_wstawienia = max(0, min(int(indeks_docelowy), total))
+    elif pozycja == "start":
+        idx_wstawienia = 1 if pierwszy_to_start else 0
+    else:
+        idx_wstawienia = total - 1 if ostatni_to_powrot else total
+
+    kolejnosc.insert(idx_wstawienia, nowy_id)
+
+    for index_docelowy, item_id in enumerate(kolejnosc):
         cursor.execute('UPDATE krok_wycieczki SET krok_wycieczki = ? WHERE id = ?', (index_docelowy, item_id))
 
     return nowy_id
@@ -434,6 +401,17 @@ def _usun_krok_z_wycieczki(cursor, id_kroku, id_wycieczki):
     cursor.execute("DELETE FROM czasy_dojazdu WHERE id_kroku_z = ? OR id_kroku_do = ?", (id_kroku, id_kroku))
     cursor.execute("DELETE FROM krok_wycieczki WHERE id = ?", (id_kroku,))
     _reindex_kroki(cursor, id_wycieczki)
+
+def _usun_pozostale_kolacje(cursor, id_wycieczki, id_kroku_zachowanego):
+    """ZMIANA: Jedna kolacja na wycieczke. Zaplanowanie kolacji w konkretnym kroku kasuje
+    domyslna 'kolacje w domku' dopisana przy tworzeniu wycieczki (i kazda inna kolacje w tej trasie),
+    dzieki czemu kolacja na miescie faktycznie jest ostatnim posilkiem dnia."""
+    cursor.execute('''
+        DELETE FROM posilki_kroku
+        WHERE LOWER(rodzaj_posilku) = 'kolacja'
+          AND id_kroku <> ?
+          AND id_kroku IN (SELECT id FROM krok_wycieczki WHERE id_wycieczki = ?)
+    ''', (id_kroku_zachowanego, str(id_wycieczki)))
 
 def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, force_wyjazd_str=None, force_powrot_str=None):
     with get_db() as conn:
@@ -597,7 +575,13 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
                 elif 'obiad' in p_rodz_l or 'lunch' in p_rodz_l or 'duzy' in p_rodz_l:
                     g_start_kroku = sparsuj_godzine_minuty(s_str)
                     g_dec = (g_start_kroku[0] + g_start_kroku[1]/60.0) if g_start_kroku else 12.0
-                    if g_dec < 11.5 and i != last_idx:
+                    # ZMIANA: Symetrycznie do degradacji na lunchbox - posilek w lokalu od GODZINA_GRANICZNA_KOLACJI
+                    # jest kolacja, a nie obiadem (wczesniej kazdy wieczorny posilek wracal tu jako 'obiad').
+                    if g_dec >= GODZINA_GRANICZNA_KOLACJI and i != last_idx and 'lunchbox' not in p_rodz_l:
+                        cursor.execute('UPDATE posilki_kroku SET rodzaj_posilku = ?, miejsce = ? WHERE id = ?',
+                                       ('kolacja', 'restauracja', p_id))
+                        nowa_godz_p = s_str
+                    elif g_dec < 11.5 and i != last_idx:
                         nowy_rodzaj = 'lunchbox_maly'
                         nowy_opis = 'Mały lunchbox'
                         cursor.execute('UPDATE posilki_kroku SET rodzaj_posilku = ?, opis = ?, miejsce = ? WHERE id = ?', 
@@ -617,8 +601,14 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
                 if any(w in k_nazwa_low for w in ["obiad", "tawern", "tavern", "restaurac", "peskesi", "kritikos", "pasiphae"]):
                     g_start_k = sparsuj_godzine_minuty(s_str)
                     g_dec_k = (g_start_k[0] + g_start_k[1] / 60.0) if g_start_k else 12.0
-                    rodzaj_auto = 'obiad' if g_dec_k >= 11.5 else 'lunchbox_maly'
-                    miejsce_auto = 'restauracja' if rodzaj_auto == 'obiad' else 'z domu (lunchbox)'
+                    # ZMIANA: Wieczorny lokal dostaje kolacje, nie obiad
+                    if g_dec_k >= GODZINA_GRANICZNA_KOLACJI:
+                        rodzaj_auto = 'kolacja'
+                    elif g_dec_k >= 11.5:
+                        rodzaj_auto = 'obiad'
+                    else:
+                        rodzaj_auto = 'lunchbox_maly'
+                    miejsce_auto = 'z domu (lunchbox)' if rodzaj_auto == 'lunchbox_maly' else 'restauracja'
                     query_ins = "INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis) VALUES (?, ?, ?, ?, ?)"
                     cursor.execute(query_ins, (krok_id_val, rodzaj_auto, miejsce_auto, s_str, kroki[i][4]))
 
@@ -975,6 +965,10 @@ def init_db():
                                             p_rodzaj = 'lunchbox_maly'
                                             p_miejsce = 'z domu (lunchbox)'
                                             p_str = 'Mały lunchbox'
+                                        elif g_krok_p and g_krok_p[0] >= GODZINA_GRANICZNA_KOLACJI:
+                                            # ZMIANA: Wieczorny posilek w lokalu importuje sie jako kolacja
+                                            p_rodzaj = 'kolacja'
+                                            p_miejsce = 'restauracja'
                                         else:
                                             p_rodzaj = 'obiad'
                                             p_miejsce = 'restauracja'
@@ -1864,14 +1858,21 @@ def sformatuj_date_pl(data_str):
 def formatuj_posilki_kroku(df_pos):
     if df_pos.empty:
         return ""
-    # ZMIANA: Wykluczenie kolacji, jeśli w danym kroku znajduje się obiad (obiad w domku zastępuje kolację)
-    rodzaje_w_kroku = [str(r).strip().lower() for r in df_pos['rodzaj_posilku'].dropna()]
-    ma_obiad = any('obiad' in r or 'lunch' in r for r in rodzaje_w_kroku)
+    # ZMIANA: Kolację chowamy TYLKO wtedy, gdy w tym samym kroku jest obiad w domku (to on ją zastępuje).
+    # Wcześniej dowolny obiad - także w tawernie - kasował z widoku zaplanowaną kolację.
+    ma_obiad_w_domku = any(
+        (
+            'obiad' in str(r.get('rodzaj_posilku', '')).strip().lower()
+            or 'lunch' in str(r.get('rodzaj_posilku', '')).strip().lower()
+        )
+        and 'domk' in str(r.get('miejsce', '')).strip().lower()
+        for _, r in df_pos.iterrows()
+    )
 
     posiłki_str = []
     for _, prow in df_pos.iterrows():
         p_rodzaj = str(prow.get('rodzaj_posilku', '')).strip().lower()
-        if ma_obiad and 'kolacja' in p_rodzaj:
+        if ma_obiad_w_domku and 'kolacja' in p_rodzaj:
             continue
         p_godz = str(prow.get('sugerowana_godzina', '')).strip()
         p_opis = str(prow.get('opis', '')).strip()
@@ -2853,9 +2854,26 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 -
         return {"success": False, "blocked_by_guardrail": True, "error": err_msg}
 
     miejsce = szukaj_miejsca_w_bazie(nazwa_z_bazy)
-    wsp = miejsce.get("wspolrzedne", f"{SKLEP_LAT}, {SKLEP_LON}") if miejsce else f"{SKLEP_LAT}, {SKLEP_LON}"
-    opis = miejsce.get("opis", "") if miejsce else ""
-    nr_miejsca = miejsce.get("numer_miejsca") if miejsce else None
+    # ZMIANA: Nierozpoznana nazwa konczy sie bledem zamiast cichego wstawienia kroku ze wspolrzednymi
+    # sklepu przy domku i pustym numer_miejsca. Tak gubily sie miejsca podane laczna nazwa,
+    # np. "Ancient Lappa & Lappa Avocado" - krok powstawal, ale nie byl zadnym miejscem z bazy.
+    if not miejsce:
+        return {
+            "success": False,
+            "error": (
+                f"Nie znaleziono miejsca '{nazwa_z_bazy}' w bazie miejsc. "
+                f"Kazda atrakcja musi byc osobnym krokiem pod swoja dokladna nazwa z bazy - "
+                f"nie lacz dwoch miejsc w jednej nazwie kroku. "
+                f"Sprawdz nazwe narzedziem szukaj_miejsca_w_bazie albo najpierw dodaj miejsce "
+                f"narzedziem utworz_nowe_miejsce, a potem powtorz dodaj_krok_wycieczki."
+            )
+        }
+
+    wsp = miejsce.get("wspolrzedne") or f"{SKLEP_LAT}, {SKLEP_LON}"
+    opis = miejsce.get("opis", "")
+    nr_miejsca = miejsce.get("numer_miejsca")
+    # Krok nazywamy dokladnie tak, jak miejsce w bazie - dzieki temu pozniejsze wyszukiwanie po nazwie trafia.
+    nazwa_z_bazy = miejsce.get("nazwa") or nazwa_z_bazy
 
     with get_db() as conn:
         cursor = conn.cursor()
@@ -2888,7 +2906,13 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 -
             
             czy_to_tawerna = any(w in nazwa_l for w in ["tawerna", "tavern", "restauracja", "pasiphae", "peskesi", "kritikos"])
 
-            if czy_to_tawerna:
+            # ZMIANA: Lokal gastronomiczny od GODZINA_GRANICZNA_KOLACJI to KOLACJA.
+            # Wczesniej kazda tawerna dostawala 'obiad' niezaleznie od godziny, wiec kolacja o 19:00
+            # zapisywala sie jako obiad.
+            if g_pos_dec >= GODZINA_GRANICZNA_KOLACJI and not any(w in nazwa_l for w in ["śniadan", "sniadan", "lunchbox"]):
+                rodzaj = "kolacja"
+                miejsce_pos = "restauracja"
+            elif czy_to_tawerna:
                 rodzaj = "obiad"
                 miejsce_pos = "restauracja"
             elif g_pos_dec < 11.5 and not any(w in nazwa_l for w in ["śniadan", "sniadan"]):
@@ -2906,21 +2930,26 @@ def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 -
                     INSERT INTO posilki_kroku (id_kroku, rodzaj_posilku, miejsce, sugerowana_godzina, opis)
                     VALUES (?, ?, ?, ?, ?)
                 ''', (nowy_id, rodzaj, miejsce_pos, godz_pos, nazwa_z_bazy))
+                if rodzaj == "kolacja":
+                    _usun_pozostale_kolacje(cursor, id_wycieczki, nowy_id)
 
         conn.commit()
 
     if wzgledem_kroku is not None:
         # ZMIANA: Strażnik kolejności obiadu - jeśli dodajemy obiad/tawernę względem porannej atrakcji, wstawiamy go PO niej, a nie PRZED
         relacja_skorygowana = relacja
+        # ZMIANA: Osobne polaczenie - dotad kursor byl uzywany po wyjsciu z bloku `with get_db()`.
         if any(w in nazwa_z_bazy.lower() for w in ["obiad", "tawern", "lunch", "kritikos", "peskesi"]) and relacja == "przed":
-            ref_info = znajdz_id_kroku_w_db(cursor, id_wycieczki, wzgledem_kroku)
-            if ref_info:
-                cursor.execute('SELECT okienko_zwiedzania FROM krok_wycieczki WHERE id = ?', (ref_info[0],))
-                row_ref = cursor.fetchone()
-                if row_ref and row_ref[0]:
-                    g_ref = sparsuj_godzine_minuty(row_ref[0].split('-')[0].strip())
-                    if g_ref and g_ref[0] < 12:
-                        relacja_skorygowana = "po"
+            with get_db() as conn_ref:
+                cursor_ref = conn_ref.cursor()
+                ref_info = znajdz_id_kroku_w_db(cursor_ref, id_wycieczki, wzgledem_kroku)
+                if ref_info:
+                    cursor_ref.execute('SELECT okienko_zwiedzania FROM krok_wycieczki WHERE id = ?', (ref_info[0],))
+                    row_ref = cursor_ref.fetchone()
+                    if row_ref and row_ref[0]:
+                        g_ref = sparsuj_godzine_minuty(row_ref[0].split('-')[0].strip())
+                        if g_ref and g_ref[0] < 12:
+                            relacja_skorygowana = "po"
 
         przenies_krok_wycieczki(id_wycieczki, krok_identyfikator=nowy_id, wzgledem_kroku=wzgledem_kroku, relacja=relacja_skorygowana)
     else:
@@ -3180,6 +3209,10 @@ def zarzadzaj_posilkiem_kroku(id_wycieczki, id_kroku, rodzaj_posilku, miejsce="r
 
         if any(w in str(rodzaj_posilku).lower() for w in ['obiad', 'lunch']):
             cursor.execute("DELETE FROM posilki_kroku WHERE id_kroku = ? AND rodzaj_posilku IN ('śniadanie', 'sniadanie')", (prawdziwe_id_kroku,))
+
+        # ZMIANA: Kolacja przypisana do konkretnego kroku kasuje domyslna kolacje w domku z tej wycieczki
+        if 'kolacja' in r_pos_lower:
+            _usun_pozostale_kolacje(cursor, id_wycieczki, prawdziwe_id_kroku)
         
         cursor.execute('SELECT id FROM posilki_kroku WHERE id_kroku = ? AND rodzaj_posilku = ?', (prawdziwe_id_kroku, rodzaj_posilku))
         istniejacy_p = cursor.fetchone()
