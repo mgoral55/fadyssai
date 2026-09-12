@@ -4016,7 +4016,10 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
 @st.dialog("Wybierz nową datę")
 def edit_date_dialog(wycieczka_id, aktualna_data):
     dzisiaj = date.today()
-    nowa_data = st.date_input("Wybierz nową datę wycieczki", value=aktualna_data, min_value=dzisiaj)
+    # ZMIANA: Wycieczka z przeszłą datą nie może wywrócić widgetu (StreamlitValueBelowMinError) -
+    # dolna granica schodzi do jej własnej daty, ale nigdy poniżej.
+    min_data = min(aktualna_data, dzisiaj)
+    nowa_data = st.date_input("Wybierz nową datę wycieczki", value=aktualna_data, min_value=min_data)
     col_save, col_cancel = st.columns(2)
     with col_save:
         if st.button("💾 Zapisz", use_container_width=True):

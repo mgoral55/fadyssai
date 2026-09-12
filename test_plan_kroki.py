@@ -8,16 +8,13 @@ spoza zakresu tych testów (walidacja AuDHD i przeliczanie tras z OSRM).
 Uruchomienie:  pytest test_plan_kroki.py
 """
 
-import ast
-import io
-import os
 import re
 import sqlite3
 
 import pandas as pd
 import pytest
 
-SCIEZKA_APP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py")
+from conftest import wczytaj_funkcje_z_app
 
 # Funkcje wyciągane ze źródła aplikacji i uruchamiane w testach bez zmian.
 BADANE_FUNKCJE = [
@@ -66,19 +63,6 @@ MIEJSCA_TESTOWE = [
 ]
 
 
-def _wczytaj_funkcje_z_app():
-    zrodlo = io.open(SCIEZKA_APP, encoding="utf-8").read()
-    drzewo = ast.parse(zrodlo)
-    segmenty = {
-        w.name: ast.get_source_segment(zrodlo, w)
-        for w in drzewo.body
-        if isinstance(w, ast.FunctionDef) and w.name in BADANE_FUNKCJE
-    }
-    brakujace = [n for n in BADANE_FUNKCJE if n not in segmenty]
-    assert not brakujace, f"Nie znaleziono funkcji w app.py: {brakujace}"
-    return segmenty
-
-
 class Plan:
     """Tymczasowa baza planu wycieczki wraz z badanymi funkcjami aplikacji."""
 
@@ -106,7 +90,7 @@ class Plan:
             "sprawdz_ryzyka_audhd_dla_kroku": lambda *a, **k: (True, ""),
             "przelicz_i_zsynchronizuj_wycieczke": lambda *a, **k: None,
         }
-        for nazwa_f, kod in _wczytaj_funkcje_z_app().items():
+        for nazwa_f, kod in wczytaj_funkcje_z_app(BADANE_FUNKCJE).items():
             exec(kod, self.ns)
 
     def __getattr__(self, nazwa):
