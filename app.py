@@ -1085,7 +1085,6 @@ def zmien_status_odwiedzenia_miejsca(nr_miejsca, nowy_status):
         cursor = conn.cursor()
         cursor.execute("UPDATE miejsca SET odwiedzone = ? WHERE TRIM(numer_miejsca) = ?", (1 if nowy_status else 0, str(nr_miejsca).strip()))
         conn.commit()
-    st.cache_data.clear()
 
 def ustaw_status_odwiedzenia_dla_wycieczki(wycieczka_id, nowy_status):
     status_int = 1 if nowy_status else 0
@@ -1113,7 +1112,6 @@ def ustaw_status_odwiedzenia_dla_wycieczki(wycieczka_id, nowy_status):
                     cursor.execute("UPDATE miejsca SET odwiedzone = ? WHERE TRIM(numer_miejsca) = ?", (status_int, str(m['numer_miejsca']).strip()))
 
         conn.commit()
-    st.cache_data.clear()
 
 # --- 1. DESIGN SYSTEM I KONFIGURACJA STRONY ---
 # ZMIANA: Czysty page_title="CretAi" bez myślników, aby instalator PWA Androida nie brał Streamlit jako fallbacku
@@ -1570,8 +1568,15 @@ def przytnij_historie_czatu(historia, max_wiadomosci=HISTORIA_MAX_WIADOMOSCI, ma
     return list(reversed(przyciete))
 
 
-def zbuduj_tresc_rozmowy(historia, biezacy_prompt, wyniki_narzedzi=None):
-    """Składa historię czatu i wyniki narzędzi w jedną wiadomość wejściową dla CLI."""
+def zbuduj_tresc_rozmowy(historia, biezacy_prompt, wyniki_narzedzi=None, kontekst_aplikacji=None):
+    """Składa kontekst aplikacji, historię czatu i wyniki narzędzi w jedną wiadomość wejściową dla CLI.
+
+    Kontekst aplikacji (rodzic, data, aktywna wycieczka, dane z bazy) trafia na początek
+    wiadomości użytkownika, a nie do promptu systemowego: CLI trafia w cache promptu
+    systemowego tylko przy identycznych bajtach, a doklejenie zmiennej treści - na początku
+    czy na końcu - kasuje trafienie (zmierzone: zimno 20,0 s / 0,39 $ vs ciepło 16,1 s / 0,044 $).
+    Bez kontekstu (None) treść jest identyczna co do bajtu z wersją sprzed tej zmiany.
+    """
     linie = []
     for m in historia:
         tekst = str(m.get("content", "")).strip()
@@ -1593,7 +1598,19 @@ def zbuduj_tresc_rozmowy(historia, biezacy_prompt, wyniki_narzedzi=None):
             + "\n\nDokończ zadanie: zleć kolejne narzędzia albo napisz finalną odpowiedź w polu \"odpowiedz\"."
             + " Nie powtarzaj narzędzia, które już zwróciło wynik."
         )
+
+    if isinstance(kontekst_aplikacji, str) and kontekst_aplikacji.strip():
+        tresc = "KONTEKST APLIKACJI:\n" + kontekst_aplikacji.strip() + "\n\n" + tresc
     return tresc
+
+
+def srodowisko_claude_cli():
+    """Środowisko procesu CLI: kopia środowiska aplikacji z wyciszonym ruchem nieistotnym
+    (aktualizator, telemetria, raporty błędów) - jedna zmienna parasolowa Claude Code.
+    Zmierzone: start procesu 1,3-1,5 s -> 0,46 s. Operator może ją nadpisać, np. wartością "0"."""
+    srodowisko = dict(os.environ)
+    srodowisko.setdefault("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
+    return srodowisko
 
 
 def wywolaj_model_claude(system_prompt, tresc_uzytkownika, model=None):
@@ -1627,6 +1644,7 @@ def wywolaj_model_claude(system_prompt, tresc_uzytkownika, model=None):
             capture_output=True,
             text=True,
             encoding="utf-8",
+            env=srodowisko_claude_cli(),
             timeout=CLAUDE_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired:
@@ -2702,7 +2720,6 @@ def utworz_nowe_miejsce(nazwa, nazwa_angielska="", typ="Other", wspolrzedne="", 
         ))
         conn.commit()
 
-    st.cache_data.clear()
     return {
         "success": True, 
         "action": "utworz_nowe_miejsce", 
@@ -3844,11 +3861,20 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                             rules_content = rf.read()
 
                     # ZMIANA: Usunięcie duplikatu protokołu z kodu app.py - całość reguł statycznych czytana jest z pliku SYSTEM_RULES_KRETA_ADHD.md
-                    system_prompt = f"""Rola: Planer wycieczek - Kreta dla rodzica {uzytkownik}. Data: {dzisiaj_str}. Aktywna wycieczka w tle ID: {akt_wyc_id}.
-{zewnetrzny_kontekst}
-
-ZASADY SYSTEMOWE I PROTOKOŁY:
-{rules_content}"""
+                    # ZMIANA: Prompt systemowy jest w pełni statyczny (same reguły z pliku), bo CLI trafia w cache
+                    # promptu systemowego tylko przy identycznych bajtach. Wcześniej zaczynał się od danych zmiennych
+                    # (rodzic, data, ID wycieczki, kontekst bazy), więc każda mutacja bazy, zmiana daty i przełączenie
+                    # profilu kasowały cache całych ~33 tys. tokenów: zimno 20,0 s / 0,39 $ na wywołanie, ciepło 16,1 s / 0,044 $.
+                    # Doklejenie zmiennej treści na końcu też psuje trafienie - dane idą do wiadomości użytkownika.
+                    # Zdanie o bloku "KONTEKST APLIKACJI" to stały tekst (te same bajty, cache trzymany) - bez niego reguła zezwalająca na "Wycieczka #[ID]"
+                    # tylko dla pozycji z kontekstu systemowego lub z narzędzia straciłaby sens, bo stan bazy jedzie teraz w wiadomości rodzica.
+                    system_prompt = (
+                        "Rola: Planer wycieczek - Kreta.\n"
+                        "Kontekst systemowy (rodzic, data, ID aktywnej wycieczki, stan bazy) otrzymujesz w bloku "
+                        "\"KONTEKST APLIKACJI\" na początku wiadomości rodzica.\n\n"
+                        f"ZASADY SYSTEMOWE I PROTOKOŁY:\n{rules_content}"
+                    )
+                    kontekst_aplikacji = f"Rodzic: {uzytkownik}. Data: {dzisiaj_str}. Aktywna wycieczka w tle ID: {akt_wyc_id}.\n{zewnetrzny_kontekst}"
 
                     try:
                         with st.status("🧭 Przygotowuję plan...", expanded=True) as status:
@@ -3893,7 +3919,13 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
 
                                 odpowiedz_modelu = wywolaj_model_claude(
                                     aktywny_system_prompt,
-                                    zbuduj_tresc_rozmowy(historia_dla_modelu, prompt, wyniki_narzedzi),
+                                    zbuduj_tresc_rozmowy(
+                                        historia_dla_modelu,
+                                        prompt,
+                                        wyniki_narzedzi,
+                                        # Tryb ratunkowy ma własny, krótki prompt systemowy i nigdy nie dostawał kontekstu bazy.
+                                        kontekst_aplikacji=None if is_emergency else kontekst_aplikacji,
+                                    ),
                                     model=wybrany_model
                                 )
 
@@ -4018,12 +4050,15 @@ ZASADY SYSTEMOWE I PROTOKOŁY:
                         # ZMIANA: Zapis odpowiedzi i odświeżenie UI zależne od faktycznego wykonania akcji w bazie
                         zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
                         st.markdown(assistant_reply)
+                        # ZMIANA: Bez czyszczenia cache po mutacjach bazy - żadna funkcja @st.cache_data nie czyta bazy, a jej klucz
+                        # to wyłącznie argumenty: oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2),
+                        # pobierz_geometrie_trasy_osrm(lat1, lon1, lat2, lon2), pobierz_prognoze_pogody(lat, lon, data_docelowa),
+                        # pobierz_zdjecie_miejsca_b64(numer_miejsca, nazwa_miejsca), pobierz_logo_b64(sciezka_pliku), sciezka_claude_cli().
+                        # Czyszczenie wymuszało tylko zimne pobrania przy kolejnym renderze: OSRM 4 s timeout i 2x2 s na odcinek trasy,
+                        # wttr.in 0,5 s na krok. Twardy reset bazy z CSV nadal czyści cache.
                         if has_db_mutations:
                             st.session_state["flash_toast"] = "🧭 Zaktualizowano bazę wycieczek!"
-                            st.cache_data.clear()
-                            st.rerun()
-                        else:
-                            st.rerun()
+                        st.rerun()
 
                     except Exception as e:
                         naglowek_bledu, komunikat = formatuj_komunikat_bledu_ai(e)
