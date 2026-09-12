@@ -14,6 +14,9 @@ import math
 import base64
 import random
 import unicodedata
+import threading
+# ZMIANA: Alias zegar, bo nazwa time jest zasłonięta przez datetime.time w imporcie poniżej.
+import time as zegar
 from datetime import datetime, date, time, timedelta
 
 # Stałe koordynatów
@@ -100,24 +103,84 @@ def zsynchronizuj_baze_do_csv():
 def zaokraglij_do_5_minut(minuty):
     return int(round(minuty / 5.0) * 5)
 
-@st.cache_data(ttl=86400)
-def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
-    # ZMIANA: Zwiększony timeout do 4.0s oraz dynamiczna prędkość fallbacku dla trasy VOAK przy długich dystansach
-    try:
-        url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
-        req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
-        with urllib.request.urlopen(req, timeout=4.0) as response:
-            data = json.loads(response.read().decode())
-            if 'routes' in data and len(data['routes']) > 0:
-                dur_sec = data['routes'][0]['duration']
-                est_min = zaokraglij_do_5_minut(max(int(round(dur_sec / 60.0)), 10))
-                if est_min < 60:
-                    return f"~{est_min} min", est_min
-                godziny, reszta = est_min // 60, est_min % 60
-                return (f"~{godziny}h", est_min) if reszta == 0 else (f"~{godziny}h {reszta}m", est_min)
-    except Exception:
-        pass
+# ZMIANA: Cache trzyma wyłącznie udane odpowiedzi zewnętrznych API (OSRM, wttr.in). Wartość zastępcza po awarii
+# nie trafia już do cache na 24 h / 8 h (wcześniej kasował ją dopiero upływ TTL albo twardy reset bazy z CSV),
+# tylko do krótkiego rejestru awarii: przez AWARIA_API_PONOW_PO_S nie powtarzamy timeoutów przy każdym renderze,
+# a po tym czasie próbujemy API ponownie. Rejestr siedzi w st.cache_resource, a nie w zmiennych modułu, bo
+# Streamlit wykonuje app.py od nowa przy każdym renderze - zwykły słownik modułowy zerowałby się co render i
+# backoff nigdy by nie zadziałał (każdy render awarii płaciłby pełne timeouty).
+AWARIA_API_PONOW_PO_S = 600
+AWARIA_API_PROG_SPRZATANIA = 256
 
+
+@st.cache_resource(show_spinner=False)
+def _rejestr_awarii_api():
+    """Rejestr awarii zewnętrznych API wraz z blokadą. Skrypt Streamlita wykonuje się od nowa przy każdym
+    renderze, więc zwykłe zmienne modułu zaczynałyby od zera - st.cache_resource trzyma jedną instancję
+    przez całe życie procesu, wspólną dla wszystkich sesji."""
+    return {}, threading.Lock()
+
+
+def _awaria_api_niedawna(klucz):
+    """True, gdy klucz zgłosił awarię mniej niż AWARIA_API_PONOW_PO_S sekund temu; wygasłe wpisy usuwa."""
+    # Sprawdzenie i zanotowanie awarii to dwa osobne kroki, więc przy pierwszym równoległym renderze dwa wątki sesji mogą powtórzyć jedną próbę HTTP - świadomie to akceptujemy.
+    rejestr, blokada = _rejestr_awarii_api()
+    with blokada:
+        kiedy = rejestr.get(klucz)
+        if kiedy is None:
+            return False
+        if zegar.monotonic() - kiedy >= AWARIA_API_PONOW_PO_S:
+            del rejestr[klucz]
+            return False
+        return True
+
+
+def _zanotuj_awarie_api(klucz):
+    rejestr, blokada = _rejestr_awarii_api()
+    with blokada:
+        rejestr[klucz] = zegar.monotonic()
+        # ZMIANA: Rejestr nie może puchnąć bez końca. AWARIA_API_PROG_SPRZATANIA to nie twardy limit wpisów,
+        # tylko próg sprzątania: jego przekroczenie uruchamia usunięcie wyłącznie tych wpisów, które i tak już
+        # wygasły - świeże zostają, więc rejestr może chwilowo być od progu większy.
+        if len(rejestr) > AWARIA_API_PROG_SPRZATANIA:
+            teraz = zegar.monotonic()
+            for wygasly in [k for k, kiedy in rejestr.items() if teraz - kiedy >= AWARIA_API_PONOW_PO_S]:
+                del rejestr[wygasly]
+
+def _sformatuj_czas_przejazdu(est_min):
+    """Zamienia minuty na tekst pokazywany w UI: '~30 min', '~1h', '~1h 30m'."""
+    if est_min < 60:
+        return f"~{est_min} min", est_min
+    godziny, reszta = est_min // 60, est_min % 60
+    return (f"~{godziny}h", est_min) if reszta == 0 else (f"~{godziny}h {reszta}m", est_min)
+
+def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
+    klucz = ("osrm_czas", lat1, lon1, lat2, lon2)
+    if not _awaria_api_niedawna(klucz):
+        try:
+            return _osrm_czas_przejazdu(lat1, lon1, lat2, lon2)
+        except Exception:
+            _zanotuj_awarie_api(klucz)
+    return _szacunek_czasu_przejazdu(lat1, lon1, lat2, lon2)
+
+# ZMIANA: Zwiększony timeout do 4.0s dla zapytania o czas przejazdu
+# ZMIANA: Jawny show_spinner tutaj i w dwóch kolejnych funkcjach sieciowych powtarza co do bajtu tekst,
+# który st.cache_data rysował przy zimnym trafieniu przed rozdzieleniem na opakowanie i warstwę sieciową -
+# czyli z nazwą funkcji publicznej. Bez tego w UI mignęłaby nazwa prywatnego pomocnika.
+@st.cache_data(ttl=86400, show_spinner="Running `oblicz_czas_przejazdu_osrm(...)`.")
+def _osrm_czas_przejazdu(lat1, lon1, lat2, lon2):
+    url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
+    req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
+    with urllib.request.urlopen(req, timeout=4.0) as response:
+        data = json.loads(response.read().decode())
+        if 'routes' in data and len(data['routes']) > 0:
+            dur_sec = data['routes'][0]['duration']
+            est_min = zaokraglij_do_5_minut(max(int(round(dur_sec / 60.0)), 10))
+            return _sformatuj_czas_przejazdu(est_min)
+    raise RuntimeError("OSRM: brak trasy")
+
+# ZMIANA: Dynamiczna prędkość fallbacku dla trasy VOAK przy długich dystansach
+def _szacunek_czasu_przejazdu(lat1, lon1, lat2, lon2):
     # Fallback geometryczny: drogi lokalne vs VOAK (E75)
     try:
         dist_km = math.sqrt(((lat2 - lat1) * 111.0)**2 + ((lon2 - lon1) * 85.0)**2)
@@ -130,15 +193,21 @@ def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
             wsp_kretosci = 1.35
 
         est_min = zaokraglij_do_5_minut(max(int(round(((dist_km * wsp_kretosci) / predkosc) * 60)), 10))
-        if est_min < 60:
-            return f"~{est_min} min", est_min
-        godziny, reszta = est_min // 60, est_min % 60
-        return (f"~{godziny}h", est_min) if reszta == 0 else (f"~{godziny}h {reszta}m", est_min)
+        return _sformatuj_czas_przejazdu(est_min)
     except Exception:
         return "~25 min", 25
 
-@st.cache_data(ttl=86400)
 def pobierz_geometrie_trasy_osrm(lat1, lon1, lat2, lon2):
+    klucz = ("osrm_geometria", lat1, lon1, lat2, lon2)
+    if not _awaria_api_niedawna(klucz):
+        try:
+            return _osrm_geometria_trasy(lat1, lon1, lat2, lon2)
+        except Exception:
+            _zanotuj_awarie_api(klucz)
+    return [[lat1, lon1], [lat2, lon2]]
+
+@st.cache_data(ttl=86400, show_spinner="Running `pobierz_geometrie_trasy_osrm(...)`.")
+def _osrm_geometria_trasy(lat1, lon1, lat2, lon2):
     # ZMIANA: Zwiększenie limitu timeout do 2.0s dla długich tras (np. Stavros -> Knossos) oraz fallback na serwer z overview=simplified
     url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=full&geometries=geojson"
     try:
@@ -163,7 +232,7 @@ def pobierz_geometrie_trasy_osrm(lat1, lon1, lat2, lon2):
     except Exception:
         pass
 
-    return [[lat1, lon1], [lat2, lon2]]
+    raise RuntimeError("OSRM: brak geometrii")
 
 def sparsuj_wspolrzedne(wsp_str):
     if not wsp_str or pd.isna(wsp_str):
@@ -1077,6 +1146,9 @@ def resetuj_i_przywroc_baze_z_csv():
         conn.commit()
     
     st.cache_data.clear()
+    rejestr_awarii, blokada_awarii = _rejestr_awarii_api()
+    with blokada_awarii:
+        rejestr_awarii.clear()
     init_db()
 
 # --- BEZPOŚREDNIE MUTACJE STATUSÓW ODWIDZENIA MIEJSC ---
@@ -2006,22 +2078,28 @@ def formatuj_komunikat_bledu_ai(e):
     return f"⚠️ Chwilowy problem z połączeniem ({type(e).__name__})", f"Szczegóły: {msg}"
 
 # --- FUNKCJE POGODOWE ---
-@st.cache_data(ttl=28800)
 def pobierz_prognoze_pogody(lat, lon, data_docelowa):
-    try:
-        url = f"https://wttr.in/{lat},{lon}?format=j1"
-        req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
-        with urllib.request.urlopen(req, timeout=0.5) as response:
-            data = json.loads(response.read().decode())
-            weather_list = data.get('weather', [])
-            for day in weather_list:
-                if day.get('date') == data_docelowa:
-                    return day
-            if weather_list:
-                return weather_list[0]
-    except Exception:
-        pass
+    klucz = ("wttr", lat, lon, data_docelowa)
+    if not _awaria_api_niedawna(klucz):
+        try:
+            return _prognoza_wttr(lat, lon, data_docelowa)
+        except Exception:
+            _zanotuj_awarie_api(klucz)
     return None
+
+@st.cache_data(ttl=28800, show_spinner="Running `pobierz_prognoze_pogody(...)`.")
+def _prognoza_wttr(lat, lon, data_docelowa):
+    url = f"https://wttr.in/{lat},{lon}?format=j1"
+    req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
+    with urllib.request.urlopen(req, timeout=0.5) as response:
+        data = json.loads(response.read().decode())
+        weather_list = data.get('weather', [])
+        for day in weather_list:
+            if day.get('date') == data_docelowa:
+                return day
+        if weather_list:
+            return weather_list[0]
+    raise RuntimeError("wttr.in: brak prognozy")
 
 def pobierz_szczegoly_pogody_dla_godziny(wspolrzedne, planowana_data, okienko_czasowe="12:00 - 14:00"):
     if not planowana_data or not str(planowana_data).strip():
@@ -4051,11 +4129,15 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                         zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
                         st.markdown(assistant_reply)
                         # ZMIANA: Bez czyszczenia cache po mutacjach bazy - żadna funkcja @st.cache_data nie czyta bazy, a jej klucz
-                        # to wyłącznie argumenty: oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2),
-                        # pobierz_geometrie_trasy_osrm(lat1, lon1, lat2, lon2), pobierz_prognoze_pogody(lat, lon, data_docelowa),
+                        # to wyłącznie argumenty: _osrm_czas_przejazdu(lat1, lon1, lat2, lon2),
+                        # _osrm_geometria_trasy(lat1, lon1, lat2, lon2), _prognoza_wttr(lat, lon, data_docelowa),
                         # pobierz_zdjecie_miejsca_b64(numer_miejsca, nazwa_miejsca), pobierz_logo_b64(sciezka_pliku), sciezka_claude_cli().
                         # Czyszczenie wymuszało tylko zimne pobrania przy kolejnym renderze: OSRM 4 s timeout i 2x2 s na odcinek trasy,
-                        # wttr.in 0,5 s na krok. Twardy reset bazy z CSV nadal czyści cache.
+                        # wttr.in 0,5 s na krok. Awarie API nie wchodzą do cache, tylko do rejestru ponawianego po AWARIA_API_PONOW_PO_S,
+                        # więc nieudany strzał nie zostaje na 24 h / 8 h. Uwaga: zastępczy tekst czasu przejazdu, który
+                        # przelicz_i_zsynchronizuj_wycieczke zapisuje w czasy_dojazdu (a utworz_nowe_miejsce w miejsca.czas_dojazdu),
+                        # zostaje w bazie aż do kolejnego przeliczenia - dokładnie tak jak przed tą zmianą; rejestr rządzi wyłącznie
+                        # tym, kiedy ponawiamy zapytanie do API. Twardy reset bazy z CSV nadal czyści cache.
                         if has_db_mutations:
                             st.session_state["flash_toast"] = "🧭 Zaktualizowano bazę wycieczek!"
                         st.rerun()
