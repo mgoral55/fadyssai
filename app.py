@@ -246,32 +246,43 @@ def sparsuj_wspolrzedne(wsp_str):
     except Exception:
         return None, None
         
-# ZMIANA: Zaawansowane geokodowanie OSM z czyszczeniem prefiksów, rozpoznawaniem miast i dłuższym timeoutem
-def rozwiaz_geolokalizacje_miejsca_kreta(nazwa_miejsca, kontekst_miasta=""):
+# ZMIANA: Scalenie dwóch definicji rozwiaz_geolokalizacje_miejsca_kreta w jedną. Skrypt wykonuje się od góry
+# do dołu, więc po cichu wygrywała ta późniejsza - bez parametru kontekst_miasta - i wywołanie z kontekstem
+# w utworz_nowe_miejsce wywracało się na TypeError (model widział tylko "Błędne argumenty narzędzia").
+# Zachowanie bez kontekstu zostaje dokładnie takie, jak w tej faktycznie działającej definicji: ta sama
+# regułka czyszcząca, jedno lub dwa zapytania w tej samej kolejności (jedno, gdy regułka nic nie wycina,
+# bo wtedy oba warianty są identyczne), timeout 1.8 s i ten sam User-Agent.
+# Wcześniejsza definicja - nigdy nieuruchamiana, bo przesłaniana przez późniejszą - została skasowana,
+# a jej dodatki świadomie NIE zostały przeniesione: wariant "{czysta} Crete", normalizacja białych znaków
+# przez re.sub(r'\s+', ' '), timeout 3.5 s oraz User-Agent "CretAiApp/1.0 (FamilyTripPlannerAuDHD)".
+# ZMIANA: Parametr pomin_bez_kontekstu ogranicza wywołanie do samego zapytania z miastem (a bez miasta -
+# do zera zapytań), żeby nie powtarzać wariantów bazowych odpytanych już przez wcześniejszą próbę;
+# samo zapytanie z kontekstem_miasta odpada, gdy miasto siedzi już w oczyszczonej nazwie, bo warianty
+# bazowe i tak je niosą (inaczej wychodziłoby "Testowa Heraklion Heraklion Crete Greece").
+def rozwiaz_geolokalizacje_miejsca_kreta(nazwa_miejsca, kontekst_miasta="", pomin_bez_kontekstu=False):
     if not nazwa_miejsca:
         return None, None
-    
-    # Oczyszczenie nazwy ze zbędnych słów kluczowych zaburzających geocoder OSM
-    czysta = re.sub(r'(?i)\b(tawerna|tavern|restaurant|restauracja|cafe|bar|snack|obiad|lunch|w|przy|blisko)\b', '', nazwa_miejsca).strip()
-    czysta = re.sub(r'\s+', ' ', czysta).strip()
-    
+    # Warianty zapytań: pełna nazwa oraz uproszczona (bez słów typu Tavern/Tawerna/Cafe)
+    czysta = re.sub(r'(?i)\b(tawerna|tavern|restaurant|restauracja|cafe|bar|snack)\b', '', nazwa_miejsca).strip()
+
     zapytania = []
-    if kontekst_miasta:
+    if kontekst_miasta and kontekst_miasta.lower() not in czysta.lower():
         zapytania.append(f"{czysta} {kontekst_miasta} Crete Greece")
-    zapytania.append(f"{czysta} Crete Greece")
-    zapytania.append(f"{nazwa_miejsca} Crete Greece")
-    zapytania.append(f"{czysta} Crete")
-    
+    if not pomin_bez_kontekstu:
+        zapytania.append(f"{nazwa_miejsca} Crete Greece")
+        if czysta != nazwa_miejsca:
+            zapytania.append(f"{czysta} Crete Greece")
+
     # Unikalne zapytania zachowujące kolejność
     zapytania_unikalne = list(dict.fromkeys(zapytania))
-    
+
     for q in zapytania_unikalne:
         try:
             query = urllib.parse.quote(q)
             # viewbox ograniczony do całej wyspy Kreta
             url = f"https://nominatim.openstreetmap.org/search?q={query}&format=json&limit=1&bounded=1&viewbox=23.40,35.75,26.40,34.80"
-            req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0 (FamilyTripPlannerAuDHD)'})
-            with urllib.request.urlopen(req, timeout=3.5) as response:
+            req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0 (FamilyTripPlanner)'})
+            with urllib.request.urlopen(req, timeout=1.8) as response:
                 data = json.loads(response.read().decode())
                 if data and len(data) > 0:
                     lat = float(data[0]['lat'])
@@ -687,12 +698,6 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
                     VALUES (?, ?, ?, 0)
                 ''', (kroki[i][0], kroki[i + 1][0], dojazdy_tekst[i]))
 
-            if i < len(kroki) - 1:
-                cursor.execute('''
-                    INSERT INTO czasy_dojazdu (id_kroku_z, id_kroku_do, czas_przejazdu, szacowany_czas_postoju)
-                    VALUES (?, ?, ?, 0)
-                ''', (kroki[i][0], kroki[i + 1][0], dojazdy_tekst[i]))
-
         dt_wyjazd, dt_powrot = end_times[0], start_times[-1]
         czas_trwania_h = round(max((dt_powrot - dt_wyjazd).total_seconds() / 3600.0, 0.5), 1)
         cursor.execute('''
@@ -861,6 +866,15 @@ def init_db():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_posilki_krok ON posilki_kroku(id_kroku)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_zakupy_wyc ON zakupy(id_wycieczki)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_czasy_dojazd ON czasy_dojazdu(id_kroku_z, id_kroku_do)')
+
+        # ZMIANA: Sprząta duplikaty pozostawione przez podwójny INSERT w przelicz_i_zsynchronizuj_wycieczke
+        # (zostaje najstarszy wiersz pary). Idempotentne i tanie (jedno zapytanie po indeksie
+        # idx_czasy_dojazd), a wykonuje się przy każdym przebiegu skryptu, bo init_db() jest wołane
+        # na poziomie modułu, a Streamlit przepuszcza skrypt od nowa przy każdym rerunie.
+        cursor.execute('''
+            DELETE FROM czasy_dojazdu
+            WHERE rowid NOT IN (SELECT MIN(rowid) FROM czasy_dojazdu GROUP BY id_kroku_z, id_kroku_do)
+        ''')
 
         cursor.execute('SELECT COUNT(*) FROM miejsca')
         miejsca_count = cursor.fetchone()[0]
@@ -2680,30 +2694,6 @@ def sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_nowego_miejsca, planowane
     return True, ""
 
 # --- OPERACJE NA KROKACH I WYCIECZKACH ---
-# ZMIANA: Lekki resolver geolokalizacji OSM dla Krety z czyszczeniem nazwy (bez odpytywania modelu)
-def rozwiaz_geolokalizacje_miejsca_kreta(nazwa_miejsca):
-    if not nazwa_miejsca:
-        return None, None
-    # Warianty zapytań: pełna nazwa oraz uproszczona (bez słów typu Tavern/Tawerna/Cafe)
-    czysta = re.sub(r'(?i)\b(tawerna|tavern|restaurant|restauracja|cafe|bar|snack)\b', '', nazwa_miejsca).strip()
-    zapytania = [f"{nazwa_miejsca} Crete Greece", f"{czysta} Crete Greece"] if czysta != nazwa_miejsca else [f"{nazwa_miejsca} Crete Greece"]
-    
-    for q in zapytania:
-        try:
-            query = urllib.parse.quote(q)
-            url = f"https://nominatim.openstreetmap.org/search?q={query}&format=json&limit=1&bounded=1&viewbox=23.40,35.75,26.40,34.80"
-            req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0 (FamilyTripPlanner)'})
-            with urllib.request.urlopen(req, timeout=1.8) as response:
-                data = json.loads(response.read().decode())
-                if data and len(data) > 0:
-                    lat = float(data[0]['lat'])
-                    lon = float(data[0]['lon'])
-                    if 34.80 <= lat <= 35.75 and 23.40 <= lon <= 26.40:
-                        return lat, lon
-        except Exception:
-            continue
-    return None, None
-
 # ZMIANA: Obsługa parametrów nazwa_angielska i adres oraz czyszczenie prefiksów posiłkowych z nazwy
 def utworz_nowe_miejsce(nazwa, nazwa_angielska="", typ="Other", wspolrzedne="", orientacyjny_czas="45 min", 
                         koszt="—", godziny_otwarcia="—", konieczna_akcja="", trudnosc_adhd="Średni", 
@@ -2726,9 +2716,11 @@ def utworz_nowe_miejsce(nazwa, nazwa_angielska="", typ="Other", wspolrzedne="", 
 
         lat_p, lon_p = None, None
         wsp_czyste = str(wspolrzedne).strip() if wspolrzedne else ""
-        
+        geokodowano_bez_kontekstu = False
+
         if not wsp_czyste or any(w in nazwa_czysta.lower() for w in ["tavern", "tawern", "ammoudi", "gefyra"]):
             lat_geo, lon_geo = rozwiaz_geolokalizacje_miejsca_kreta(nazwa_en_czysta or nazwa_czysta)
+            geokodowano_bez_kontekstu = True
             if lat_geo is not None and lon_geo is not None:
                 lat_p, lon_p = lat_geo, lon_geo
                 wsp_czyste = f"{lat_p:.4f}, {lon_p:.4f}"
@@ -2749,7 +2741,15 @@ def utworz_nowe_miejsce(nazwa, nazwa_angielska="", typ="Other", wspolrzedne="", 
                     kontekst_m = miasto
                     break
             
-            lat_geo, lon_geo = rozwiaz_geolokalizacje_miejsca_kreta(nazwa_en_czysta or nazwa_czysta, kontekst_miasta=kontekst_m)
+            # ZMIANA: Budżet zapytań do Nominatim (polityka 1 req/s, timeout 1.8 s, całość wewnątrz pętli
+            # narzędziowej modelu). Jeśli pierwsza próba już poszła, warianty bez kontekstu są odpytane,
+            # więc ta druga dokłada co najwyżej jedno zapytanie z miastem - a bez miasta nie wysyła nic.
+            # Bez pierwszej próby (współrzędne podane, ale spoza Krety) leci pełny zestaw, tak jak dotąd.
+            lat_geo, lon_geo = rozwiaz_geolokalizacje_miejsca_kreta(
+                nazwa_en_czysta or nazwa_czysta,
+                kontekst_miasta=kontekst_m,
+                pomin_bez_kontekstu=geokodowano_bez_kontekstu,
+            )
             if lat_geo is not None and lon_geo is not None:
                 lat_p, lon_p = lat_geo, lon_geo
                 wsp_czyste = f"{lat_p:.4f}, {lon_p:.4f}"
@@ -2767,7 +2767,9 @@ def utworz_nowe_miejsce(nazwa, nazwa_angielska="", typ="Other", wspolrzedne="", 
                         lat_p, lon_p = lat_fb, lon_fb
                         wsp_czyste = f"{lat_p:.4f}, {lon_p:.4f}"
 
-                if lat_p is None:
+                # ZMIANA: Strażnik sprawdza granice Krety, nie tylko brak wartości - współrzędne spoza wyspy podane
+                # przez model nie mogą przejść do bazy, gdy geokodowanie i ostatni krok nic nie dały.
+                if lat_p is None or lon_p is None or not (34.80 <= lat_p <= 35.75 and 23.40 <= lon_p <= 26.40):
                     if "heraklion" in nazwa_czysta.lower() or "iraklio" in nazwa_czysta.lower():
                         lat_p, lon_p = 35.3387, 25.1332
                     elif "rethymno" in nazwa_czysta.lower():
@@ -3821,7 +3823,6 @@ def wykonaj_narzedzie_bazy(call_name, args):
         res = handler(args)
     except TypeError as e:
         return {"success": False, "error": f"Błędne argumenty narzędzia {call_name}: {e}"}
-    return res if isinstance(res, dict) else {"success": True, "result": str(res)}
     return res if isinstance(res, dict) else {"success": True, "result": str(res)}
 
 def wczytaj_kontekst_zewnetrzny(id_wycieczki):
