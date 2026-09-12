@@ -5,3 +5,14 @@ corsAllowedOrigins = ["https://crete.mroczkowski.cc"]
 
 [browser]
 gatherUsageStats = false
+
+[theme]
+# Cały arkusz stylów aplikacji jest zapisany na sztywno w jasnej palecie (kremowe tła,
+# ciemny tekst). Bez tego wpisu Streamlit przełącza motyw bazowy wg `prefers-color-scheme`
+# telefonu, więc w trybie ciemnym widgety bez własnego stylu (np. st.link_button
+# w szybkiej nawigacji) dostawały ciemne tło pod wymuszonym ciemnym tekstem.
+base = "light"
+backgroundColor = "#B4C29D"
+secondaryBackgroundColor = "#F6F0DD"
+textColor = "#2B2118"
+primaryColor = "#8C5338"

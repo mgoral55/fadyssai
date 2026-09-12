@@ -1205,6 +1205,21 @@ header[data-testid="stHeader"] { background-color: transparent !important; box-s
 .stApp { background-color: #B4C29D !important; color: #2F241D !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 [data-testid="stSidebar"] { background-color: #F6F0DD !important; border-right: 1.5px solid #E2DEC8 !important; }
 [data-testid="stSidebar"] * { color: #2B2118 !important; }
+/* ZMIANA: Etykieta przycisku renderuje się w <p> wewnątrz <button>, więc reguła powyżej nadpisywała biały tekst i dawała czarny napis na ciemnym tle przycisku. */
+[data-testid="stSidebar"] .stButton > button, [data-testid="stSidebar"] .stButton > button * { color: #FFFFFF !important; }
+[data-testid="stSidebar"] .stButton > button:disabled, [data-testid="stSidebar"] .stButton > button:disabled * { color: #5C5349 !important; }
+
+/* ZMIANA: st.link_button (szybka nawigacja) nie miał własnych stylów, więc brał tło z motywu Streamlita — w trybie ciemnym dawało to czarny napis na czarnym tle. */
+.stLinkButton > a, [data-testid="stLinkButton"] > a {
+    background-color: #FAF8F2 !important;
+    color: #2B2118 !important;
+    border: 1.5px solid #D6CEBA !important;
+    border-radius: 16px !important;
+    font-weight: 800 !important;
+    text-decoration: none !important;
+}
+.stLinkButton > a *, [data-testid="stLinkButton"] > a * { color: #2B2118 !important; }
+.stLinkButton > a:hover, [data-testid="stLinkButton"] > a:hover { background-color: #EFE8D1 !important; border-color: #8C5338 !important; }
 h1, h2, h3, h4, h5 { color: #2F241D !important; font-weight: 800; }
 
 input, textarea, .stChatInput textarea { 
@@ -1240,6 +1255,8 @@ div.st-key-btn_powrot_static button, div[class*="btn_powrot_static"] button:disa
     opacity: 0.95 !important;
     cursor: default !important;
 }
+/* ZMIANA: Etykieta siedzi w <p> wewnątrz <button>, więc kolor trzeba wymusić także na potomkach — inaczej wygrywa ogólna reguła dla przycisków wyłączonych i napis znika na ciemnym tle. */
+div.st-key-btn_powrot_static button *, div[class*="btn_powrot_static"] button:disabled * { color: #FFFFFF !important; }
 
 div[data-testid="stPopover"] { width: 100% !important; }
 div[data-testid="stPopover"] > button {
@@ -1280,8 +1297,11 @@ div[data-testid="stPopover"] > button:hover { border-color: #8C5338 !important; 
 
 .top-sticky-nav-container { position: sticky; top: 0; z-index: 999; background-color: #B4C29D; padding: 6px 0 10px 0; margin-bottom: 6px; border-bottom: 1.5px solid rgba(255, 255, 255, 0.2); }
 .custom-top-nav-bar { display: flex; justify-content: space-between; gap: 8px; width: 100%; }
-.custom-top-nav-btn { flex: 1; background-color: #EFE8D6; border: 1.5px solid #D6CEBC; color: #8A7B70; padding: 7px 4px; text-align: center; border-radius: 14px; font-size: 11px; font-weight: 800; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 2px; box-shadow: 0 2px 6px rgba(0,0,0,0.03); }
+.custom-top-nav-btn { flex: 1; background-color: #EFE8D6; border: 1.5px solid #D6CEBC; color: #6B5B50; padding: 7px 4px; text-align: center; border-radius: 14px; font-size: 11px; font-weight: 800; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 2px; box-shadow: 0 2px 6px rgba(0,0,0,0.03); }
 .custom-top-nav-btn.active { background-color: #F6F0DD; color: #8C5338; border-color: #C8C0AC; font-weight: 900; }
+/* ZMIANA: Reguły linków Streamlita mają wyższą specyficzność niż sama klasa, więc kolor i brak podkreślenia trzeba wymusić także na potomkach <span>. */
+.custom-top-nav-btn, .custom-top-nav-btn:visited, .custom-top-nav-btn:hover, .custom-top-nav-btn span { color: #6B5B50 !important; text-decoration: none !important; }
+.custom-top-nav-btn.active, .custom-top-nav-btn.active:visited, .custom-top-nav-btn.active:hover, .custom-top-nav-btn.active span { color: #7A4429 !important; }
 
 .adventure-header { background: #2E251E; border: none; border-radius: 18px; padding: 8px 14px; display: flex; align-items: center; gap: 10px; margin-bottom: 8px; box-shadow: 0 4px 14px rgba(46, 37, 30, 0.15); }
 .adventure-header-img { height: 28px; width: auto; max-width: 100px; object-fit: contain; }
@@ -1360,8 +1380,9 @@ div.st-key-btn_date_picker { margin-bottom: 10px !important; }
 .timeline-item-desc { font-size: 9pt; color: #4A3E36; }
 
 .timeline-nav-btn { position: relative; flex-shrink: 0; width: auto; min-width: 44px; height: 42px; background-color: transparent !important; border: none !important; border-radius: 12px; text-align: center; text-decoration: none !important; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; margin-left: 6px; padding: 0 2px; z-index: 2; }
-.timeline-nav-btn span:first-child { font-size: 12pt; color: #8C5338; }
-.timeline-nav-btn span:last-child { font-size: 7pt; font-weight: 800; color: #2B2118; }
+.timeline-nav-btn, .timeline-nav-btn:visited, .timeline-nav-btn:hover { text-decoration: none !important; }
+.timeline-nav-btn span:first-child { font-size: 12pt; color: #6E3C22 !important; }
+.timeline-nav-btn span:last-child { font-size: 7pt; font-weight: 800; color: #2B2118 !important; }
 
 .timeline-step-expander .timeline-expander-body { position: relative; padding: 10px 12px; background-color: #F6F0DD !important; z-index: 3; }
 .step-details-card { position: relative; background-color: #EDE8D6 !important; border: 1.5px solid #D6CEBA; border-radius: 16px; padding: 12px; margin-bottom: 6px; z-index: 3; }
@@ -1382,8 +1403,9 @@ div.st-key-btn_date_picker { margin-bottom: 10px !important; }
 
 .step-action-vertical-bar { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; margin-bottom: 2px; }
 .step-action-vertical-btn { background-color: #C3CBB5; border: 1.5px solid #ACB79C; border-radius: 14px; padding: 8px 12px; text-align: center; text-decoration: none !important; display: flex; align-items: center; justify-content: center; gap: 6px; }
-.step-action-vertical-btn span:first-child { font-size: 12pt; }
-.step-action-vertical-btn span:last-child { font-size: 9pt; font-weight: 800; color: #2B2118; }
+.step-action-vertical-btn, .step-action-vertical-btn:visited, .step-action-vertical-btn:hover { color: #2B2118 !important; }
+.step-action-vertical-btn span:first-child { font-size: 12pt; color: #2B2118 !important; }
+.step-action-vertical-btn span:last-child { font-size: 9pt; font-weight: 800; color: #2B2118 !important; }
 
 .timeline-transit-spacer { position: relative; width: 100%; min-height: 24px; display: flex; align-items: center; margin: 3px 0; z-index: 2; }
 .timeline-transit-text { margin-left: 110px; font-size: 8.5pt; font-weight: 800; color: #2B2118; display: flex; align-items: center; gap: 5px; z-index: 2; background: transparent; border: none; padding: 0; }
@@ -1407,7 +1429,10 @@ div[data-testid="stCheckbox"] label, div[data-testid="stCheckbox"] p, div[data-t
 .floating-ai-container { position: fixed; bottom: 10px; left: 6px; right: 6px; max-width: 520px; margin: 0 auto; z-index: 999998; }
 .custom-nav-bar { display: flex; justify-content: space-between; gap: 6px; width: 100%; }
 .custom-nav-btn { flex: 1; background-color: #FAF8F2; border: 1.5px solid #D6D2C4; color: #2B2118; padding: 7px 3px; text-align: center; border-radius: 14px; font-size: 10.5px; font-weight: 800; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.custom-nav-btn, .custom-nav-btn:visited, .custom-nav-btn:hover, .custom-nav-btn span { color: #2B2118 !important; text-decoration: none !important; }
 
+.stButton > button:disabled { background-color: #D6CEBA !important; border: 1.5px solid #C4BC9E !important; opacity: 1 !important; }
+.stButton > button:disabled, .stButton > button:disabled * { color: #5C5349 !important; }
 .stButton > button { background-color: #2E251E !important; color: #FFFFFF !important; border: none !important; font-weight: 800 !important; border-radius: 18px !important; padding: 0.4rem 0.8rem !important; min-height: 40px !important; font-size: 9.5pt !important; box-shadow: 0 3px 8px rgba(0,0,0,0.08) !important; }
 div[class*="st-key-btn_add_shop_"] button, div[class*="st-key-btn_add_market_"] button,
 div[class*="st-key-btn_del_shop_"] button, div[class*="st-key-btn_del_market_"] button { 
@@ -1423,10 +1448,10 @@ div[class*="st-key-btn_del_shop_"] button, div[class*="st-key-btn_del_market_"] 
     justify-content: center !important; 
     text-align: center !important; 
 }
-div[class*="st-key-btn_add_shop_"] button:disabled, div[class*="st-key-btn_add_market_"] button:disabled { background-color: #D6CEBA !important; color: #73695F !important; border: 1.5px solid #C4BC9E !important; opacity: 0.85 !important; cursor: not-allowed !important; box-shadow: none !important; }
+div[class*="st-key-btn_add_shop_"] button:disabled, div[class*="st-key-btn_add_market_"] button:disabled { background-color: #D6CEBA !important; color: #5C5349 !important; border: 1.5px solid #C4BC9E !important; opacity: 1 !important; cursor: not-allowed !important; box-shadow: none !important; }
 .note-card { background-color: #F4EFE6; border: 1.5px solid #D8D2BC; border-radius: 16px; padding: 12px; margin-bottom: 8px; }
 
-# ZMIANA: Dodanie bufora padding-bottom i overflow: visible zapobiegających wystawaniu pytania decyzyjnego poza biały dymek
+/* ZMIANA: Dodanie bufora padding-bottom i overflow: visible zapobiegających wystawaniu pytania decyzyjnego poza biały dymek */
 [data-testid="stChatMessage"] { 
     padding: 10px 12px 14px 12px !important; 
     margin-bottom: 10px !important; 
