@@ -390,12 +390,42 @@ def _wyczysc_nazwe_miejsca(nazwa):
     s = s.split('(')[0].strip()
     return s
 
+# ZMIANA: Jedna definicja kroku bazowego (wyjazd z domku / powrót do domku) dla całej aplikacji.
+# Takie kroki nie są miejscami, które zwiedzamy - w bazie miejsc wskazują na plażę przy domku.
+FRAZY_KROKU_BAZOWEGO = ("domek", "domku", "start", "powrót", "powrot", "wyjazd")
+
+
+def czy_krok_bazowy(nazwa_kroku):
+    nazwa_l = str(nazwa_kroku or "").strip().lower()
+    return any(w in nazwa_l for w in FRAZY_KROKU_BAZOWEGO)
+
+
+# ZMIANA: Jednozdaniowy skrót opisu miejsca do sekcji "Plan na dzień"
+def skroc_opis_miejsca(opis, max_znakow=160):
+    if opis is None:
+        return ""
+    try:
+        if pd.isna(opis):
+            return ""
+    except (TypeError, ValueError):
+        pass
+
+    tekst = " ".join(str(opis).split()).strip()
+    if not tekst or tekst in ["None", "nan", "Brak"]:
+        return ""
+
+    zdanie = re.split(r'(?<=[.!?])\s+', tekst)[0].strip()
+    if len(zdanie) > max_znakow:
+        zdanie = zdanie[:max_znakow].rsplit(" ", 1)[0].rstrip(" ,;:-–—") + "…"
+    return zdanie
+
+
 def dopasuj_krok_do_bazy_miejsc(nazwa_kroku, wspolrzedne_kroku, df_miejsca_ref):
     if df_miejsca_ref is None or df_miejsca_ref.empty or not nazwa_kroku:
         return None
 
     nazwa_l = str(nazwa_kroku).strip().lower()
-    if any(w in nazwa_l for w in ["domek", "start", "powrót", "powrot", "sklep przy domku"]):
+    if czy_krok_bazowy(nazwa_l):
         return None
 
     czysta_krok = _wyczysc_nazwe_miejsca(nazwa_l)
@@ -861,6 +891,17 @@ def init_db():
             )
         ''')
 
+        # ZMIANA: Ustawienia interfejsu zapamiętywane per profil użytkownika (niezależnie od urządzenia)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS ustawienia_profilu (
+                uzytkownik TEXT NOT NULL,
+                klucz TEXT NOT NULL,
+                wartosc TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (uzytkownik, klucz)
+            )
+        ''')
+
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_krok_wyc ON krok_wycieczki(id_wycieczki)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_krok_miejsce ON krok_wycieczki(numer_miejsca)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_posilki_krok ON posilki_kroku(id_kroku)')
@@ -1133,6 +1174,41 @@ def zapisz_uzytkownika_urzadzenia(device_id, uzytkownik):
             conn.commit()
     except Exception:
         pass
+
+# --- USTAWIENIA INTERFEJSU PER PROFIL ---
+KLUCZ_USTAWIENIA_KROTKI_OPIS = "krotki_opis_miejsc"
+KLUCZ_SESJI_KROTKI_OPIS = "pokaz_krotki_opis_miejsc"
+
+
+def pobierz_flage_profilu(uzytkownik, klucz, domyslna=False):
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT wartosc FROM ustawienia_profilu WHERE uzytkownik = ? AND klucz = ?",
+                (str(uzytkownik).strip(), str(klucz))
+            )
+            row = cursor.fetchone()
+            if row and row[0] is not None:
+                return str(row[0]).strip() == "1"
+    except Exception:
+        pass
+    return domyslna
+
+
+def zapisz_flage_profilu(uzytkownik, klucz, wartosc):
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO ustawienia_profilu (uzytkownik, klucz, wartosc)
+                VALUES (?, ?, ?)
+                ON CONFLICT(uzytkownik, klucz) DO UPDATE SET wartosc = excluded.wartosc, updated_at = CURRENT_TIMESTAMP
+            ''', (str(uzytkownik).strip(), str(klucz), "1" if wartosc else "0"))
+            conn.commit()
+    except Exception:
+        pass
+
 
 # --- MODUŁ PRZYWRACANIA BAZY Z PLIKÓW CSV ---
 def resetuj_i_przywroc_baze_z_csv():
@@ -1462,6 +1538,7 @@ div.st-key-btn_date_picker { margin-bottom: 10px !important; }
 .timeline-content-col { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: center; z-index: 2; min-width: 0; }
 .timeline-item-title { font-size: 11.5pt; font-weight: 900; color: #2B2118; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .timeline-item-desc { font-size: 9pt; color: #4A3E36; }
+.timeline-item-place-desc { font-size: 8.5pt; color: #6E6259; font-style: italic; line-height: 1.3; margin-top: 3px; white-space: normal; }
 
 .timeline-nav-btn { position: relative; flex-shrink: 0; width: auto; min-width: 44px; height: 42px; background-color: transparent !important; border: none !important; border-radius: 12px; text-align: center; text-decoration: none !important; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; margin-left: 6px; padding: 0 2px; z-index: 2; }
 .timeline-nav-btn, .timeline-nav-btn:visited, .timeline-nav-btn:hover { text-decoration: none !important; }
@@ -1845,10 +1922,29 @@ with st.sidebar:
     )
 
     # ZMIANA: Koniec z kluczem API w aplikacji - uwierzytelnia lokalne Claude Code CLI
-    if sciezka_claude_cli():
-        st.caption("🤖 Doradca AI: Claude Code CLI (logowanie po stronie CLI).")
-    else:
+    if not sciezka_claude_cli():
         st.warning("⚠️ Brak Claude Code CLI w PATH — doradca AI jest niedostępny.")
+
+    # ZMIANA: Krótkie opisy odwiedzanych miejsc w planie dnia - ustawienie trzymane per profil
+    klucz_cb_krotki_opis = f"cb_krotki_opis_miejsc_{aktualny_uzytkownik}"
+    if klucz_cb_krotki_opis not in st.session_state:
+        st.session_state[klucz_cb_krotki_opis] = pobierz_flage_profilu(
+            aktualny_uzytkownik, KLUCZ_USTAWIENIA_KROTKI_OPIS, False
+        )
+
+    def _on_krotki_opis_change():
+        zapisz_flage_profilu(
+            aktualny_uzytkownik,
+            KLUCZ_USTAWIENIA_KROTKI_OPIS,
+            st.session_state.get(klucz_cb_krotki_opis, False)
+        )
+
+    st.session_state[KLUCZ_SESJI_KROTKI_OPIS] = st.checkbox(
+        "Krótki opis odwiedzanych miejsc",
+        key=klucz_cb_krotki_opis,
+        on_change=_on_krotki_opis_change,
+        help="Dodaje jednozdaniowy opis każdego odwiedzanego miejsca w sekcji „Plan na dzień”."
+    )
 
     # ZMIANA: Rozszerzona szybka nawigacja (Domek, Sklep przy domku, Market, Rynek w Chanii)
     st.markdown("<div style='margin-top: 14px; border-top: 1.5px solid #D6D2C4; padding-top: 10px;'></div>", unsafe_allow_html=True)
@@ -2370,6 +2466,11 @@ def pobierz_grupy_zadan_dla_wycieczki(wycieczka_id, kroki_df, df_wszystkie_miejs
         wsp_kroku = str(krok.get('wspolrzedne', '')).strip()
         krok_id = krok.get('id')
         nr_fk = krok.get('numer_miejsca')
+
+        # ZMIANA: Kroki bazowe (wyjazd z domku / powrót) mają w bazie FK na plażę przy domku,
+        # przez co zadania z tej plaży dublowały się na początku i końcu każdej trasy.
+        if czy_krok_bazowy(nazwa_kroku):
+            continue
 
         m_row = None
         if pd.notna(nr_fk) and str(nr_fk).strip() and str(nr_fk).strip() not in ['None', 'nan', '']:
@@ -4378,6 +4479,9 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
     st.markdown('<div class="section-unified-header">🗺️ Plan na dzień</div>', unsafe_allow_html=True)
 
+    # ZMIANA: Krótkie opisy miejsc sterowane checkboxem z paska bocznego (ustawienie per profil)
+    pokaz_krotki_opis_miejsc = bool(st.session_state.get(KLUCZ_SESJI_KROTKI_OPIS, False))
+
     total_steps = len(kroki_df)
     timeline_full_html = ['<div class="timeline-master-container">', '<div class="timeline-master-continuous-line"></div>']
 
@@ -4415,7 +4519,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         godzina_start = okienko.split("-")[0].strip() if "-" in okienko else (okienko if okienko else "08:00")
         godzina_koniec = okienko.split("-")[1].strip() if "-" in okienko else str(k.get('godzina_ewakuacji', '')).strip()
         
-        is_cottage_step = any(w in nazwa_lower for w in ["domek", "powrót", "powrot", "start", "wyjazd"])
+        is_cottage_step = czy_krok_bazowy(nazwa)
 
         # ZMIANA: Pobranie rekordu z bazy miejsc przed generowaniem linku nawigacji
         matched_place_id = str(k['numer_miejsca']).strip() if (pd.notna(k.get('numer_miejsca')) and str(k.get('numer_miejsca')).strip() not in ['', 'None', 'nan']) else None
@@ -4429,6 +4533,13 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             m_dopasowane_krok = dopasuj_krok_do_bazy_miejsc(nazwa, wspolrzedne, df_wszystkie_miejsca_ref)
             if m_dopasowane_krok is not None:
                 matched_place_id = str(m_dopasowane_krok['numer_miejsca'])
+
+        # ZMIANA: Jednozdaniowy opis miejsca w wierszu planu - tylko dla miejsc, które odwiedzamy
+        krotki_opis_html = ""
+        if pokaz_krotki_opis_miejsc and not is_cottage_step and m_dopasowane_krok is not None:
+            krotki_opis_txt = skroc_opis_miejsca(m_dopasowane_krok.get('opis'))
+            if krotki_opis_txt:
+                krotki_opis_html = f'<div class="timeline-item-place-desc">{krotki_opis_txt}</div>'
 
         lat_parsed, lon_parsed = sparsuj_wspolrzedne(wspolrzedne)
 
@@ -4567,6 +4678,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 f'<div class="timeline-content-col">'
                 f'<div class="timeline-item-title">{tytul_kroku_display}</div>'
                 f'<div class="timeline-item-desc">{opis_kroku_cust}</div>'
+                f'{krotki_opis_html}'
                 f'</div>'
                 f'{nav_btn_html}'
                 f'</div>'
@@ -4638,6 +4750,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 f'<div class="timeline-content-col">'
                 f'<div class="timeline-item-title">{tytul_kroku_display if "tytul_kroku_display" in locals() else nazwa}</div>'
                 f'<div class="timeline-item-desc">{posilki_tekst}</div>'
+                f'{krotki_opis_html}'
                 f'</div>'
                 f'{nav_btn_html}'
                 f'</div>'
