@@ -8,8 +8,10 @@ Uruchomienie:  pytest test_zadania_i_opisy.py
 """
 
 import ast
+import csv
 import io
 import json
+import os
 import re
 import sqlite3
 
@@ -28,7 +30,11 @@ BADANE_FUNKCJE = [
     "pobierz_grupy_zadan_dla_wycieczki",
     "pobierz_flage_profilu",
     "zapisz_flage_profilu",
+    "uzupelnij_krotkie_opisy_z_csv",
 ]
+
+# Limit narzucony modelowi w generuj_krotkie_opisy.py - opisy w miejsca.csv muszą się w nim mieścić.
+MAX_ZNAKOW_KROTKIEGO_OPISU = 140
 
 # Stałe modułowe czytane wprost ze źródła aplikacji, żeby testy nie dublowały ich wartości.
 STALE_Z_APP = ["FRAZY_KROKU_BAZOWEGO"]
@@ -38,6 +44,8 @@ CREATE TABLE ustawienia_profilu (
     uzytkownik TEXT NOT NULL, klucz TEXT NOT NULL, wartosc TEXT,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (uzytkownik, klucz));
+CREATE TABLE miejsca (
+    numer_miejsca TEXT PRIMARY KEY, nazwa TEXT, opis TEXT, krotki_opis TEXT);
 """
 
 # Baza miejsc: plaża przy domku (46) oraz zwykłe miejsca na trasie.
@@ -94,6 +102,7 @@ def app_ns(tmp_path):
     ns = {
         "pd": pd,
         "re": re,
+        "os": os,
         "json": json,
         "sqlite3": sqlite3,
         "get_db": lambda: sqlite3.connect(sciezka_db, timeout=30.0),
@@ -101,6 +110,7 @@ def app_ns(tmp_path):
     ns.update(_stale_z_app())
     for _, kod in wczytaj_funkcje_z_app(BADANE_FUNKCJE).items():
         exec(kod, ns)
+    ns["_sciezka_db"] = sciezka_db
     return ns
 
 
@@ -223,3 +233,92 @@ def test_flaga_profilu_nadpisuje_poprzednia_wartosc(app_ns):
     app_ns["zapisz_flage_profilu"]("Magda", "krotki_opis_miejsc", False)
 
     assert app_ns["pobierz_flage_profilu"]("Magda", "krotki_opis_miejsc", True) is False
+
+
+# --- BACKFILL KRÓTKICH OPISÓW Z CSV ---
+
+def _csv_miejsc(sciezka, wiersze):
+    with io.open(sciezka, "w", encoding="utf-8", newline="") as f:
+        pisarz = csv.DictWriter(f, fieldnames=["numer miejsca", "nazwa", "Opis", "Krótki opis"])
+        pisarz.writeheader()
+        for w in wiersze:
+            pisarz.writerow(w)
+    return str(sciezka)
+
+
+def _wstaw_miejsca(app_ns, wiersze):
+    conn = sqlite3.connect(app_ns["_sciezka_db"])
+    conn.executemany(
+        "INSERT INTO miejsca (numer_miejsca, nazwa, opis, krotki_opis) VALUES (?, ?, ?, ?)", wiersze
+    )
+    conn.commit()
+    conn.close()
+
+
+def _krotkie_opisy_w_bazie(app_ns):
+    conn = sqlite3.connect(app_ns["_sciezka_db"])
+    wynik = dict(conn.execute("SELECT numer_miejsca, krotki_opis FROM miejsca"))
+    conn.close()
+    return wynik
+
+
+def test_backfill_uzupelnia_puste_opisy(app_ns, tmp_path):
+    _wstaw_miejsca(app_ns, [("1", "Knossos", "Pałac minojski.", None), ("2", "Cretaquarium", "Akwarium.", "")])
+    plik = _csv_miejsc(tmp_path / "miejsca.csv", [
+        {"numer miejsca": "1", "nazwa": "Knossos", "Opis": "Pałac minojski.", "Krótki opis": "Ruiny pałacu Minosa."},
+        {"numer miejsca": "2", "nazwa": "Cretaquarium", "Opis": "Akwarium.", "Krótki opis": "Klimatyzowane akwarium."},
+    ])
+
+    assert app_ns["uzupelnij_krotkie_opisy_z_csv"](plik) == 2
+    assert _krotkie_opisy_w_bazie(app_ns) == {"1": "Ruiny pałacu Minosa.", "2": "Klimatyzowane akwarium."}
+
+
+def test_backfill_nie_nadpisuje_istniejacych_opisow(app_ns, tmp_path):
+    _wstaw_miejsca(app_ns, [("1", "Knossos", "Pałac minojski.", "Opis ustawiony ręcznie.")])
+    plik = _csv_miejsc(tmp_path / "miejsca.csv", [
+        {"numer miejsca": "1", "nazwa": "Knossos", "Opis": "Pałac minojski.", "Krótki opis": "Wersja z CSV."},
+    ])
+
+    assert app_ns["uzupelnij_krotkie_opisy_z_csv"](plik) == 0
+    assert _krotkie_opisy_w_bazie(app_ns) == {"1": "Opis ustawiony ręcznie."}
+
+
+def test_backfill_jest_idempotentny(app_ns, tmp_path):
+    _wstaw_miejsca(app_ns, [("1", "Knossos", "Pałac minojski.", None)])
+    plik = _csv_miejsc(tmp_path / "miejsca.csv", [
+        {"numer miejsca": "1", "nazwa": "Knossos", "Opis": "Pałac minojski.", "Krótki opis": "Ruiny pałacu Minosa."},
+    ])
+
+    assert app_ns["uzupelnij_krotkie_opisy_z_csv"](plik) == 1
+    assert app_ns["uzupelnij_krotkie_opisy_z_csv"](plik) == 0
+
+
+def test_backfill_bez_pliku_csv_nic_nie_robi(app_ns, tmp_path):
+    _wstaw_miejsca(app_ns, [("1", "Knossos", "Pałac minojski.", None)])
+    assert app_ns["uzupelnij_krotkie_opisy_z_csv"](str(tmp_path / "nie_ma.csv")) == 0
+
+
+# --- WYGENEROWANE OPISY W miejsca.csv ---
+
+def _miejsca_z_repo():
+    sciezka = os.path.join(os.path.dirname(SCIEZKA_APP), "miejsca.csv")
+    with io.open(sciezka, encoding="utf-8", newline="") as f:
+        return [r for r in csv.DictReader(f) if str(r.get("numer miejsca", "")).strip()]
+
+
+def test_kazde_miejsce_ma_krotki_opis():
+    bez_opisu = [r["numer miejsca"] for r in _miejsca_z_repo() if not str(r.get("Krótki opis", "")).strip()]
+    assert bez_opisu == [], f"Miejsca bez krótkiego opisu: {bez_opisu}"
+
+
+def test_krotkie_opisy_miesza_sie_w_limicie_i_sa_jednym_zdaniem():
+    za_dlugie, wieloliniowe = [], []
+    for r in _miejsca_z_repo():
+        opis = str(r.get("Krótki opis", "")).strip()
+        if len(opis) > MAX_ZNAKOW_KROTKIEGO_OPISU:
+            za_dlugie.append((r["numer miejsca"], len(opis)))
+        if "\n" in opis or not opis.endswith("."):
+            wieloliniowe.append(r["numer miejsca"])
+
+    assert za_dlugie == [], f"Opisy ponad {MAX_ZNAKOW_KROTKIEGO_OPISU} znaków: {za_dlugie}"
+    assert wieloliniowe == [], f"Opisy wieloliniowe lub bez kropki: {wieloliniowe}"

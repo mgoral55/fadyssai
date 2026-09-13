@@ -102,6 +102,30 @@ Weryfikacja w kontenerze:
 docker compose exec magda-crete claude -p --model claude-opus-5 'odpowiedz OK'
 ```
 
+## Krótkie opisy miejsc (operacja jednorazowa)
+
+Checkbox "Krótki opis odwiedzanych miejsc" w pasku bocznym pokazuje w sekcji
+"Plan na dzień" jedno zdanie o każdym odwiedzanym miejscu. Te zdania nie powstają
+przy renderze - są wygenerowane raz i leżą w kolumnie `Krótki opis` w `miejsca.csv`
+oraz w kolumnie `krotki_opis` tabeli `miejsca`.
+
+Generuje je `generuj_krotkie_opisy.py` (biblioteka standardowa + to samo `claude -p`,
+którego używa aplikacja). Uruchamia się go lokalnie, na pliku z repo:
+
+```
+python3 generuj_krotkie_opisy.py --sucho    # podgląd bez zapisu
+python3 generuj_krotkie_opisy.py            # zapis do miejsca.csv
+```
+
+Domyślnie liczy tylko miejsca bez opisu, więc przerwany przebieg wznawia się sam;
+`--nadpisz` przelicza wszystko od nowa. Cały zestaw (54 miejsca, paczki po 9,
+`claude-opus-5`) to ok. 2,5 minuty.
+
+Na serwerze nic nie trzeba uruchamiać: po `git pull` aplikacja przy starcie dolewa
+brakujące opisy z `miejsca.csv` do istniejącej bazy (`uzupelnij_krotkie_opisy_z_csv`),
+nie ruszając wierszy, które już coś mają. Baza jest już wypełniona, więc zwykły import
+CSV z `init_db` sam by tego nie zrobił.
+
 ## Uwagi eksploatacyjne
 
 - `HEALTHCHECK` z `Dockerfile` odpytuje `/_stcore/health` z wnętrza kontenera, więc

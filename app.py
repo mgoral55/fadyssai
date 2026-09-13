@@ -779,19 +779,17 @@ def init_db():
                 potencjal_meltdownu TEXT,
                 strategie_meltdown TEXT,
                 opis TEXT,
+                krotki_opis TEXT,
                 zadania_dla_dzieci TEXT,
                 odwiedzone INTEGER DEFAULT 0
             )
         ''')
-        # ZMIANA: Bezpieczna migracja kolumn nazwa_angielska oraz adres w istniejących bazach
-        try:
-            cursor.execute('ALTER TABLE miejsca ADD COLUMN nazwa_angielska TEXT')
-        except Exception:
-            pass
-        try:
-            cursor.execute('ALTER TABLE miejsca ADD COLUMN adres TEXT')
-        except Exception:
-            pass
+        # ZMIANA: Bezpieczna migracja kolumn nazwa_angielska, adres oraz krotki_opis w istniejących bazach
+        for kolumna in ['nazwa_angielska TEXT', 'adres TEXT', 'krotki_opis TEXT']:
+            try:
+                cursor.execute(f'ALTER TABLE miejsca ADD COLUMN {kolumna}')
+            except Exception:
+                pass
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS krok_wycieczki (
@@ -954,6 +952,7 @@ def init_db():
                         col_pot_m = find_col(['Potencjał meltdownu', 'potencjal_meltdownu', 'meltdown'], df_m)
                         col_strat_m = find_col(['Strategie na meltdown', 'strategie_meltdown', 'strategie meltdown'], df_m)
                         col_opis = find_col(['Opis', 'opis', 'description'], df_m)
+                        col_krotki = find_col(['Krótki opis', 'krotki opis', 'krotki_opis'], df_m)
                         col_zadania = find_col(['Zadania dla dzieci', 'zadania_dla_dzieci', 'zadania'], df_m)
 
                         for _, r in df_m.iterrows():
@@ -985,6 +984,7 @@ def init_db():
                             potencjal_m = str(r.get(col_pot_m, 'Średni')).strip() if col_pot_m and pd.notna(r.get(col_pot_m)) else 'Średni'
                             strat_m = str(r.get(col_strat_m, 'Brak')).strip() if col_strat_m and pd.notna(r.get(col_strat_m)) else 'Brak'
                             opis_m = str(r.get(col_opis, '')).strip() if col_opis and pd.notna(r.get(col_opis)) else ''
+                            krotki_m = str(r.get(col_krotki, '')).strip() if col_krotki and pd.notna(r.get(col_krotki)) else ''
                             zadania_d = str(r.get(col_zadania, '')).strip() if col_zadania and pd.notna(r.get(col_zadania)) else ''
 
                             # ZMIANA: Zapis adresu z pliku CSV
@@ -992,12 +992,12 @@ def init_db():
                                 INSERT OR REPLACE INTO miejsca (
                                     numer_miejsca, nazwa, nazwa_angielska, adres, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
                                     koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd, ochrona_slonce,
-                                    potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci, odwiedzone
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                                    potencjal_meltdownu, strategie_meltdown, opis, krotki_opis, zadania_dla_dzieci, odwiedzone
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                             ''', (
                                 nr_m, nazwa_m, nazwa_en_m, adres_m, typ_m, wsp_m, czas_d, orient_c,
                                 koszt_m, godz_otw, koniecz_akc, trud_adhd, ochr_slonce,
-                                potencjal_m, strat_m, opis_m, zadania_d
+                                potencjal_m, strat_m, opis_m, krotki_m, zadania_d
                             ))
 
                         conn.commit()
@@ -1134,7 +1134,48 @@ def init_db():
 
         conn.commit()
 
+
+# ZMIANA: Krótkie opisy miejsc powstają jednorazowo (generuj_krotkie_opisy.py) i mieszkają w miejsca.csv.
+# Istniejąca baza ma już wypełnioną tabelę miejsc, więc import CSV z init_db jej nie dotknie - ten backfill
+# dolewa brakujące opisy do kolumny krotki_opis, nie ruszając wierszy, które już coś mają.
+def uzupelnij_krotkie_opisy_z_csv(plik_csv='miejsca.csv'):
+    if not os.path.exists(plik_csv):
+        return 0
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM miejsca WHERE krotki_opis IS NULL OR TRIM(krotki_opis) = ''")
+            if cursor.fetchone()[0] == 0:
+                return 0
+
+            df_csv = pd.read_csv(plik_csv, encoding='utf-8')
+            df_csv.columns = [str(c).strip() for c in df_csv.columns]
+            kol_nr = next((c for c in df_csv.columns if c.lower() in ['numer miejsca', 'numer_miejsca']), None)
+            kol_krotki = next((c for c in df_csv.columns if c.lower() in ['krótki opis', 'krotki opis', 'krotki_opis']), None)
+            if not kol_nr or not kol_krotki:
+                return 0
+
+            uzupelnione = 0
+            for _, r in df_csv.iterrows():
+                nr = str(r.get(kol_nr, '')).strip()
+                krotki = str(r.get(kol_krotki, '')).strip() if pd.notna(r.get(kol_krotki)) else ''
+                if not nr or nr == 'nan' or not krotki or krotki == 'nan':
+                    continue
+                cursor.execute(
+                    "UPDATE miejsca SET krotki_opis = ?"
+                    " WHERE TRIM(numer_miejsca) = ? AND (krotki_opis IS NULL OR TRIM(krotki_opis) = '')",
+                    (krotki, nr)
+                )
+                uzupelnione += cursor.rowcount
+            conn.commit()
+            return uzupelnione
+    except Exception as e:
+        print(f"Błąd uzupełniania krótkich opisów z CSV: {e}")
+        return 0
+
+
 init_db()
+uzupelnij_krotkie_opisy_z_csv()
 
 # ZMIANA: Pobranie unikalnego identyfikatora urządzenia klienta z nagłówków żądania HTTP Streamlit
 import hashlib
@@ -4537,7 +4578,9 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         # ZMIANA: Jednozdaniowy opis miejsca w wierszu planu - tylko dla miejsc, które odwiedzamy
         krotki_opis_html = ""
         if pokaz_krotki_opis_miejsc and not is_cottage_step and m_dopasowane_krok is not None:
-            krotki_opis_txt = skroc_opis_miejsca(m_dopasowane_krok.get('opis'))
+            # Gotowy opis wygenerowany modelem; gdy go brak (np. miejsce dodane ręcznie) - pierwsze zdanie pełnego opisu.
+            krotki_opis_txt = skroc_opis_miejsca(m_dopasowane_krok.get('krotki_opis')) \
+                or skroc_opis_miejsca(m_dopasowane_krok.get('opis'))
             if krotki_opis_txt:
                 krotki_opis_html = f'<div class="timeline-item-place-desc">{krotki_opis_txt}</div>'
 
