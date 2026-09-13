@@ -30,11 +30,8 @@ BADANE_FUNKCJE = [
     "pobierz_grupy_zadan_dla_wycieczki",
     "pobierz_flage_profilu",
     "zapisz_flage_profilu",
-    "uzupelnij_krotkie_opisy_z_csv",
+    "zsynchronizuj_nazwy_miejsc_z_csv",
 ]
-
-# Limit narzucony modelowi w generuj_krotkie_opisy.py - opisy w miejsca.csv muszą się w nim mieścić.
-MAX_ZNAKOW_KROTKIEGO_OPISU = 140
 
 # Stałe modułowe czytane wprost ze źródła aplikacji, żeby testy nie dublowały ich wartości.
 STALE_Z_APP = ["FRAZY_KROKU_BAZOWEGO"]
@@ -45,14 +42,14 @@ CREATE TABLE ustawienia_profilu (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (uzytkownik, klucz));
 CREATE TABLE miejsca (
-    numer_miejsca TEXT PRIMARY KEY, nazwa TEXT, opis TEXT, krotki_opis TEXT);
+    numer_miejsca TEXT PRIMARY KEY, nazwa TEXT, opis TEXT);
 """
 
-# Baza miejsc: plaża przy domku (46) oraz zwykłe miejsca na trasie.
+# Baza miejsc: plaża przy domku (46) oraz zwykłe miejsca na trasie z opisem 1-2 słowa w nawiasie.
 MIEJSCA_TESTOWE = [
     {
         "numer_miejsca": "46",
-        "nazwa": "Plaża w Stavros",
+        "nazwa": "Plaża w Stavros (piaszczysta zatoka)",
         "typ": "plaża",
         "wspolrzedne": "35.59125, 24.09555",
         "opis": "Słynna zatoka o białym piasku u stóp góry Vardies. Znana z filmu Grek Zorba.",
@@ -60,7 +57,7 @@ MIEJSCA_TESTOWE = [
     },
     {
         "numer_miejsca": "1",
-        "nazwa": "Pałac w Knossos",
+        "nazwa": "Pałac w Knossos (ruiny pałacu)",
         "typ": "Must have",
         "wspolrzedne": "35.29788, 25.16313",
         "opis": "Najsłynniejsze stanowisko minojskie na Krecie. Labirynt Minotaura i freski.",
@@ -68,7 +65,7 @@ MIEJSCA_TESTOWE = [
     },
     {
         "numer_miejsca": "2",
-        "nazwa": "Cretaquarium",
+        "nazwa": "Cretaquarium (akwarium)",
         "typ": "Must have",
         "wspolrzedne": "35.33256, 25.28254",
         "opis": "Jedno z największych akwariów w Europie.",
@@ -169,7 +166,7 @@ def test_zadania_pomijaja_start_i_powrot_mimo_fk_na_plaze(app_ns, df_miejsca):
     grupy = app_ns["pobierz_grupy_zadan_dla_wycieczki"]("7", kroki, df_miejsca)
 
     tytuly = [t for t, _, _ in grupy]
-    assert tytuly == ["📍 1. Pałac w Knossos"]
+    assert tytuly == ["📍 1. Pałac w Knossos (ruiny pałacu)"]
 
 
 def test_zadania_z_plazy_przy_domku_gdy_jest_celem_wycieczki(app_ns, df_miejsca):
@@ -179,7 +176,7 @@ def test_zadania_z_plazy_przy_domku_gdy_jest_celem_wycieczki(app_ns, df_miejsca)
     )
     grupy = app_ns["pobierz_grupy_zadan_dla_wycieczki"]("8", kroki, df_miejsca)
 
-    assert [t for t, _, _ in grupy] == ["📍 46. Plaża w Stavros"]
+    assert [t for t, _, _ in grupy] == ["📍 46. Plaża w Stavros (piaszczysta zatoka)"]
     assert grupy[0][1] == ["Ułóż z patyków swoje imię.", "Połóż się na wodzie."]
 
 
@@ -188,58 +185,33 @@ def test_zadania_pomijaja_miejsca_bez_zadan(app_ns, df_miejsca):
     assert app_ns["pobierz_grupy_zadan_dla_wycieczki"]("9", kroki, df_miejsca) == []
 
 
-# --- KRÓTKI OPIS MIEJSCA ---
-
-def test_skroc_opis_zwraca_pierwsze_zdanie(app_ns):
-    opis = "Jedno z największych akwariów w Europie. Rekiny, płaszczki i meduzy w klimatyzowanych salach."
-    assert app_ns["skroc_opis_miejsca"](opis) == "Jedno z największych akwariów w Europie."
-
-
-def test_skroc_opis_normalizuje_biale_znaki(app_ns):
-    assert app_ns["skroc_opis_miejsca"]("Spokojna\n  zatoczka   blisko Stavros.") == "Spokojna zatoczka blisko Stavros."
-
-
-def test_skroc_opis_przycina_dlugie_zdanie_bez_kropki(app_ns):
-    opis = "Imponujące stanowisko archeologiczne na płaskowyżu nad Zatoką Souda z rzymskimi cysternami o niesamowitej akustyce oraz osmańskim fortem"
-    wynik = app_ns["skroc_opis_miejsca"](opis, max_znakow=60)
-
-    assert len(wynik) <= 61  # 60 znaków + wielokropek
-    assert wynik.endswith("…")
-    assert opis.startswith(wynik[:-1].rstrip())
-
-
-@pytest.mark.parametrize("pusty", [None, "", "   ", "None", "nan", "Brak", float("nan")])
-def test_skroc_opis_dla_pustych_wartosci(app_ns, pusty):
-    assert app_ns["skroc_opis_miejsca"](pusty) == ""
-
-
 # --- USTAWIENIA PER PROFIL ---
 
 def test_flaga_profilu_domyslna_gdy_brak_wpisu(app_ns):
-    assert app_ns["pobierz_flage_profilu"]("Magda", "krotki_opis_miejsc", False) is False
-    assert app_ns["pobierz_flage_profilu"]("Magda", "krotki_opis_miejsc", True) is True
+    assert app_ns["pobierz_flage_profilu"]("Magda", "test_klucz", False) is False
+    assert app_ns["pobierz_flage_profilu"]("Magda", "test_klucz", True) is True
 
 
 def test_flaga_profilu_zapisuje_sie_per_uzytkownik(app_ns):
-    app_ns["zapisz_flage_profilu"]("Magda", "krotki_opis_miejsc", True)
-    app_ns["zapisz_flage_profilu"]("Jerzy", "krotki_opis_miejsc", False)
+    app_ns["zapisz_flage_profilu"]("Magda", "test_klucz", True)
+    app_ns["zapisz_flage_profilu"]("Jerzy", "test_klucz", False)
 
-    assert app_ns["pobierz_flage_profilu"]("Magda", "krotki_opis_miejsc", False) is True
-    assert app_ns["pobierz_flage_profilu"]("Jerzy", "krotki_opis_miejsc", True) is False
+    assert app_ns["pobierz_flage_profilu"]("Magda", "test_klucz", False) is True
+    assert app_ns["pobierz_flage_profilu"]("Jerzy", "test_klucz", True) is False
 
 
 def test_flaga_profilu_nadpisuje_poprzednia_wartosc(app_ns):
-    app_ns["zapisz_flage_profilu"]("Magda", "krotki_opis_miejsc", True)
-    app_ns["zapisz_flage_profilu"]("Magda", "krotki_opis_miejsc", False)
+    app_ns["zapisz_flage_profilu"]("Magda", "test_klucz", True)
+    app_ns["zapisz_flage_profilu"]("Magda", "test_klucz", False)
 
-    assert app_ns["pobierz_flage_profilu"]("Magda", "krotki_opis_miejsc", True) is False
+    assert app_ns["pobierz_flage_profilu"]("Magda", "test_klucz", True) is False
 
 
-# --- BACKFILL KRÓTKICH OPISÓW Z CSV ---
+# --- SYNCHRONIZACJA NAZW MIEJSC Z CSV ---
 
 def _csv_miejsc(sciezka, wiersze):
     with io.open(sciezka, "w", encoding="utf-8", newline="") as f:
-        pisarz = csv.DictWriter(f, fieldnames=["numer miejsca", "nazwa", "Opis", "Krótki opis"])
+        pisarz = csv.DictWriter(f, fieldnames=["numer miejsca", "nazwa", "Opis"])
         pisarz.writeheader()
         for w in wiersze:
             pisarz.writerow(w)
@@ -249,56 +221,49 @@ def _csv_miejsc(sciezka, wiersze):
 def _wstaw_miejsca(app_ns, wiersze):
     conn = sqlite3.connect(app_ns["_sciezka_db"])
     conn.executemany(
-        "INSERT INTO miejsca (numer_miejsca, nazwa, opis, krotki_opis) VALUES (?, ?, ?, ?)", wiersze
+        "INSERT INTO miejsca (numer_miejsca, nazwa, opis) VALUES (?, ?, ?)", wiersze
     )
     conn.commit()
     conn.close()
 
 
-def _krotkie_opisy_w_bazie(app_ns):
+def _nazwy_w_bazie(app_ns):
     conn = sqlite3.connect(app_ns["_sciezka_db"])
-    wynik = dict(conn.execute("SELECT numer_miejsca, krotki_opis FROM miejsca"))
+    wynik = dict(conn.execute("SELECT numer_miejsca, nazwa FROM miejsca"))
     conn.close()
     return wynik
 
 
-def test_backfill_uzupelnia_puste_opisy(app_ns, tmp_path):
-    _wstaw_miejsca(app_ns, [("1", "Knossos", "Pałac minojski.", None), ("2", "Cretaquarium", "Akwarium.", "")])
+def test_synchronizacja_aktualizuje_nazwy_w_bazie(app_ns, tmp_path):
+    _wstaw_miejsca(app_ns, [("1", "Knossos", "Pałac minojski."), ("2", "Cretaquarium", "Akwarium.")])
     plik = _csv_miejsc(tmp_path / "miejsca.csv", [
-        {"numer miejsca": "1", "nazwa": "Knossos", "Opis": "Pałac minojski.", "Krótki opis": "Ruiny pałacu Minosa."},
-        {"numer miejsca": "2", "nazwa": "Cretaquarium", "Opis": "Akwarium.", "Krótki opis": "Klimatyzowane akwarium."},
+        {"numer miejsca": "1", "nazwa": "Pałac w Knossos (ruiny pałacu)", "Opis": "Pałac minojski."},
+        {"numer miejsca": "2", "nazwa": "Cretaquarium (akwarium)", "Opis": "Akwarium."},
     ])
 
-    assert app_ns["uzupelnij_krotkie_opisy_z_csv"](plik) == 2
-    assert _krotkie_opisy_w_bazie(app_ns) == {"1": "Ruiny pałacu Minosa.", "2": "Klimatyzowane akwarium."}
+    assert app_ns["zsynchronizuj_nazwy_miejsc_z_csv"](plik) == 2
+    assert _nazwy_w_bazie(app_ns) == {
+        "1": "Pałac w Knossos (ruiny pałacu)",
+        "2": "Cretaquarium (akwarium)",
+    }
 
 
-def test_backfill_nie_nadpisuje_istniejacych_opisow(app_ns, tmp_path):
-    _wstaw_miejsca(app_ns, [("1", "Knossos", "Pałac minojski.", "Opis ustawiony ręcznie.")])
+def test_synchronizacja_nie_rusza_zgodnych_nazw(app_ns, tmp_path):
+    _wstaw_miejsca(app_ns, [("1", "Pałac w Knossos (ruiny pałacu)", "Pałac minojski.")])
     plik = _csv_miejsc(tmp_path / "miejsca.csv", [
-        {"numer miejsca": "1", "nazwa": "Knossos", "Opis": "Pałac minojski.", "Krótki opis": "Wersja z CSV."},
+        {"numer miejsca": "1", "nazwa": "Pałac w Knossos (ruiny pałacu)", "Opis": "Pałac minojski."},
     ])
 
-    assert app_ns["uzupelnij_krotkie_opisy_z_csv"](plik) == 0
-    assert _krotkie_opisy_w_bazie(app_ns) == {"1": "Opis ustawiony ręcznie."}
+    assert app_ns["zsynchronizuj_nazwy_miejsc_z_csv"](plik) == 0
+    assert _nazwy_w_bazie(app_ns) == {"1": "Pałac w Knossos (ruiny pałacu)"}
 
 
-def test_backfill_jest_idempotentny(app_ns, tmp_path):
-    _wstaw_miejsca(app_ns, [("1", "Knossos", "Pałac minojski.", None)])
-    plik = _csv_miejsc(tmp_path / "miejsca.csv", [
-        {"numer miejsca": "1", "nazwa": "Knossos", "Opis": "Pałac minojski.", "Krótki opis": "Ruiny pałacu Minosa."},
-    ])
-
-    assert app_ns["uzupelnij_krotkie_opisy_z_csv"](plik) == 1
-    assert app_ns["uzupelnij_krotkie_opisy_z_csv"](plik) == 0
+def test_synchronizacja_bez_pliku_csv_nic_nie_robi(app_ns, tmp_path):
+    _wstaw_miejsca(app_ns, [("1", "Knossos", "Pałac minojski.")])
+    assert app_ns["zsynchronizuj_nazwy_miejsc_z_csv"](str(tmp_path / "nie_ma.csv")) == 0
 
 
-def test_backfill_bez_pliku_csv_nic_nie_robi(app_ns, tmp_path):
-    _wstaw_miejsca(app_ns, [("1", "Knossos", "Pałac minojski.", None)])
-    assert app_ns["uzupelnij_krotkie_opisy_z_csv"](str(tmp_path / "nie_ma.csv")) == 0
-
-
-# --- WYGENEROWANE OPISY W miejsca.csv ---
+# --- OPISY MIEJSC W NAWIASIE PRZY NAZWIE W miejsca.csv ---
 
 def _miejsca_z_repo():
     sciezka = os.path.join(os.path.dirname(SCIEZKA_APP), "miejsca.csv")
@@ -306,19 +271,37 @@ def _miejsca_z_repo():
         return [r for r in csv.DictReader(f) if str(r.get("numer miejsca", "")).strip()]
 
 
-def test_kazde_miejsce_ma_krotki_opis():
-    bez_opisu = [r["numer miejsca"] for r in _miejsca_z_repo() if not str(r.get("Krótki opis", "")).strip()]
-    assert bez_opisu == [], f"Miejsca bez krótkiego opisu: {bez_opisu}"
+def test_miejsca_csv_nie_ma_oddzielnego_pola_krotki_opis():
+    sciezka = os.path.join(os.path.dirname(SCIEZKA_APP), "miejsca.csv")
+    with io.open(sciezka, encoding="utf-8", newline="") as f:
+        naglowki = [c.lower() for c in csv.DictReader(f).fieldnames]
+    assert "krótki opis" not in naglowki
+    assert "krotki_opis" not in naglowki
 
 
-def test_krotkie_opisy_miesza_sie_w_limicie_i_sa_jednym_zdaniem():
-    za_dlugie, wieloliniowe = [], []
+def test_kazde_miejsce_ma_opis_w_nawiasie_na_koncu_nazwy():
+    bez_nawiasu = []
     for r in _miejsca_z_repo():
-        opis = str(r.get("Krótki opis", "")).strip()
-        if len(opis) > MAX_ZNAKOW_KROTKIEGO_OPISU:
-            za_dlugie.append((r["numer miejsca"], len(opis)))
-        if "\n" in opis or not opis.endswith("."):
-            wieloliniowe.append(r["numer miejsca"])
+        nazwa = str(r.get("nazwa", "")).strip()
+        if not re.search(r'\s*\([^)]+\)$', nazwa):
+            bez_nawiasu.append((r["numer miejsca"], nazwa))
+    assert bez_nawiasu == [], f"Miejsca bez opisu w nawiasie: {bez_nawiasu}"
 
-    assert za_dlugie == [], f"Opisy ponad {MAX_ZNAKOW_KROTKIEGO_OPISU} znaków: {za_dlugie}"
-    assert wieloliniowe == [], f"Opisy wieloliniowe lub bez kropki: {wieloliniowe}"
+
+def test_opis_w_nawiasie_ma_maksymalnie_dwa_slowa():
+    za_dlugie = []
+    for r in _miejsca_z_repo():
+        nazwa = str(r.get("nazwa", "")).strip()
+        m = re.search(r'\(([^)]+)\)$', nazwa)
+        if m:
+            slowa = m.group(1).split()
+            if len(slowa) < 1 or len(slowa) > 2:
+                za_dlugie.append((r["numer miejsca"], nazwa, len(slowa)))
+    assert za_dlugie == [], f"Opisy o innej liczbie słów niż 1-2: {za_dlugie}"
+
+
+def test_wyczysc_nazwe_miejsca_usuwa_opis_w_nawiasie(app_ns):
+    czysta = app_ns["_wyczysc_nazwe_miejsca"]("Pałac Minojski w Knossos (ruiny pałacu)")
+    assert czysta == "pałac minojski w knossos"
+    czysta_akw = app_ns["_wyczysc_nazwe_miejsca"]("Cretaquarium (akwarium)")
+    assert czysta_akw == "cretaquarium"

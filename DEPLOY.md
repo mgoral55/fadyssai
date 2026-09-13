@@ -102,29 +102,14 @@ Weryfikacja w kontenerze:
 docker compose exec magda-crete claude -p --model claude-opus-5 'odpowiedz OK'
 ```
 
-## Krótkie opisy miejsc (operacja jednorazowa)
+## Krótkie opisy miejsc w nazwie (1-2 słowa w nawiasie)
 
-Checkbox "Krótki opis odwiedzanych miejsc" w pasku bocznym pokazuje w sekcji
-"Plan na dzień" jedno zdanie o każdym odwiedzanym miejscu. Te zdania nie powstają
-przy renderze - są wygenerowane raz i leżą w kolumnie `Krótki opis` w `miejsca.csv`
-oraz w kolumnie `krotki_opis` tabeli `miejsca`.
+Zamiast trzymać opisy jako oddzielne pole (kolumna w bazie/CSV, osobny blok HTML, checkbox w pasku bocznym),
+krótki deskryptor (1-2 słowa) znajduje się w nawiasie na końcu nazwy każdego odwiedzanego miejsca w `miejsca.csv`
+oraz `wycieczki.csv` (np. `Pałac Minojski w Knossos (ruiny pałacu)`, `Cretaquarium (akwarium)`).
 
-Generuje je `generuj_krotkie_opisy.py` (biblioteka standardowa + to samo `claude -p`,
-którego używa aplikacja). Uruchamia się go lokalnie, na pliku z repo:
-
-```
-python3 generuj_krotkie_opisy.py --sucho    # podgląd bez zapisu
-python3 generuj_krotkie_opisy.py            # zapis do miejsca.csv
-```
-
-Domyślnie liczy tylko miejsca bez opisu, więc przerwany przebieg wznawia się sam;
-`--nadpisz` przelicza wszystko od nowa. Cały zestaw (54 miejsca, paczki po 9,
-`claude-opus-5`) to ok. 2,5 minuty.
-
-Na serwerze nic nie trzeba uruchamiać: po `git pull` aplikacja przy starcie dolewa
-brakujące opisy z `miejsca.csv` do istniejącej bazy (`uzupelnij_krotkie_opisy_z_csv`),
-nie ruszając wierszy, które już coś mają. Baza jest już wypełniona, więc zwykły import
-CSV z `init_db` sam by tego nie zrobił.
+Aplikacja przy starcie synchronizuje nazwy do bazy (`zsynchronizuj_nazwy_miejsc_z_csv`), a sekcja „Plan na dzień”
+wyświetla je bezpośrednio w tytule wiersza. Funkcje nawigacji i dopasowywania kroków automatycznie oczyszczają nawiasy.
 
 ## Uwagi eksploatacyjne
 

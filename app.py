@@ -779,13 +779,12 @@ def init_db():
                 potencjal_meltdownu TEXT,
                 strategie_meltdown TEXT,
                 opis TEXT,
-                krotki_opis TEXT,
                 zadania_dla_dzieci TEXT,
                 odwiedzone INTEGER DEFAULT 0
             )
         ''')
-        # ZMIANA: Bezpieczna migracja kolumn nazwa_angielska, adres oraz krotki_opis w istniejących bazach
-        for kolumna in ['nazwa_angielska TEXT', 'adres TEXT', 'krotki_opis TEXT']:
+        # ZMIANA: Bezpieczna migracja kolumn nazwa_angielska oraz adres w istniejących bazach
+        for kolumna in ['nazwa_angielska TEXT', 'adres TEXT']:
             try:
                 cursor.execute(f'ALTER TABLE miejsca ADD COLUMN {kolumna}')
             except Exception:
@@ -952,7 +951,6 @@ def init_db():
                         col_pot_m = find_col(['Potencjał meltdownu', 'potencjal_meltdownu', 'meltdown'], df_m)
                         col_strat_m = find_col(['Strategie na meltdown', 'strategie_meltdown', 'strategie meltdown'], df_m)
                         col_opis = find_col(['Opis', 'opis', 'description'], df_m)
-                        col_krotki = find_col(['Krótki opis', 'krotki opis', 'krotki_opis'], df_m)
                         col_zadania = find_col(['Zadania dla dzieci', 'zadania_dla_dzieci', 'zadania'], df_m)
 
                         for _, r in df_m.iterrows():
@@ -984,7 +982,6 @@ def init_db():
                             potencjal_m = str(r.get(col_pot_m, 'Średni')).strip() if col_pot_m and pd.notna(r.get(col_pot_m)) else 'Średni'
                             strat_m = str(r.get(col_strat_m, 'Brak')).strip() if col_strat_m and pd.notna(r.get(col_strat_m)) else 'Brak'
                             opis_m = str(r.get(col_opis, '')).strip() if col_opis and pd.notna(r.get(col_opis)) else ''
-                            krotki_m = str(r.get(col_krotki, '')).strip() if col_krotki and pd.notna(r.get(col_krotki)) else ''
                             zadania_d = str(r.get(col_zadania, '')).strip() if col_zadania and pd.notna(r.get(col_zadania)) else ''
 
                             # ZMIANA: Zapis adresu z pliku CSV
@@ -992,12 +989,12 @@ def init_db():
                                 INSERT OR REPLACE INTO miejsca (
                                     numer_miejsca, nazwa, nazwa_angielska, adres, typ, wspolrzedne, czas_dojazdu, orientacyjny_czas,
                                     koszt, godziny_otwarcia, konieczna_akcja, trudnosc_adhd, ochrona_slonce,
-                                    potencjal_meltdownu, strategie_meltdown, opis, krotki_opis, zadania_dla_dzieci, odwiedzone
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                                    potencjal_meltdownu, strategie_meltdown, opis, zadania_dla_dzieci, odwiedzone
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                             ''', (
                                 nr_m, nazwa_m, nazwa_en_m, adres_m, typ_m, wsp_m, czas_d, orient_c,
                                 koszt_m, godz_otw, koniecz_akc, trud_adhd, ochr_slonce,
-                                potencjal_m, strat_m, opis_m, krotki_m, zadania_d
+                                potencjal_m, strat_m, opis_m, zadania_d
                             ))
 
                         conn.commit()
@@ -1135,47 +1132,42 @@ def init_db():
         conn.commit()
 
 
-# ZMIANA: Krótkie opisy miejsc powstają jednorazowo (generuj_krotkie_opisy.py) i mieszkają w miejsca.csv.
-# Istniejąca baza ma już wypełnioną tabelę miejsc, więc import CSV z init_db jej nie dotknie - ten backfill
-# dolewa brakujące opisy do kolumny krotki_opis, nie ruszając wierszy, które już coś mają.
-def uzupelnij_krotkie_opisy_z_csv(plik_csv='miejsca.csv'):
+# ZMIANA: Zamiast trzymać krótki opis jako oddzielne pole, trafia on w formie 1-2 słów
+# w nawiasie na końcu nazwy miejsca w miejsca.csv. Ten synchronizator aktualizuje nazwy
+# w istniejącej bazie SQLite z pliku CSV.
+def zsynchronizuj_nazwy_miejsc_z_csv(plik_csv='miejsca.csv'):
     if not os.path.exists(plik_csv):
         return 0
     try:
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM miejsca WHERE krotki_opis IS NULL OR TRIM(krotki_opis) = ''")
-            if cursor.fetchone()[0] == 0:
-                return 0
-
             df_csv = pd.read_csv(plik_csv, encoding='utf-8')
             df_csv.columns = [str(c).strip() for c in df_csv.columns]
             kol_nr = next((c for c in df_csv.columns if c.lower() in ['numer miejsca', 'numer_miejsca']), None)
-            kol_krotki = next((c for c in df_csv.columns if c.lower() in ['krótki opis', 'krotki opis', 'krotki_opis']), None)
-            if not kol_nr or not kol_krotki:
+            kol_nazwa = next((c for c in df_csv.columns if c.lower() in ['nazwa', 'nazwa miejsca', 'name']), None)
+            if not kol_nr or not kol_nazwa:
                 return 0
 
-            uzupelnione = 0
+            zaktualizowane = 0
             for _, r in df_csv.iterrows():
                 nr = str(r.get(kol_nr, '')).strip()
-                krotki = str(r.get(kol_krotki, '')).strip() if pd.notna(r.get(kol_krotki)) else ''
-                if not nr or nr == 'nan' or not krotki or krotki == 'nan':
+                nazwa = str(r.get(kol_nazwa, '')).strip() if pd.notna(r.get(kol_nazwa)) else ''
+                if not nr or nr == 'nan' or not nazwa or nazwa == 'nan':
                     continue
                 cursor.execute(
-                    "UPDATE miejsca SET krotki_opis = ?"
-                    " WHERE TRIM(numer_miejsca) = ? AND (krotki_opis IS NULL OR TRIM(krotki_opis) = '')",
-                    (krotki, nr)
+                    "UPDATE miejsca SET nazwa = ? WHERE TRIM(numer_miejsca) = ? AND nazwa != ?",
+                    (nazwa, nr, nazwa)
                 )
-                uzupelnione += cursor.rowcount
+                zaktualizowane += cursor.rowcount
             conn.commit()
-            return uzupelnione
+            return zaktualizowane
     except Exception as e:
-        print(f"Błąd uzupełniania krótkich opisów z CSV: {e}")
+        print(f"Błąd synchronizacji nazw miejsc z CSV: {e}")
         return 0
 
 
 init_db()
-uzupelnij_krotkie_opisy_z_csv()
+zsynchronizuj_nazwy_miejsc_z_csv()
 
 # ZMIANA: Pobranie unikalnego identyfikatora urządzenia klienta z nagłówków żądania HTTP Streamlit
 import hashlib
@@ -1217,10 +1209,6 @@ def zapisz_uzytkownika_urzadzenia(device_id, uzytkownik):
         pass
 
 # --- USTAWIENIA INTERFEJSU PER PROFIL ---
-KLUCZ_USTAWIENIA_KROTKI_OPIS = "krotki_opis_miejsc"
-KLUCZ_SESJI_KROTKI_OPIS = "pokaz_krotki_opis_miejsc"
-
-
 def pobierz_flage_profilu(uzytkownik, klucz, domyslna=False):
     try:
         with get_db() as conn:
@@ -1579,7 +1567,6 @@ div.st-key-btn_date_picker { margin-bottom: 10px !important; }
 .timeline-content-col { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: center; z-index: 2; min-width: 0; }
 .timeline-item-title { font-size: 11.5pt; font-weight: 900; color: #2B2118; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .timeline-item-desc { font-size: 9pt; color: #4A3E36; }
-.timeline-item-place-desc { font-size: 8.5pt; color: #6E6259; font-style: italic; line-height: 1.3; margin-top: 3px; white-space: normal; }
 
 .timeline-nav-btn { position: relative; flex-shrink: 0; width: auto; min-width: 44px; height: 42px; background-color: transparent !important; border: none !important; border-radius: 12px; text-align: center; text-decoration: none !important; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; margin-left: 6px; padding: 0 2px; z-index: 2; }
 .timeline-nav-btn, .timeline-nav-btn:visited, .timeline-nav-btn:hover { text-decoration: none !important; }
@@ -1963,29 +1950,10 @@ with st.sidebar:
     )
 
     # ZMIANA: Koniec z kluczem API w aplikacji - uwierzytelnia lokalne Claude Code CLI
-    if not sciezka_claude_cli():
+    if sciezka_claude_cli():
+        st.caption("🤖 Doradca AI: Claude Code CLI (logowanie po stronie CLI).")
+    else:
         st.warning("⚠️ Brak Claude Code CLI w PATH — doradca AI jest niedostępny.")
-
-    # ZMIANA: Krótkie opisy odwiedzanych miejsc w planie dnia - ustawienie trzymane per profil
-    klucz_cb_krotki_opis = f"cb_krotki_opis_miejsc_{aktualny_uzytkownik}"
-    if klucz_cb_krotki_opis not in st.session_state:
-        st.session_state[klucz_cb_krotki_opis] = pobierz_flage_profilu(
-            aktualny_uzytkownik, KLUCZ_USTAWIENIA_KROTKI_OPIS, False
-        )
-
-    def _on_krotki_opis_change():
-        zapisz_flage_profilu(
-            aktualny_uzytkownik,
-            KLUCZ_USTAWIENIA_KROTKI_OPIS,
-            st.session_state.get(klucz_cb_krotki_opis, False)
-        )
-
-    st.session_state[KLUCZ_SESJI_KROTKI_OPIS] = st.checkbox(
-        "Krótki opis odwiedzanych miejsc",
-        key=klucz_cb_krotki_opis,
-        on_change=_on_krotki_opis_change,
-        help="Dodaje jednozdaniowy opis każdego odwiedzanego miejsca w sekcji „Plan na dzień”."
-    )
 
     # ZMIANA: Rozszerzona szybka nawigacja (Domek, Sklep przy domku, Market, Rynek w Chanii)
     st.markdown("<div style='margin-top: 14px; border-top: 1.5px solid #D6D2C4; padding-top: 10px;'></div>", unsafe_allow_html=True)
@@ -4520,9 +4488,6 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
     st.markdown('<div class="section-unified-header">🗺️ Plan na dzień</div>', unsafe_allow_html=True)
 
-    # ZMIANA: Krótkie opisy miejsc sterowane checkboxem z paska bocznego (ustawienie per profil)
-    pokaz_krotki_opis_miejsc = bool(st.session_state.get(KLUCZ_SESJI_KROTKI_OPIS, False))
-
     total_steps = len(kroki_df)
     timeline_full_html = ['<div class="timeline-master-container">', '<div class="timeline-master-continuous-line"></div>']
 
@@ -4575,14 +4540,14 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             if m_dopasowane_krok is not None:
                 matched_place_id = str(m_dopasowane_krok['numer_miejsca'])
 
-        # ZMIANA: Jednozdaniowy opis miejsca w wierszu planu - tylko dla miejsc, które odwiedzamy
-        krotki_opis_html = ""
-        if pokaz_krotki_opis_miejsc and not is_cottage_step and m_dopasowane_krok is not None:
-            # Gotowy opis wygenerowany modelem; gdy go brak (np. miejsce dodane ręcznie) - pierwsze zdanie pełnego opisu.
-            krotki_opis_txt = skroc_opis_miejsca(m_dopasowane_krok.get('krotki_opis')) \
-                or skroc_opis_miejsca(m_dopasowane_krok.get('opis'))
-            if krotki_opis_txt:
-                krotki_opis_html = f'<div class="timeline-item-place-desc">{krotki_opis_txt}</div>'
+        # ZMIANA: Tytuł kroku dla odwiedzanych miejsc z krótkim opisem (1-2 słowa) w nawiasie na końcu
+        tytul_kroku_display = nazwa
+        if not is_cottage_step:
+            if "(" not in tytul_kroku_display and m_dopasowane_krok is not None:
+                m_nazwa = str(m_dopasowane_krok.get('nazwa', '')).strip()
+                match_nawias = re.search(r'\s*(\([^)]+\))\s*$', m_nazwa)
+                if match_nawias:
+                    tytul_kroku_display = f"{tytul_kroku_display} {match_nawias.group(1).strip()}"
 
         lat_parsed, lon_parsed = sparsuj_wspolrzedne(wspolrzedne)
 
@@ -4705,7 +4670,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
             tytul_kroku_display = nazwa
             if "rynek" in nazwa_lower or "targ" in nazwa_lower:
-                tytul_kroku_display = "Rynek w Chanii"
+                tytul_kroku_display = "Rynek w Chanii (targ lokalny)"
                 rynek_info_krok, _ = pobierz_dane_rynku_dla_daty(planowana_data_val)
                 dzien_nazwa = rynek_info_krok["dzien_pl"] if rynek_info_krok else dzien_tyg_val.capitalize()
                 opis_kroku_cust = f"<span style='color:#8C5338; font-weight:700;'>{dzien_nazwa} (max 14:00)</span>"
@@ -4721,7 +4686,6 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 f'<div class="timeline-content-col">'
                 f'<div class="timeline-item-title">{tytul_kroku_display}</div>'
                 f'<div class="timeline-item-desc">{opis_kroku_cust}</div>'
-                f'{krotki_opis_html}'
                 f'</div>'
                 f'{nav_btn_html}'
                 f'</div>'
@@ -4791,9 +4755,8 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 f'<div class="timeline-time"><span class="timeline-time-start">{godzina_start}</span>{time_end_html}</div>'
                 f'<div class="timeline-center-col"><div class="timeline-icon-badge-static {badge_class}">{badge_symbol}</div></div>'
                 f'<div class="timeline-content-col">'
-                f'<div class="timeline-item-title">{tytul_kroku_display if "tytul_kroku_display" in locals() else nazwa}</div>'
+                f'<div class="timeline-item-title">{tytul_kroku_display}</div>'
                 f'<div class="timeline-item-desc">{posilki_tekst}</div>'
-                f'{krotki_opis_html}'
                 f'</div>'
                 f'{nav_btn_html}'
                 f'</div>'
