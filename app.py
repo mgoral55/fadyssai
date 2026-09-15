@@ -1306,7 +1306,9 @@ def ustaw_status_odwiedzenia_dla_wycieczki(wycieczka_id, nowy_status):
 
 # --- 1. DESIGN SYSTEM I KONFIGURACJA STRONY ---
 # ZMIANA: Czysty page_title="CretAi" bez myślników, aby instalator PWA Androida nie brał Streamlit jako fallbacku
-st.set_page_config(page_title="CretAi", layout="centered", page_icon="🧭")
+# ZMIANA: Favicon to znak firmowy (kri-kri z logo.png) zamiast emoji kompasu. Wariant 64 px,
+# bo pasek kart i tak nie pokaże więcej, a plik idzie w każdym wczytaniu strony.
+st.set_page_config(page_title="CretAi", layout="centered", page_icon="static/icon-64.png")
 
 # ZMIANA: Podmiana manifestu PWA na Data URI Base64 w window.parent.document z pełnym czyszczeniem linków Streamlit
 pwa_manifest_script = """
@@ -1344,18 +1346,28 @@ pwa_manifest_script = """
             "background_color": "#B4C29D",
             "theme_color": "#2E251E",
             "description": "Planer i przewodnik AuDHD po Krecie",
+            // ZMIANA: Ikony z własnego katalogu static zamiast zewnętrznego CDN flaticon,
+            // który dawał kompas w rozmiarze 512 podpisany jako 192 i wymagał obcej domeny.
+            // Odznaka znaku firmowego ma treść przy samej krawędzi, więc "maskable" dostaje
+            // osobny plik z zapasem tła — przy wspólnym wpisie Android obciąłby napis.
             "icons": [
                 {
-                    "src": "https://cdn-icons-png.flaticon.com/512/854/854878.png",
+                    "src": win.location.origin + "/app/static/icon-192.png",
                     "sizes": "192x192",
                     "type": "image/png",
-                    "purpose": "any maskable"
+                    "purpose": "any"
                 },
                 {
-                    "src": "https://cdn-icons-png.flaticon.com/512/854/854878.png",
+                    "src": win.location.origin + "/app/static/icon-512.png",
                     "sizes": "512x512",
                     "type": "image/png",
-                    "purpose": "any maskable"
+                    "purpose": "any"
+                },
+                {
+                    "src": win.location.origin + "/app/static/icon-maskable-512.png",
+                    "sizes": "512x512",
+                    "type": "image/png",
+                    "purpose": "maskable"
                 }
             ]
         };
@@ -1387,6 +1399,18 @@ pwa_manifest_script = """
             }
             m.content = metaInfo.content;
         });
+
+        // ZMIANA: iOS nie czyta ikon z manifestu — bierze apple-touch-icon, a bez niego
+        // na ekranie głównym ląduje zrzut strony. Plik jest bez przezroczystości, bo
+        // Safari podkłada pod nią czerń.
+        let appleIcon = doc.querySelector('link[rel="apple-touch-icon"]');
+        if (!appleIcon) {
+            appleIcon = doc.createElement('link');
+            appleIcon.rel = 'apple-touch-icon';
+            doc.head.appendChild(appleIcon);
+        }
+        appleIcon.setAttribute('sizes', '180x180');
+        appleIcon.href = win.location.origin + "/app/static/icon-apple-180.png";
 
         // 6. Bootstrap service workera obsługującego tryb offline.
         // Kod musi wykonać się w realmie okna nadrzędnego, a nie tutaj: iframe komponentu

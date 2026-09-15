@@ -122,6 +122,11 @@ Elementy:
 - `static/sw.js` — service worker, zasięg `/app/static/`.
 - `static/offline.html` — punkt wejścia offline, `start_url` manifestu PWA.
 - `static/ping.txt` — sonda łączności (worker nigdy jej nie cache'uje).
+- `static/icon-*.png` — favicon i ikony PWA wygenerowane z `logo.png` (kri-kri).
+  Zastąpiły zewnętrzny CDN flaticon, więc instalacja PWA nie zależy od obcej domeny.
+  `icon-maskable-512.png` ma zapas tła, bo Android obcina maskable do koła o średnicy 80%
+  i przy wspólnym wpisie z `any` ucinałby napis. `icon-apple-180.png` jest bez
+  przezroczystości — iOS ignoruje ikony z manifestu i podkłada czerń pod kanał alfa.
 - `enableStaticServing = true` w `.streamlit/config.toml` — bez tego `/app/static/`
   zwraca 404. Katalog `static/` wchodzi do obrazu przez `COPY . .`.
 
