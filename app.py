@@ -2239,6 +2239,18 @@ def pobierz_logo_b64(sciezka_pliku="logo.png"):
     return None
 
 @st.cache_data
+def pobierz_ikone_ryby_b64(sciezka_pliku="static/ryba_ikona.svg"):
+    """Znak sekcji Ryby jako data URI - kafelek nawigacji rysuje go w tle ::before,
+    a tam nie da się wstawić <img>. Pozostałe kafelki mają w tym miejscu emoji."""
+    if os.path.exists(sciezka_pliku):
+        try:
+            with open(sciezka_pliku, "rb") as f:
+                return f"data:image/svg+xml;base64,{base64.b64encode(f.read()).decode()}"
+        except Exception:
+            return None
+    return None
+
+@st.cache_data
 def pobierz_animacje_kozy(sciezka_pliku="static/koza_loader.svg"):
     """Wczytuje animowany znak firmowy (tańcząca koza ze znaku CretAi) używany jako loader AI."""
     if os.path.exists(sciezka_pliku):
@@ -6136,6 +6148,18 @@ def zainstaluj_mostek_linkow_nawigacji():
 
 
 zainstaluj_mostek_linkow_nawigacji()
+
+# ZMIANA: Kafelek "Ryby" dostaje własny znak zamiast emoji - rybkę w koralowych okularach tej samej
+# marki co koza z loadera AI. Emoji rybki nie ma okularów, a ikona idzie tłem ::before, bo podpis kafelka
+# to akapit Streamlita, w który nie da się wstawić <img>.
+ikona_ryby = pobierz_ikone_ryby_b64()
+if ikona_ryby:
+    st.markdown(f"""<style>
+    div.st-key-nav_btn_ryby button p::before {{ content: ""; width: 20px; height: 20px; margin: 0 auto;
+        background-image: url("{ikona_ryby}"); background-size: contain; background-repeat: no-repeat; background-position: center bottom; }}
+    </style>""", unsafe_allow_html=True)
+else:
+    st.markdown("""<style>div.st-key-nav_btn_ryby button p::before { content: "🐠"; }</style>""", unsafe_allow_html=True)
 
 with st.container(key="top_nav"):
     kolumny_nawigacji = st.columns(len(ZAKLADKI_NAWIGACJI), gap="small")

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 32" role="img" aria-label="Rybka w okularach - sekcja Ryby">
+<title>Rybka w okularach CretAi</title>
+<!-- Znak sekcji "Ryby": ta sama paleta i te same koralowe okulary co koza ze znaku CretAi
+     (static/koza_loader.svg). Rysunek czyta się przy 20 px w kafelku nawigacji, więc składa
+     się z pięciu płaskich brył: ogona, płetw, tułowia, jasnego brzucha i oprawki okularów. -->
+<defs>
+  <clipPath id="ryba-tulow-clip">
+    <path d="M10.8 16 C10.8 10.4 15.8 7.2 22.4 7.2 C28.6 7.2 34 10.6 36.8 15.2 C37.2 15.7 37.2 16.3 36.8 16.8 C34 21.4 28.6 24.8 22.4 24.8 C15.8 24.8 10.8 21.6 10.8 16 Z"/>
+  </clipPath>
+</defs>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <!-- ogon -->
+  <path d="M1.8 16 L11.8 8.4 L11.8 23.6 Z" fill="#1FBFA6"/>
+  <!-- płetwa grzbietowa i brzuszna -->
+  <path d="M17.5 8.8 C19.6 2.6 26.2 2.4 29 5.8 Z" fill="#1FBFA6"/>
+  <path d="M18.6 23.2 C20.6 28.6 25.6 28.4 27.6 25.4 Z" fill="#1FBFA6"/>
+  <!-- tułów z dziobkiem po prawej -->
+  <path d="M10.8 16 C10.8 10.4 15.8 7.2 22.4 7.2 C28.6 7.2 34 10.6 36.8 15.2 C37.2 15.7 37.2 16.3 36.8 16.8 C34 21.4 28.6 24.8 22.4 24.8 C15.8 24.8 10.8 21.6 10.8 16 Z" fill="#2EE6C5"/>
+  <g clip-path="url(#ryba-tulow-clip)">
+    <!-- jasny brzuch -->
+    <path d="M8 18.4 C15 24.6 30 25.4 38 18 L38 27 L8 27 Z" fill="#EDE3D0" opacity=".8"/>
+    <!-- skrzela -->
+    <path d="M17.4 9.8 C15.4 13 15.4 19 17.4 22.2" stroke="#0F1B2D" stroke-width="1.2" opacity=".3"/>
+    <!-- pyszczek siedzi przy samym dziobku, więc musi być przycięty do sylwetki -->
+    <path d="M37 16.4 C35.6 17.5 34.3 17.9 33.2 17.9" stroke="#0F1B2D" stroke-width="1.4" opacity=".5"/>
+  </g>
+  <!-- okulary: oprawka koralowa i ciemne szkło, jak u kozy -->
+  <path d="M25.3 12.9 L18 11.7" stroke="#F4614C" stroke-width="1.8"/>
+  <circle cx="29.6" cy="13.4" r="4.3" fill="#141F2E" stroke="#F4614C" stroke-width="1.8"/>
+  <path d="M27.7 16.3 L30.6 10.5" stroke="#FFFFFF" stroke-width="1.4" opacity=".55"/>
+</g>
+</svg>
