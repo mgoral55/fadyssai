@@ -5901,7 +5901,7 @@ def renderuj_katalog_ryb():
 <div class="ryba-pasek-postepu"><div style="width: {procent}%;"></div></div>
 </div>""", unsafe_allow_html=True)
 
-    grupy = [g for g in ("Ryby", "Bezkręgowce", "Żółwie") if g in set(df_ryby["grupa"])]
+    grupy = [g for g in ("Ryby", "Bezkręgowce", "Koralowce", "Żółwie") if g in set(df_ryby["grupa"])]
     aktywna_grupa = st.session_state.get("ryby_grupa")
 
     etykieta_filtra = f"🌪️ Filtr: {aktywna_grupa}" if aktywna_grupa else "🌪️ Filtry i opcje widoku"

@@ -26,7 +26,7 @@ KATALOG_REPO = os.path.dirname(os.path.abspath(__file__))
 SCIEZKA_CSV = os.path.join(KATALOG_REPO, "ryby.csv")
 KATALOG_ZDJEC = os.path.join(KATALOG_REPO, "zdjecia", "ryby")
 
-DOZWOLONE_GRUPY = {"Ryby", "Bezkręgowce", "Żółwie"}
+DOZWOLONE_GRUPY = {"Ryby", "Bezkręgowce", "Koralowce", "Żółwie"}
 DOZWOLONE_SZANSE = {"Pewniak", "Częsta", "Rzadkość"}
 
 KOLUMNY_KATALOGU_RYB = [
@@ -78,7 +78,9 @@ def test_kazdy_gatunek_ma_nazwe_opis_i_atrybucje(katalog):
         assert len(ryba["opis"].strip()) > 40, ryba["slug"]
         assert ryba["gdzie_szukac"].strip(), ryba["slug"]
         assert ryba["autor_zdjecia"].strip(), ryba["slug"]
-        assert ryba["licencja_zdjecia"].strip().startswith("CC"), ryba["slug"]
+        # Zdjęcia biorą się z Wikimedia Commons: licencja CC albo domena publiczna.
+        assert (ryba["licencja_zdjecia"].strip().startswith("CC")
+                or ryba["licencja_zdjecia"].strip() == "Public domain"), ryba["slug"]
         assert ryba["zrodlo_zdjecia"].startswith("https://"), ryba["slug"]
 
 
@@ -101,6 +103,20 @@ def test_etykieta_linku_rozpoznaje_jezyk(app_ns):
 def test_grupy_i_szanse_sa_ze_slownika(katalog):
     assert set(katalog["grupa"]) <= DOZWOLONE_GRUPY
     assert set(katalog["szansa"]) <= DOZWOLONE_SZANSE
+
+
+def test_katalog_pokrywa_ryby_lawicowe_trawiaste_i_koralowce(katalog):
+    # Trzy grupy, o które pytała rodzina po pierwszym snorklowaniu.
+    slugi = set(katalog["slug"])
+    lawicowe = {"atherina_boyeri", "boops_boops", "spicara_smaris", "sarpa_salpa"}
+    udajace_trawe = {"syngnathus_typhle", "nerophis_ophidion", "hippocampus_hippocampus"}
+    koralowce = {"cladocora_caespitosa", "balanophyllia_europaea", "parazoanthus_axinellae",
+                 "eunicella_cavolini", "corallium_rubrum"}
+    for zestaw in (lawicowe, udajace_trawe, koralowce):
+        assert zestaw <= slugi
+    # Koralowce i ukwiały mają własną grupę - rodzina pytała o nie osobno.
+    grupy_koralowcow = {r["grupa"] for _, r in katalog.iterrows() if r["slug"] in koralowce}
+    assert grupy_koralowcow == {"Koralowce"}
 
 
 def test_gatunki_id_sortuja_sie_rosnaco(katalog):
