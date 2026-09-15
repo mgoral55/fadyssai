@@ -1597,13 +1597,19 @@ div[data-testid="stPopover"] > button:hover { border-color: #8C5338 !important; 
     padding: 10px 12px !important; 
 }
 
-.top-sticky-nav-container { position: sticky; top: 0; z-index: 999; background-color: #B4C29D; padding: 6px 0 10px 0; margin-bottom: 6px; border-bottom: 1.5px solid rgba(255, 255, 255, 0.2); }
-.custom-top-nav-bar { display: flex; justify-content: space-between; gap: 8px; width: 100%; }
-.custom-top-nav-btn { flex: 1; background-color: #EFE8D6; border: 1.5px solid #D6CEBC; color: #6B5B50; padding: 7px 4px; text-align: center; border-radius: 14px; font-size: 11px; font-weight: 800; text-decoration: none; display: flex; flex-direction: column; align-items: center; gap: 2px; box-shadow: 0 2px 6px rgba(0,0,0,0.03); }
-.custom-top-nav-btn.active { background-color: #F6F0DD; color: #8C5338; border-color: #C8C0AC; font-weight: 900; }
-/* ZMIANA: Reguły linków Streamlita mają wyższą specyficzność niż sama klasa, więc kolor i brak podkreślenia trzeba wymusić także na potomkach <span>. */
-.custom-top-nav-btn, .custom-top-nav-btn:visited, .custom-top-nav-btn:hover, .custom-top-nav-btn span { color: #6B5B50 !important; text-decoration: none !important; }
-.custom-top-nav-btn.active, .custom-top-nav-btn.active:visited, .custom-top-nav-btn.active:hover, .custom-top-nav-btn.active span { color: #7A4429 !important; }
+/* ZMIANA: Górna nawigacja stoi na przyciskach Streamlita zamiast na kotwicach <a href="?tab=">. Kotwica
+   przeładowywała całą stronę: przeglądarka rzucała dokument, front Streamlita wstawał od nowa, a sesja
+   (czyli cały st.session_state) ginęła - stąd dawne przepychanie profilu przez parametr user w URL.
+   Przycisk wywołuje sam rerun skryptu, bez przeładowania dokumentu i bez utraty stanu.
+   Ikona wjeżdża przez ::before, żeby zachować dwuliniowy układ (emoji nad podpisem) mimo jednoliniowej etykiety. */
+div.st-key-top_nav { position: sticky; top: 0; z-index: 999; background-color: #B4C29D; padding: 6px 0 10px 0; margin-bottom: 6px; border-bottom: 1.5px solid rgba(255, 255, 255, 0.2); }
+div.st-key-top_nav div[data-testid="stHorizontalBlock"] { gap: 8px !important; }
+div[class*="st-key-nav_btn_"] button { width: 100% !important; background-color: #EFE8D6 !important; border: 1.5px solid #D6CEBC !important; border-radius: 14px !important; padding: 7px 4px !important; min-height: 0 !important; font-size: 11px !important; font-weight: 800 !important; line-height: 1.15 !important; box-shadow: 0 2px 6px rgba(0,0,0,0.03) !important; }
+div[class*="st-key-nav_btn_"] button, div[class*="st-key-nav_btn_"] button * { color: #6B5B50 !important; }
+div[class*="st-key-nav_btn_"] button p::before { display: block; font-size: 15px; line-height: 1.35; }
+div.st-key-nav_btn_zabytek button p::before { content: "🏛️"; }
+div.st-key-nav_btn_map button p::before { content: "🗺️"; }
+div.st-key-nav_btn_route button p::before { content: "🚗"; }
 
 .adventure-header { background: #2E251E; border: none; border-radius: 18px; padding: 8px 14px; display: flex; align-items: center; gap: 10px; margin-bottom: 8px; box-shadow: 0 4px 14px rgba(46, 37, 30, 0.15); }
 .adventure-header-img { height: 28px; width: auto; max-width: 100px; object-fit: contain; }
@@ -5464,20 +5470,43 @@ if "filter_map_places" not in st.session_state:
 
 df_miejsca = pobierz_wszystkie_miejsca()
 
-active_zabytek = "active" if st.session_state.active_tab == "zabytek" else ""
-active_map = "active" if st.session_state.active_tab == "map" else ""
-active_route = "active" if st.session_state.active_tab == "route" else ""
+ZAKLADKI_NAWIGACJI = (("zabytek", "Miejsca"), ("map", "Wycieczki"), ("route", "Trasa Dnia"))
 
-# ZMIANA: Przekazywanie parametru aktywnego użytkownika w linkach górnej nawigacji, by nie resetować profilu przy zmianie tabu
-st.markdown(f"""
-<div class="top-sticky-nav-container">
-    <div class="custom-top-nav-bar">
-        <a href="?tab=zabytek&user={aktualny_uzytkownik}" target="_self" class="custom-top-nav-btn {active_zabytek}"><span>🏛️</span><span>Miejsca</span></a>
-        <a href="?tab=map&user={aktualny_uzytkownik}" target="_self" class="custom-top-nav-btn {active_map}"><span>🗺️</span><span>Wycieczki</span></a>
-        <a href="?tab=route&user={aktualny_uzytkownik}" target="_self" class="custom-top-nav-btn {active_route}"><span>🚗</span><span>Trasa Dnia</span></a>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+# ZMIANA: Wejście z górnej nawigacji jest wejściem "od zera" w dany tab - kasujemy parametry URL i klucze stanu
+# opisujące poprzednią ścieżkę (otwarte miejsce, ślad powrotu, wskazaną wycieczkę). Wcześniej robiło to za nas
+# przeładowanie strony, które czyściło całą sesję; teraz czyścimy wyłącznie klucze nawigacyjne, a profil,
+# filtry i historia czatu zostają.
+def przelacz_zakladke(nowa_zakladka):
+    st.session_state.active_tab = nowa_zakladka
+    st.session_state.active_place_id = None
+    st.session_state.return_tab = None
+    st.session_state.return_trip = None
+    st.session_state.pop("target_trip_id", None)
+    # ZMIANA: Bez doklejania ?user= - profil przestał ginąć razem z sesją, a i tak siedzi w bazie urządzeń.
+    st.query_params["tab"] = nowa_zakladka
+    for klucz_url in ("place", "trip", "return_tab", "return_trip"):
+        if klucz_url in st.query_params:
+            del st.query_params[klucz_url]
+
+with st.container(key="top_nav"):
+    kolumny_nawigacji = st.columns(len(ZAKLADKI_NAWIGACJI), gap="small")
+    for kolumna, (klucz_zakladki, podpis_zakladki) in zip(kolumny_nawigacji, ZAKLADKI_NAWIGACJI):
+        with kolumna:
+            st.button(
+                podpis_zakladki,
+                key=f"nav_btn_{klucz_zakladki}",
+                use_container_width=True,
+                on_click=przelacz_zakladke,
+                args=(klucz_zakladki,),
+            )
+
+# ZMIANA: Podświetlenie aktywnego tabu idzie osobnym stylem po kluczu przycisku - Streamlit nie pozwala dołożyć
+# własnej klasy do wyrenderowanego przycisku, a klucz jest jedynym stabilnym uchwytem w DOM.
+if st.session_state.active_tab in dict(ZAKLADKI_NAWIGACJI):
+    st.markdown(f"""<style>
+    div.st-key-nav_btn_{st.session_state.active_tab} button {{ background-color: #F6F0DD !important; border-color: #C8C0AC !important; font-weight: 900 !important; }}
+    div.st-key-nav_btn_{st.session_state.active_tab} button, div.st-key-nav_btn_{st.session_state.active_tab} button * {{ color: #7A4429 !important; }}
+    </style>""", unsafe_allow_html=True)
 
 if st.session_state.active_tab == "route":
     akt_id = pobierz_aktywna_wycieczke_id()
