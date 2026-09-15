@@ -102,6 +102,54 @@ Weryfikacja w kontenerze:
 docker compose exec magda-crete claude -p --model claude-opus-5 'odpowiedz OK'
 ```
 
+## Czas przejazdu: kolejka silników trasowania
+
+Czasy dojazdu liczy kolejka silników, a nie jeden serwis. Pierwszy, który odpowie, wygrywa;
+każdy ma osobny wpis w rejestrze awarii, więc padnięcie jednego nie wycisza pozostałych.
+
+| silnik | klucz | mediana błędu wobec Google | uwagi |
+| --- | --- | --- | --- |
+| Google Routes v2 | wymagany | odniesienie | uwzględnia ruch, jedyny płatny |
+| Valhalla (publiczna OSM) | nie | +5 min (MAE 4.9 min) | domyślny, mediana opóźnienia 0.89 s |
+| OSRM (serwer demo) | nie | -23 do +35 min (MAE 16.4 min) | zapas |
+| szacunek geometryczny | nie | bez sieci | min/km z dystansu w linii prostej |
+
+Pomiar: 54 miejsca z bazy przeliczone każdym silnikiem plus 12 tras sprawdzonych ręcznie w Google Maps
+(dojazd z domku w Stavros). Profil demo OSRM liczy dojazd na lotnisko w Heraklionie na 2 h 58 min,
+a Google i Valhalla zgodnie dają 2 h 29 min / 2 h 31 min — dlatego OSRM zszedł na drugie miejsce.
+Geometria trasy rysowana na mapie nadal idzie z OSRM, więc kształt linii i czas nad nią pochodzą
+z dwóch różnych silników.
+
+Valhalla jest konsekwentnie o ok. 9% ostrożniejsza od Google, a na odcinkach poniżej 5 km potrafi
+podwoić czas (Google daje 5 min na plażę w Stavros, Valhalla 9 min). Zapas na przyjazd przed czasem
+jest tu celowo zostawiony bez korekty — nie ma go jak rzetelnie dopasować na 12 punktach odniesienia.
+
+### Włączenie Google Routes
+
+Silnik Google wchodzi na początek kolejki tylko wtedy, gdy kontener widzi klucz w zmiennej
+`GOOGLE_ROUTES_API_KEY`. Bez niej aplikacja działa bez żadnych poświadczeń, tak jak dotąd.
+Klucz trzeba trzymać poza repozytorium (publiczne) — w pliku `.env` obok `docker-compose.yml`,
+z prawami `0600`:
+
+```
+install -m 0600 /dev/null /opt/magda-crete/.env
+printf 'GOOGLE_ROUTES_API_KEY=%s\n' '<klucz>' > /opt/magda-crete/.env
+docker compose -f /opt/magda-crete/docker-compose.yml up -d
+```
+
+Klucz musi mieć włączone Routes API i ograniczenie do tego jednego API. Odpowiedzi są cache'owane
+na 24 h (`@st.cache_data`), więc jedno miejsce to jedno zapytanie na dobę.
+
+### Statyczna kolumna "czas dojazdu ze Stavros"
+
+Wartości w tej kolumnie w `miejsca.csv` są policzone Valhallą, a nie wpisane ręcznie — dawne
+wpisy rozjeżdżały się z trasowaniem o medianę 7.5 min, a w skrajnym przypadku o 84 min.
+Kolumna wchodziła do bazy tylko przy pierwszym imporcie CSV, więc `zsynchronizuj_czasy_dojazdu_z_csv()`
+przepisuje ją z pliku fabrycznego przy każdym starcie — bez ruchu sieciowego, tak samo jak nazwy miejsc.
+
+Jeden wiersz jest pomijany świadomie: „Zatoka w Wąwozie Katholiko” trzyma tam prozę
+(`15 min do parkingu + 1 godz. spaceru wąwozem`), której trasowanie nie odtworzy.
+
 ## Krótkie opisy miejsc w nazwie (1-2 słowa w nawiasie)
 
 Zamiast trzymać opisy jako oddzielne pole (kolumna w bazie/CSV, osobny blok HTML, checkbox w pasku bocznym),

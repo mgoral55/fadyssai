@@ -123,6 +123,40 @@ def zaokraglij_do_5_minut(minuty):
 AWARIA_API_PONOW_PO_S = 600
 AWARIA_API_PROG_SPRZATANIA = 256
 
+# ZMIANA: Czas przejazdu liczy teraz kolejka silników trasowania, a nie jeden OSRM. Kolejność wynika z pomiaru
+# na 54 miejscach z bazy i 12 trasach sprawdzonych ręcznie w Google Maps (dojazd z domku w Stavros):
+#
+#   silnik                     mediana błędu vs Google   uwagi
+#   Google Routes v2           0 (odniesienie)           uwzględnia ruch, wymaga klucza i rozliczeń
+#   Valhalla (publiczna OSM)   +5 min (MAE 4.9)          bez klucza, mediana opóźnienia 0.89 s
+#   OSRM (serwer demo)         -23 .. +35 min (MAE 16.4) zaniża krótkie trasy, zawyża trasy przez VOAK
+#
+# Dlatego Valhalla jest silnikiem domyślnym, a OSRM został zapasem: jego profil demo liczy dojazd na lotnisko
+# w Heraklionie na 2 h 58 min, podczas gdy Google i Valhalla zgodnie dają 2 h 29 min / 2 h 31 min.
+# Google wchodzi na pierwsze miejsce tylko wtedy, gdy w środowisku jest klucz - bez niego aplikacja działa
+# bez żadnych poświadczeń, tak jak dotąd.
+VALHALLA_URL = "https://valhalla1.openstreetmap.de/route"
+VALHALLA_TIMEOUT_S = 5.0
+OSRM_TIMEOUT_S = 4.0
+GOOGLE_ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
+GOOGLE_ROUTES_KLUCZ = os.environ.get("GOOGLE_ROUTES_API_KEY", "").strip()
+GOOGLE_ROUTES_TIMEOUT_S = 6.0
+
+# Fallback geometryczny (brak sieci) dopasowany do Valhalli na 54 miejscach z bazy: minuty na kilometr w linii
+# prostej, w trzech przedziałach dystansu. Poprzednie współczynniki (42/70 km/h, krętość 1.20-1.35) były
+# wzięte z OSRM i myliły się o 24 min (mediana 17), bo realna krętość dróg na Krecie to mediana 1.58
+# kilometra drogi na kilometr w linii prostej. Nowy model: MAE 8.7 min, mediana 5.0.
+SZACUNEK_PROG_KROTKI_KM = 20.0
+SZACUNEK_PROG_SREDNI_KM = 50.0
+SZACUNEK_MIN_NA_KM_KROTKI = 3.3
+SZACUNEK_MIN_NA_KM_SREDNI = 2.35
+SZACUNEK_MIN_NA_KM_DLUGI = 1.65
+
+# Podłoga czasu przejazdu. Chroni harmonogram dnia przed odcinkami zerowej długości, ale nie może zawyżać
+# najbliższych celów: plaża w Stavros leży 1.2 km od domku, Google daje na nią 5 min, a poprzednia podłoga
+# 10 min podwajała ten czas w karcie miejsca.
+CZAS_PRZEJAZDU_MIN_MINUT = 5
+
 
 @st.cache_resource(show_spinner=False)
 def _rejestr_awarii_api():
@@ -165,45 +199,109 @@ def _sformatuj_czas_przejazdu(est_min):
     godziny, reszta = est_min // 60, est_min % 60
     return (f"~{godziny}h", est_min) if reszta == 0 else (f"~{godziny}h {reszta}m", est_min)
 
-def oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2):
-    klucz = ("osrm_czas", lat1, lon1, lat2, lon2)
-    if not _awaria_api_niedawna(klucz):
+def oblicz_czas_przejazdu(lat1, lon1, lat2, lon2):
+    """Czas przejazdu z pierwszego silnika, który odpowie. Zwraca (tekst do UI, minuty).
+
+    Silniki idą po kolei z SILNIKI_CZASU_PRZEJAZDU; każdy ma własny wpis w rejestrze awarii, więc padnięcie
+    Valhalli nie blokuje OSRM-a i odwrotnie. Gdy odpadną wszystkie, zostaje fallback geometryczny - nadal
+    zwracamy liczbę, bo harmonogram dnia nie ma z czego policzyć godzin bez czasów przejazdu."""
+    for nazwa_silnika, silnik in SILNIKI_CZASU_PRZEJAZDU:
+        klucz = (nazwa_silnika, lat1, lon1, lat2, lon2)
+        if _awaria_api_niedawna(klucz):
+            continue
         try:
-            return _osrm_czas_przejazdu(lat1, lon1, lat2, lon2)
+            return silnik(lat1, lon1, lat2, lon2)
         except Exception:
             _zanotuj_awarie_api(klucz)
     return _szacunek_czasu_przejazdu(lat1, lon1, lat2, lon2)
 
-# ZMIANA: Zwiększony timeout do 4.0s dla zapytania o czas przejazdu
-# ZMIANA: Jawny show_spinner tutaj i w dwóch kolejnych funkcjach sieciowych powtarza co do bajtu tekst,
-# który st.cache_data rysował przy zimnym trafieniu przed rozdzieleniem na opakowanie i warstwę sieciową -
-# czyli z nazwą funkcji publicznej. Bez tego w UI mignęłaby nazwa prywatnego pomocnika.
-@st.cache_data(ttl=86400, show_spinner="Running `oblicz_czas_przejazdu_osrm(...)`.")
+# ZMIANA: Jawny show_spinner w każdej funkcji sieciowej powtarza co do bajtu tekst, który st.cache_data
+# rysował przy zimnym trafieniu przed rozdzieleniem na opakowanie i warstwę sieciową - czyli z nazwą funkcji
+# publicznej. Bez tego w UI mignęłaby nazwa prywatnego pomocnika.
+@st.cache_data(ttl=86400, show_spinner="Running `oblicz_czas_przejazdu(...)`.")
+def _valhalla_czas_przejazdu(lat1, lon1, lat2, lon2):
+    """Publiczna Valhalla OSM. Jedyny silnik bez klucza, który trafia w czasy Google z medianą błędu +5 min."""
+    zapytanie = json.dumps({
+        "locations": [{"lat": lat1, "lon": lon1}, {"lat": lat2, "lon": lon2}],
+        "costing": "auto",
+        "units": "km",
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        VALHALLA_URL, data=zapytanie,
+        headers={'Content-Type': 'application/json', 'User-Agent': 'CretAiApp/1.0'},
+    )
+    with urllib.request.urlopen(req, timeout=VALHALLA_TIMEOUT_S) as odpowiedz:
+        dane = json.loads(odpowiedz.read().decode())
+    sekundy = dane.get('trip', {}).get('summary', {}).get('time')
+    if sekundy is None:
+        raise RuntimeError("Valhalla: brak trasy")
+    return _sformatuj_czas_przejazdu(zaokraglij_do_5_minut(max(int(round(sekundy / 60.0)), CZAS_PRZEJAZDU_MIN_MINUT)))
+
+@st.cache_data(ttl=86400, show_spinner="Running `oblicz_czas_przejazdu(...)`.")
 def _osrm_czas_przejazdu(lat1, lon1, lat2, lon2):
     url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}?overview=false"
     req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
-    with urllib.request.urlopen(req, timeout=4.0) as response:
+    with urllib.request.urlopen(req, timeout=OSRM_TIMEOUT_S) as response:
         data = json.loads(response.read().decode())
         if 'routes' in data and len(data['routes']) > 0:
             dur_sec = data['routes'][0]['duration']
-            est_min = zaokraglij_do_5_minut(max(int(round(dur_sec / 60.0)), 10))
+            est_min = zaokraglij_do_5_minut(max(int(round(dur_sec / 60.0)), CZAS_PRZEJAZDU_MIN_MINUT))
             return _sformatuj_czas_przejazdu(est_min)
     raise RuntimeError("OSRM: brak trasy")
 
-# ZMIANA: Dynamiczna prędkość fallbacku dla trasy VOAK przy długich dystansach
+@st.cache_data(ttl=86400, show_spinner="Running `oblicz_czas_przejazdu(...)`.")
+def _google_czas_przejazdu(lat1, lon1, lat2, lon2):
+    """Google Routes v2 z uwzględnieniem ruchu. Aktywny tylko przy ustawionym GOOGLE_ROUTES_API_KEY -
+    to jedyny silnik, który cokolwiek kosztuje, więc domyślnie aplikacji nie ma go w kolejce."""
+    if not GOOGLE_ROUTES_KLUCZ:
+        raise RuntimeError("Google Routes: brak klucza")
+    zapytanie = json.dumps({
+        "origin": {"location": {"latLng": {"latitude": lat1, "longitude": lon1}}},
+        "destination": {"location": {"latLng": {"latitude": lat2, "longitude": lon2}}},
+        "travelMode": "DRIVE",
+        "routingPreference": "TRAFFIC_AWARE",
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        GOOGLE_ROUTES_URL, data=zapytanie,
+        headers={
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': GOOGLE_ROUTES_KLUCZ,
+            'X-Goog-FieldMask': 'routes.duration',
+            'User-Agent': 'CretAiApp/1.0',
+        },
+    )
+    with urllib.request.urlopen(req, timeout=GOOGLE_ROUTES_TIMEOUT_S) as odpowiedz:
+        dane = json.loads(odpowiedz.read().decode())
+    trasy = dane.get('routes') or []
+    if not trasy or not trasy[0].get('duration'):
+        raise RuntimeError("Google Routes: brak trasy")
+    sekundy = float(str(trasy[0]['duration']).rstrip('s'))
+    return _sformatuj_czas_przejazdu(zaokraglij_do_5_minut(max(int(round(sekundy / 60.0)), CZAS_PRZEJAZDU_MIN_MINUT)))
+
+# Kolejność ma znaczenie - pierwszy silnik, który odpowie, wygrywa. Google wchodzi na początek tylko
+# z kluczem w środowisku, żeby aplikacja bez poświadczeń zachowywała się dokładnie tak jak dotąd.
+SILNIKI_CZASU_PRZEJAZDU = (
+    (("google_czas", _google_czas_przejazdu),) if GOOGLE_ROUTES_KLUCZ else ()
+) + (
+    ("valhalla_czas", _valhalla_czas_przejazdu),
+    ("osrm_czas", _osrm_czas_przejazdu),
+)
+
 def _szacunek_czasu_przejazdu(lat1, lon1, lat2, lon2):
-    # Fallback geometryczny: drogi lokalne vs VOAK (E75)
+    """Fallback bez sieci: minuty z odległości w linii prostej, stawka min/km zależna od dystansu.
+
+    Trzy przedziały, nie jedna prędkość, bo na Krecie krótki dojazd to serpentyny i miasteczka
+    (ok. 3.3 min/km w linii prostej), a długi biegnie w większości trasą VOAK (ok. 1.65 min/km)."""
     try:
         dist_km = math.sqrt(((lat2 - lat1) * 111.0)**2 + ((lon2 - lon1) * 85.0)**2)
-        if dist_km > 70:
-            # Długie trasy wyspowe biegną w większości trasą VOAK (śr. 68-72 km/h z uwzględnieniem dojazdów i miasteczek)
-            predkosc = 70.0
-            wsp_kretosci = 1.20
+        if dist_km <= SZACUNEK_PROG_KROTKI_KM:
+            min_na_km = SZACUNEK_MIN_NA_KM_KROTKI
+        elif dist_km <= SZACUNEK_PROG_SREDNI_KM:
+            min_na_km = SZACUNEK_MIN_NA_KM_SREDNI
         else:
-            predkosc = 42.0
-            wsp_kretosci = 1.35
+            min_na_km = SZACUNEK_MIN_NA_KM_DLUGI
 
-        est_min = zaokraglij_do_5_minut(max(int(round(((dist_km * wsp_kretosci) / predkosc) * 60)), 10))
+        est_min = zaokraglij_do_5_minut(max(int(round(dist_km * min_na_km)), CZAS_PRZEJAZDU_MIN_MINUT))
         return _sformatuj_czas_przejazdu(est_min)
     except Exception:
         return "~25 min", 25
@@ -568,7 +666,7 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
     for idx in range(len(kroki) - 1):
         lat1, lon1 = sparsuj_wspolrzedne(kroki[idx][2])
         lat2, lon2 = sparsuj_wspolrzedne(kroki[idx + 1][2])
-        tekst_dojazdu, minuty_przejazdu = ("~25 min", 25) if lat1 is None or lon1 is None or lat2 is None or lon2 is None else oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2)
+        tekst_dojazdu, minuty_przejazdu = ("~25 min", 25) if lat1 is None or lon1 is None or lat2 is None or lon2 is None else oblicz_czas_przejazdu(lat1, lon1, lat2, lon2)
         dojazdy_minuty.append(minuty_przejazdu)
         dojazdy_tekst.append(tekst_dojazdu)
 
@@ -1211,8 +1309,51 @@ def zsynchronizuj_nazwy_miejsc_z_csv(plik_csv='miejsca.csv'):
         return 0
 
 
+# ZMIANA: Kolumna "czas dojazdu ze Stavros" była wpisana ręcznie i rozjeżdżała się z trasowaniem o medianę
+# 7.5 min (najgorszy przypadek 84 min), a do bazy trafiała tylko przy pierwszym imporcie CSV - po wdrożeniu
+# na serwer z istniejącą bazą poprawione wartości nie miałyby jak wejść. Ta synchronizacja działa jak
+# zsynchronizuj_nazwy_miejsc_z_csv: przepisuje kolumnę z pliku fabrycznego przy każdym starcie, bez ruchu
+# sieciowego. Same wartości w miejsca.csv są policzone silnikiem trasowania (Valhalla), a nie na oko.
+#
+# Leci przy każdym rerunie skryptu, tak jak synchronizacja nazw. Zmierzony koszt: 2-5 ms na odczyt
+# miejsca.csv (119 kB) plus 0.2 ms na 54 UPDATE-y, które nic nie zmieniają - za mało, żeby dokładać
+# tu cache i jego unieważnianie.
+def zsynchronizuj_czasy_dojazdu_z_csv(plik_csv='miejsca.csv'):
+    if not os.path.exists(plik_csv):
+        return 0
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            df_csv = pd.read_csv(plik_csv, encoding='utf-8')
+            df_csv.columns = [str(c).strip() for c in df_csv.columns]
+            kol_nr = next((c for c in df_csv.columns if c.lower() in ['numer miejsca', 'numer_miejsca']), None)
+            kol_czas = next((c for c in df_csv.columns if c.lower() in ['czas dojazdu ze stavros', 'czas dojazdu', 'czas_dojazdu']), None)
+            if not kol_nr or not kol_czas:
+                return 0
+
+            zaktualizowane = 0
+            for _, r in df_csv.iterrows():
+                nr = str(r.get(kol_nr, '')).strip()
+                czas = str(r.get(kol_czas, '')).strip() if pd.notna(r.get(kol_czas)) else ''
+                if not nr or nr == 'nan' or not czas or czas == 'nan':
+                    continue
+                # `IS NOT`, a nie `!=`: dla wiersza z NULL-em w czas_dojazdu porównanie `!= ?` daje NULL,
+                # czyli fałsz, i miejsce bez czasu dojazdu nigdy by go nie dostało.
+                cursor.execute(
+                    "UPDATE miejsca SET czas_dojazdu = ? WHERE TRIM(numer_miejsca) = ? AND czas_dojazdu IS NOT ?",
+                    (czas, nr, czas)
+                )
+                zaktualizowane += cursor.rowcount
+            conn.commit()
+            return zaktualizowane
+    except Exception as e:
+        print(f"Błąd synchronizacji czasów dojazdu z CSV: {e}")
+        return 0
+
+
 init_db()
 zsynchronizuj_nazwy_miejsc_z_csv()
+zsynchronizuj_czasy_dojazdu_z_csv()
 
 # ZMIANA: Pobranie unikalnego identyfikatora urządzenia klienta z nagłówków żądania HTTP Streamlit
 import hashlib
@@ -3743,7 +3884,7 @@ def utworz_nowe_miejsce(nazwa, nazwa_angielska="", typ="Other", wspolrzedne="", 
 
         czas_dojazdu_z_domku = "—"
         if lat_p is not None and lon_p is not None:
-            tekst_dojazdu, _ = oblicz_czas_przejazdu_osrm(DOMEK_LAT, DOMEK_LON, lat_p, lon_p)
+            tekst_dojazdu, _ = oblicz_czas_przejazdu(DOMEK_LAT, DOMEK_LON, lat_p, lon_p)
             czas_dojazdu_z_domku = tekst_dojazdu
 
         kat_norm = kategoryzuj_typ(typ if typ in CATEGORIES_CONFIG else nazwa_czysta)
@@ -4118,7 +4259,7 @@ def edytuj_krok_wycieczki(id_wycieczki, krok_wycieczki, okienko_zwiedzania, pomi
                 lat2, lon2 = sparsuj_wspolrzedne(wszystkie_kroki_walidacja[krok_idx][3])
 
                 if lat1 is not None and lon1 is not None and lat2 is not None and lon2 is not None:
-                    tekst_dojazdu, minuty_dojazdu = oblicz_czas_przejazdu_osrm(lat1, lon1, lat2, lon2)
+                    tekst_dojazdu, minuty_dojazdu = oblicz_czas_przejazdu(lat1, lon1, lat2, lon2)
                 else:
                     tekst_dojazdu, minuty_dojazdu = "~25 min", 25
 
@@ -5865,8 +6006,8 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 lat1_c, lon1_c = sparsuj_wspolrzedne(k['wspolrzedne'])
                 lat2_c, lon2_c = sparsuj_wspolrzedne(kroki_df.iloc[idx + 1]['wspolrzedne'])
                 if lat1_c and lon1_c and lat2_c and lon2_c:
-                    t_osrm, _ = oblicz_czas_przejazdu_osrm(lat1_c, lon1_c, lat2_c, lon2_c)
-                    transit_html = f'<div class="timeline-transit-text">🚗 {t_osrm}</div>'
+                    t_dojazd, _ = oblicz_czas_przejazdu(lat1_c, lon1_c, lat2_c, lon2_c)
+                    transit_html = f'<div class="timeline-transit-text">🚗 {t_dojazd}</div>'
 
             timeline_full_html.append(f'<div class="timeline-transit-spacer">{transit_html}</div>')
 

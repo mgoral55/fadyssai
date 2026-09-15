@@ -1,10 +1,14 @@
-"""Testy regresyjne cache zewnętrznych API (OSRM, Open-Meteo).
+"""Testy regresyjne kolejki silników trasowania (Valhalla, OSRM, Google) i cache zewnętrznych API.
 
-Cache `@st.cache_data` trzyma teraz wyłącznie udane odpowiedzi, a awaria trafia do rejestru
-awarii (`AWARIA_API_PONOW_PO_S`) żyjącego w `@st.cache_resource`, a nie do cache na 24 h / 8 h.
-Testy pilnują, że wartości zastępcze są bajt w bajt takie jak przed zmianą, że udana odpowiedź
-formatuje się identycznie jak dotąd, że rejestr awarii tłumi powtarzane timeouty, ale sam wygasa,
-i że sam rejestr nadal jest trzymany tak, by przetrwał rerun skryptu Streamlita.
+Czas przejazdu liczy kolejka silników: opcjonalny Google Routes (tylko z kluczem w środowisku),
+potem publiczna Valhalla, potem serwer demo OSRM, a na końcu fallback geometryczny bez sieci.
+Testy pilnują kolejności silników, tego że każdy ma własny wpis w rejestrze awarii (padnięcie jednego
+nie wycisza pozostałych) i że Google nie wchodzi do kolejki bez klucza.
+
+Cache `@st.cache_data` trzyma wyłącznie udane odpowiedzi, a awaria trafia do rejestru awarii
+(`AWARIA_API_PONOW_PO_S`) żyjącego w `@st.cache_resource`, a nie do cache na 24 h / 8 h. Reszta testów
+pilnuje, że rejestr awarii tłumi powtarzane timeouty, ale sam wygasa, i że jest trzymany tak,
+by przetrwał rerun skryptu Streamlita.
 
 `app.py` jest skryptem Streamlit - import całego modułu uruchomiłby UI, więc testy wyciągają
 badane funkcje ze źródła przez AST. Dekoratory nie wchodzą w segment źródła, więc funkcje
@@ -34,8 +38,10 @@ BADANE_FUNKCJE = [
     "_zanotuj_awarie_api",
     "zaokraglij_do_5_minut",
     "_sformatuj_czas_przejazdu",
-    "oblicz_czas_przejazdu_osrm",
+    "oblicz_czas_przejazdu",
+    "_valhalla_czas_przejazdu",
     "_osrm_czas_przejazdu",
+    "_google_czas_przejazdu",
     "_szacunek_czasu_przejazdu",
     "pobierz_geometrie_trasy_osrm",
     "_osrm_geometria_trasy",
@@ -48,6 +54,18 @@ BADANE_FUNKCJE = [
 STALE_MODULU = [
     "AWARIA_API_PONOW_PO_S",
     "AWARIA_API_PROG_SPRZATANIA",
+    "VALHALLA_URL",
+    "VALHALLA_TIMEOUT_S",
+    "OSRM_TIMEOUT_S",
+    "GOOGLE_ROUTES_URL",
+    "GOOGLE_ROUTES_KLUCZ",
+    "GOOGLE_ROUTES_TIMEOUT_S",
+    "CZAS_PRZEJAZDU_MIN_MINUT",
+    "SZACUNEK_PROG_KROTKI_KM",
+    "SZACUNEK_PROG_SREDNI_KM",
+    "SZACUNEK_MIN_NA_KM_KROTKI",
+    "SZACUNEK_MIN_NA_KM_SREDNI",
+    "SZACUNEK_MIN_NA_KM_DLUGI",
     "OPEN_METEO_URL",
     "POGODA_TIMEOUT_S",
     "POGODA_STREFA",
@@ -61,7 +79,7 @@ STALE_MODULU = [
 
 # Opakowania widoczne dla reszty app.py - muszą być bez cache, żeby wartość zastępcza nie wpadła do cache.
 NAZWY_PUBLICZNE = {
-    "oblicz_czas_przejazdu_osrm",
+    "oblicz_czas_przejazdu",
     "pobierz_geometrie_trasy_osrm",
     "pobierz_prognoze_pogody",
 }
@@ -70,7 +88,9 @@ NAZWY_PUBLICZNE = {
 # Wartością jest komunikat spinnera spisany z wersji sprzed rozdzielenia: st.cache_data przy zimnym
 # trafieniu rysuje go w UI, więc musi zostać przy nazwie publicznej, a nie prywatnego pomocnika.
 NAZWY_Z_CACHE_DATA = {
-    "_osrm_czas_przejazdu": "Running `oblicz_czas_przejazdu_osrm(...)`.",
+    "_valhalla_czas_przejazdu": "Running `oblicz_czas_przejazdu(...)`.",
+    "_osrm_czas_przejazdu": "Running `oblicz_czas_przejazdu(...)`.",
+    "_google_czas_przejazdu": "Running `oblicz_czas_przejazdu(...)`.",
     "_osrm_geometria_trasy": "Running `pobierz_geometrie_trasy_osrm(...)`.",
     "_prognoza_open_meteo": "Running `pobierz_prognoze_pogody(...)`.",
 }
@@ -86,8 +106,10 @@ DOMEK = (35.5914, 24.0918)
 KNOSSOS = (35.2980, 25.1631)
 CHANIA = (35.5138, 24.0180)
 
-# Wartości zastępcze spisane z wersji sprzed zmiany - nie wolno ich ruszyć, bo widzi je rodzic w UI.
-ZASTEPCZY_CZAS = {KNOSSOS: ("~1h 40m", 100), CHANIA: ("~20 min", 20)}
+# Fallback geometryczny po padnięciu wszystkich silników. Wartości wynikają z dopasowania min/km do Valhalli
+# na 54 miejscach z bazy - poprzednie (~1h 40m dla Knossos, ~20 min dla Chanii) brały się ze współczynników
+# zdjętych z OSRM i zaniżały dojazd o medianę 17 min, bo zakładały krętość dróg 1.20-1.35 zamiast realnej 1.58.
+ZASTEPCZY_CZAS = {KNOSSOS: ("~2h 40m", 160), CHANIA: ("~35 min", 35)}
 ZASTEPCZA_GEOMETRIA = {
     KNOSSOS: [[35.5914, 24.0918], [35.2980, 25.1631]],
     CHANIA: [[35.5914, 24.0918], [35.5138, 24.0180]],
@@ -115,10 +137,13 @@ class OdpowiedzHTTP:
 
 
 class Zapytanie:
-    """Atrapa `urllib.request.Request` - zapamiętuje URL i nagłówki."""
+    """Atrapa `urllib.request.Request` - zapamiętuje URL, nagłówki i ciało POST.
 
-    def __init__(self, url, headers=None):
+    Valhalla i Google Routes jadą POST-em z ciałem JSON, OSRM i Open-Meteo samym GET-em."""
+
+    def __init__(self, url, data=None, headers=None):
         self.url = url
+        self.data = data
         self.headers = headers or {}
 
 
@@ -131,9 +156,11 @@ class SiecAtrapa:
     def __init__(self, reakcje):
         self.reakcje = list(reakcje)
         self.zapytania = []
+        self.ciala = []
 
     def __call__(self, req, timeout=None):
         self.zapytania.append((req.url, req.headers, timeout))
+        self.ciala.append(json.loads(req.data.decode()) if req.data else None)
         reakcja = self.reakcje[min(len(self.zapytania) - 1, len(self.reakcje) - 1)]
         if isinstance(reakcja, Exception):
             raise reakcja
@@ -182,6 +209,9 @@ def _segmenty_stalych(nazwy):
 
 SEGMENTY_STALYCH = _segmenty_stalych(STALE_MODULU)
 SEGMENTY_FUNKCJI = wczytaj_funkcje_z_app(BADANE_FUNKCJE)
+# Rejestr silników wymienia funkcje po nazwie, więc musi wejść do namespace'u po nich, a nie razem
+# z pozostałymi stałymi. Jego źródło jest czytane z app.py, żeby test nie przepisywał kolejności silników.
+SEGMENT_REJESTRU_SILNIKOW, = _segmenty_stalych(["SILNIKI_CZASU_PRZEJAZDU"])
 # Widok podsumowania pogody ładowany osobno - rysuje przez Streamlita, więc nie wchodzi
 # do wspólnego namespace'u testów sieciowych.
 SEGMENT_PODSUMOWANIA = wczytaj_funkcje_z_app(
@@ -208,17 +238,20 @@ def _nazwa_dekoratora(wezel):
 class Srodowisko:
     """Świeży namespace app.py z atrapą sieci i zegara - rejestr awarii startuje pusty."""
 
-    def __init__(self, reakcje):
+    def __init__(self, reakcje, klucz_google=""):
         self.siec = SiecAtrapa(reakcje)
         self.zegar = ZegarAtrapa()
         # Dekoratory nie wchodzą w segment źródła, więc `_rejestr_awarii_api` wyciągnięty z app.py oddawałby
         # nowy słownik przy każdym wywołaniu i backoff nie miałby czego pamiętać. Podstawiamy domknięcie z jedną
         # parą (rejestr, blokada) na test - dokładnie tak, jak @st.cache_resource trzyma jedną parę na proces.
         self._rejestr_z_blokada = ({}, threading.Lock())
+        # GOOGLE_ROUTES_KLUCZ czyta środowisko procesu, więc test podaje własny os - bez klucza kolejka
+        # silników ma być dokładnie taka, jaką widzi aplikacja uruchomiona bez żadnych poświadczeń.
         self.ns = {
             "json": json,
             "math": math,
             "threading": threading,
+            "os": types.SimpleNamespace(environ={"GOOGLE_ROUTES_API_KEY": klucz_google}),
             "urllib": _atrapa_urllib(self.siec),
             "zegar": self.zegar,
             "_rejestr_awarii_api": lambda: self._rejestr_z_blokada,
@@ -227,6 +260,7 @@ class Srodowisko:
             exec(kod, self.ns)
         for kod in SEGMENTY_FUNKCJI.values():
             exec(kod, self.ns)
+        exec(SEGMENT_REJESTRU_SILNIKOW, self.ns)
 
     def __getitem__(self, nazwa):
         return self.ns[nazwa]
@@ -237,14 +271,25 @@ class Srodowisko:
 
 
 def odpowiedz_czasu(sekundy):
+    """Odpowiedź OSRM - `duration` w sekundach."""
     return {"routes": [{"duration": sekundy}]}
+
+
+def odpowiedz_valhalli(sekundy, km=42.0):
+    """Odpowiedź Valhalli - `trip.summary.time` w sekundach."""
+    return {"trip": {"summary": {"time": sekundy, "length": km}}}
+
+
+def odpowiedz_google(sekundy):
+    """Odpowiedź Google Routes v2 - `duration` jako napis z sufiksem `s`."""
+    return {"routes": [{"duration": f"{sekundy}s"}]}
 
 
 def odpowiedz_geometrii(punkty):
     return {"routes": [{"geometry": {"coordinates": punkty}}]}
 
 
-# --- Udana odpowiedź OSRM: formatowanie czasu ---
+# --- Kolejka silników trasowania ---
 
 @pytest.mark.parametrize(
     "sekundy, oczekiwany",
@@ -253,28 +298,59 @@ def odpowiedz_geometrii(punkty):
         (1700, ("~30 min", 30)),
         (3600, ("~1h", 60)),
         (5400, ("~1h 30m", 90)),
-        (60, ("~10 min", 10)),
+        (60, ("~5 min", 5)),
     ],
 )
-def test_udana_odpowiedz_osrm_formatuje_czas_jak_dotad(sekundy, oczekiwany):
-    """Sukces ma dać dokładnie te same napisy co przed zmianą, z zaokrągleniem do 5 min i progiem 10 min."""
-    srodowisko = Srodowisko([odpowiedz_czasu(sekundy)])
-    assert srodowisko["oblicz_czas_przejazdu_osrm"](*DOMEK, *KNOSSOS) == oczekiwany
+def test_udana_odpowiedz_silnika_formatuje_czas(sekundy, oczekiwany):
+    """Sekundy z silnika wychodzą jako napis do UI, z zaokrągleniem do 5 min i podłogą CZAS_PRZEJAZDU_MIN_MINUT.
+
+    Podłoga to 5, a nie 10 minut: plaża w Stavros leży 1.2 km od domku i Google daje na nią 5 min,
+    więc dawne 10 minut podwajało czas najbliższych celów."""
+    srodowisko = Srodowisko([odpowiedz_valhalli(sekundy)])
+    assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS) == oczekiwany
+
+
+def test_valhalla_jest_pierwszym_silnikiem_i_osrm_nie_jest_pytany():
+    """Valhalla ma medianę błędu +5 min wobec Google, OSRM myli się o -23..+35 min - stąd ta kolejność."""
+    srodowisko = Srodowisko([odpowiedz_valhalli(1800)])
+
+    assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS) == ("~30 min", 30)
+    (url, _, _), = srodowisko.siec.zapytania
+    assert url == srodowisko["VALHALLA_URL"]
 
 
 def test_udana_odpowiedz_nie_zostawia_sladu_w_rejestrze_awarii():
     """Rejestr dotyczy wyłącznie awarii - po udanym strzale ma zostać pusty."""
-    srodowisko = Srodowisko([odpowiedz_czasu(1800)])
-    srodowisko["oblicz_czas_przejazdu_osrm"](*DOMEK, *KNOSSOS)
+    srodowisko = Srodowisko([odpowiedz_valhalli(1800)])
+    srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS)
     assert srodowisko.rejestr == {}
 
 
-def test_zapytanie_o_czas_zachowuje_url_naglowek_i_timeout():
-    """Kontrakt z OSRM zostaje bez zmian: ten sam adres, User-Agent i 4.0 s timeoutu."""
-    srodowisko = Srodowisko([odpowiedz_czasu(1800)])
-    srodowisko["oblicz_czas_przejazdu_osrm"](*DOMEK, *KNOSSOS)
+def test_zapytanie_do_valhalli_ma_wspolrzedne_profil_auto_i_timeout():
+    """Kontrakt z Valhallą: POST z parą punktów, costing `auto` i VALHALLA_TIMEOUT_S."""
+    srodowisko = Srodowisko([odpowiedz_valhalli(1800)])
+    srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS)
 
     (url, naglowki, timeout), = srodowisko.siec.zapytania
+    cialo, = srodowisko.siec.ciala
+    assert url == "https://valhalla1.openstreetmap.de/route"
+    assert cialo["locations"] == [
+        {"lat": 35.5914, "lon": 24.0918},
+        {"lat": 35.2980, "lon": 25.1631},
+    ]
+    assert cialo["costing"] == "auto"
+    assert naglowki["Content-Type"] == "application/json"
+    assert naglowki["User-Agent"] == NAGLOWEK["User-Agent"]
+    assert timeout == 5.0
+
+
+def test_padniecie_valhalli_schodzi_do_osrm_z_dawnym_kontraktem():
+    """OSRM został zapasem, więc jego adres, User-Agent i 4.0 s timeoutu zostają bez zmian."""
+    srodowisko = Srodowisko([OSError("timeout Valhalla"), odpowiedz_czasu(1800)])
+
+    assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS) == ("~30 min", 30)
+    assert srodowisko.siec.liczba_wywolan == 2
+    (_, _, _), (url, naglowki, timeout) = srodowisko.siec.zapytania
     assert url == (
         "http://router.project-osrm.org/route/v1/driving/"
         "24.0918,35.5914;25.1631,35.298?overview=false"
@@ -283,62 +359,137 @@ def test_zapytanie_o_czas_zachowuje_url_naglowek_i_timeout():
     assert timeout == 4.0
 
 
-def test_odpowiedz_bez_tras_schodzi_do_szacunku_geometrycznego():
-    """Odpowiedź bez `routes` to dla nas awaria - wynik z szacunku, wpis w rejestrze."""
-    srodowisko = Srodowisko([{"code": "NoRoute"}])
-    assert srodowisko["oblicz_czas_przejazdu_osrm"](*DOMEK, *KNOSSOS) == ZASTEPCZY_CZAS[KNOSSOS]
-    assert ("osrm_czas",) + DOMEK + KNOSSOS in srodowisko.rejestr
+def test_kazdy_silnik_ma_wlasny_wpis_w_rejestrze_awarii():
+    """Padnięta Valhalla nie może wyciszyć OSRM-a - klucze rejestru różnią się nazwą silnika."""
+    srodowisko = Srodowisko([OSError("timeout Valhalla"), odpowiedz_czasu(1800)])
+    srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS)
+
+    assert ("valhalla_czas",) + DOMEK + KNOSSOS in srodowisko.rejestr
+    assert ("osrm_czas",) + DOMEK + KNOSSOS not in srodowisko.rejestr
 
 
-# --- Zgodność wartości zastępczych z wersją sprzed zmiany ---
+def test_wyciszona_valhalla_nie_jest_dobijana_a_osrm_liczy_dalej():
+    """W oknie AWARIA_API_PONOW_PO_S render nie płaci timeoutu Valhalli, ale czas nadal wraca z OSRM-a."""
+    srodowisko = Srodowisko([OSError("timeout Valhalla"), odpowiedz_czasu(1800)])
+    czas = srodowisko["oblicz_czas_przejazdu"]
+
+    assert czas(*DOMEK, *KNOSSOS) == ("~30 min", 30)
+    assert srodowisko.siec.liczba_wywolan == 2
+
+    assert czas(*DOMEK, *KNOSSOS) == ("~30 min", 30)
+    assert srodowisko.siec.liczba_wywolan == 3, "Drugi render miał pytać już tylko OSRM"
+    assert srodowisko.siec.zapytania[-1][0].startswith("http://router.project-osrm.org")
+
+
+@pytest.mark.parametrize("bezuzyteczna", [{"code": "NoRoute"}, {"trip": {}}, {}])
+def test_odpowiedz_bez_trasy_jest_awaria_silnika(bezuzyteczna):
+    """Odpowiedź bez czasu przejazdu traktujemy jak timeout - schodzimy niżej w kolejce."""
+    srodowisko = Srodowisko([bezuzyteczna, odpowiedz_czasu(1800)])
+    assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS) == ("~30 min", 30)
+    assert ("valhalla_czas",) + DOMEK + KNOSSOS in srodowisko.rejestr
+
+
+# --- Google Routes: tylko z kluczem w środowisku ---
+
+def test_bez_klucza_google_nie_wchodzi_do_kolejki():
+    """Aplikacja bez poświadczeń ma odpytywać wyłącznie silniki bezpłatne i bezkluczowe."""
+    srodowisko = Srodowisko([odpowiedz_valhalli(1800)])
+    assert [nazwa for nazwa, _ in srodowisko["SILNIKI_CZASU_PRZEJAZDU"]] == ["valhalla_czas", "osrm_czas"]
+
+
+def test_z_kluczem_google_jest_pierwszy():
+    """Google Routes jako jedyny uwzględnia ruch, więc z kluczem wyprzedza Valhallę."""
+    srodowisko = Srodowisko([odpowiedz_google(1800)], klucz_google="klucz-testowy")
+    assert [nazwa for nazwa, _ in srodowisko["SILNIKI_CZASU_PRZEJAZDU"]] == [
+        "google_czas", "valhalla_czas", "osrm_czas",
+    ]
+    assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS) == ("~30 min", 30)
+
+
+def test_zapytanie_do_google_ma_klucz_maske_pol_i_tryb_ruchu():
+    """Bez X-Goog-FieldMask Routes v2 odrzuca żądanie, a bez TRAFFIC_AWARE nie ma po co po nie sięgać."""
+    srodowisko = Srodowisko([odpowiedz_google(5400)], klucz_google="klucz-testowy")
+    srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS)
+
+    (url, naglowki, timeout), = srodowisko.siec.zapytania
+    cialo, = srodowisko.siec.ciala
+    assert url == "https://routes.googleapis.com/directions/v2:computeRoutes"
+    assert naglowki["X-Goog-Api-Key"] == "klucz-testowy"
+    assert naglowki["X-Goog-FieldMask"] == "routes.duration"
+    assert cialo["travelMode"] == "DRIVE"
+    assert cialo["routingPreference"] == "TRAFFIC_AWARE"
+    assert cialo["origin"]["location"]["latLng"] == {"latitude": 35.5914, "longitude": 24.0918}
+    assert timeout == 6.0
+
+
+def test_padniecie_google_schodzi_do_valhalli():
+    """Wyczerpany limit albo odrzucony klucz nie mogą zabrać rodzinie czasów przejazdu."""
+    srodowisko = Srodowisko(
+        [OSError("403 z Google"), odpowiedz_valhalli(3600)], klucz_google="klucz-testowy"
+    )
+    assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS) == ("~1h", 60)
+    assert ("google_czas",) + DOMEK + KNOSSOS in srodowisko.rejestr
+
+
+# --- Fallback geometryczny: brak sieci ---
 
 @pytest.mark.parametrize("cel", [KNOSSOS, CHANIA])
-def test_szacunek_czasu_jest_identyczny_jak_przed_zmiana(cel):
-    """Przy padniętym OSRM wynik musi być co do znaku taki, jak dawał kod sprzed rozdzielenia cache."""
-    assert Srodowisko([OSError("timeout OSRM")])["oblicz_czas_przejazdu_osrm"](*DOMEK, *cel) == ZASTEPCZY_CZAS[cel]
+def test_padniecie_wszystkich_silnikow_daje_szacunek_geometryczny(cel):
+    """Harmonogram dnia musi dostać liczbę minut nawet bez sieci - inaczej nie policzy godzin."""
+    srodowisko = Srodowisko([OSError("brak sieci")])
+    assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *cel) == ZASTEPCZY_CZAS[cel]
+    assert srodowisko.siec.liczba_wywolan == 2, "Każdy silnik w kolejce ma dostać jedną próbę"
 
 
-@pytest.mark.parametrize("cel", [KNOSSOS, CHANIA])
-def test_prosta_linia_jest_identyczna_jak_przed_zmiana(cel):
-    """Fallback geometrii to nadal odcinek start-meta w kolejności [lat, lon]."""
-    nowe = Srodowisko([OSError("timeout OSRM")])["pobierz_geometrie_trasy_osrm"](*DOMEK, *cel)
-    assert nowe == ZASTEPCZA_GEOMETRIA[cel] == [list(DOMEK), list(cel)]
+@pytest.mark.parametrize(
+    "cel, oczekiwany",
+    [
+        # Trzy przedziały min/km: poniżej 20 km w linii prostej, do 50 km i powyżej.
+        ((35.6105, 24.1065), ("~10 min", 10)),
+        ((35.5138, 24.0180), ("~35 min", 35)),
+        ((35.3323, 24.2777), ("~1h 15m", 75)),
+        ((35.2980, 25.1631), ("~2h 40m", 160)),
+    ],
+)
+def test_szacunek_stosuje_stawke_min_na_km_wlasciwa_dla_dystansu(cel, oczekiwany):
+    """Krótki dojazd to serpentyny i miasteczka, długi biegnie trasą VOAK - jedna prędkość tego nie opisze."""
+    assert Srodowisko([])["_szacunek_czasu_przejazdu"](*DOMEK, *cel) == oczekiwany
 
 
-def test_brak_prognozy_jest_identyczny_jak_przed_zmiana():
-    """Padnięte API pogodowe dalej daje None, a nie wyjątek czy pustą strukturę."""
-    assert Srodowisko([OSError("timeout pogody")])["pobierz_prognoze_pogody"](*DOMEK, "2026-09-12") is None
+def test_szacunek_trzyma_podloge_czasu_przejazdu():
+    """Odcinek zerowej długości wywróciłby układanie godzin w planie dnia."""
+    srodowisko = Srodowisko([])
+    assert srodowisko["_szacunek_czasu_przejazdu"](*DOMEK, *DOMEK) == (
+        "~5 min", srodowisko["CZAS_PRZEJAZDU_MIN_MINUT"],
+    )
 
-
-# --- Rejestr awarii: tłumienie powtórek i wygasanie ---
 
 def test_awaria_nie_powtarza_strzalu_w_oknie_i_wraca_po_wygasnieciu():
-    """Przez AWARIA_API_PONOW_PO_S render nie dobija padającego API, potem próbuje ponownie."""
-    srodowisko = Srodowisko([OSError("timeout OSRM")])
-    czas = srodowisko["oblicz_czas_przejazdu_osrm"]
+    """Przez AWARIA_API_PONOW_PO_S render nie dobija padających API, potem próbuje ponownie."""
+    srodowisko = Srodowisko([OSError("brak sieci")])
+    czas = srodowisko["oblicz_czas_przejazdu"]
 
     assert czas(*DOMEK, *KNOSSOS) == ZASTEPCZY_CZAS[KNOSSOS]
-    assert srodowisko.siec.liczba_wywolan == 1
+    assert srodowisko.siec.liczba_wywolan == 2
 
     srodowisko.zegar.przesun(599)
     assert czas(*DOMEK, *KNOSSOS) == ZASTEPCZY_CZAS[KNOSSOS]
-    assert srodowisko.siec.liczba_wywolan == 1, "Wpis w rejestrze miał stłumić ponowny strzał"
+    assert srodowisko.siec.liczba_wywolan == 2, "Wpisy w rejestrze miały stłumić ponowne strzały"
 
     srodowisko.zegar.przesun(2)
-    srodowisko.siec.reakcje = [odpowiedz_czasu(1800)]
+    srodowisko.siec.reakcje = [odpowiedz_valhalli(1800)]
     assert czas(*DOMEK, *KNOSSOS) == ("~30 min", 30)
-    assert srodowisko.siec.liczba_wywolan == 2
-    assert srodowisko.rejestr == {}, "Po udanej próbie klucz ma zniknąć z rejestru"
+    assert srodowisko.siec.liczba_wywolan == 3
+    assert ("valhalla_czas",) + DOMEK + KNOSSOS not in srodowisko.rejestr
 
 
 def test_awaria_jednej_trasy_nie_blokuje_innej():
-    """Klucz rejestru zawiera współrzędne - awaria odcinka nie wycisza całego OSRM."""
-    srodowisko = Srodowisko([OSError("timeout OSRM")])
-    srodowisko["oblicz_czas_przejazdu_osrm"](*DOMEK, *KNOSSOS)
+    """Klucz rejestru zawiera współrzędne - awaria odcinka nie wycisza całego silnika."""
+    srodowisko = Srodowisko([OSError("brak sieci")])
+    srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS)
 
-    srodowisko.siec.reakcje = [odpowiedz_czasu(3600)]
-    assert srodowisko["oblicz_czas_przejazdu_osrm"](*DOMEK, *CHANIA) == ("~1h", 60)
-    assert srodowisko.siec.liczba_wywolan == 2
+    srodowisko.siec.reakcje = [odpowiedz_valhalli(3600)]
+    assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *CHANIA) == ("~1h", 60)
 
 
 # --- Geometria trasy ---

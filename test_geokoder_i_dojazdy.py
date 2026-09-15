@@ -10,7 +10,7 @@ Trzy usterki pilnowane tutaj:
 
 `app.py` jest skryptem Streamlit - import całego modułu uruchomiłby UI, więc testy wyciągają badane
 funkcje ze źródła przez AST i uruchamiają je na tymczasowej bazie SQLite. Sieć podstawiana jest
-atrapą (`urllib`), a poza zakresem tych testów zostają OSRM i zrzut do CSV.
+atrapą (`urllib`), a poza zakresem tych testów zostają silniki trasowania i zrzut do CSV.
 
 Uruchomienie:  pytest test_geokoder_i_dojazdy.py
 """
@@ -29,6 +29,7 @@ import pytest
 from conftest import SCIEZKA_APP, wczytaj_funkcje_z_app
 
 BADANE_FUNKCJE = [
+    "zsynchronizuj_czasy_dojazdu_z_csv",
     "sparsuj_wspolrzedne",
     "sparsuj_godzine_minuty",
     "sparsuj_czas_ogarniania_na_minuty",
@@ -70,7 +71,7 @@ CREATE TABLE czasy_dojazdu (
     czas_przejazdu TEXT, szacowany_czas_postoju INTEGER DEFAULT 0);
 """
 
-# Poza zakresem tych testów: prawdziwy OSRM (sieć) - wszystkie odcinki dostają tę samą wartość.
+# Poza zakresem tych testów: prawdziwe silniki trasowania (sieć) - wszystkie odcinki dostają tę samą wartość.
 ZASTEPCZY_DOJAZD = ("~25 min", 25)
 
 
@@ -136,7 +137,7 @@ def odpowiedz_nominatim(lat, lon):
 
 
 class Srodowisko:
-    """Świeża baza SQLite i namespace z funkcjami app.py, podstawioną siecią i atrapą OSRM."""
+    """Świeża baza SQLite i namespace z funkcjami app.py, podstawioną siecią i atrapą trasowania."""
 
     def __init__(self, sciezka_db, reakcje):
         self.sciezka_db = str(sciezka_db)
@@ -159,8 +160,8 @@ class Srodowisko:
                 request=types.SimpleNamespace(Request=Zapytanie, urlopen=self.siec),
             ),
             "get_db": lambda: sqlite3.connect(self.sciezka_db, timeout=30.0),
-            # Poza zakresem tych testów: trasy z OSRM i zrzut bazy do plików CSV.
-            "oblicz_czas_przejazdu_osrm": lambda *a, **k: ZASTEPCZY_DOJAZD,
+            # Poza zakresem tych testów: trasy z silników trasowania i zrzut bazy do plików CSV.
+            "oblicz_czas_przejazdu": lambda *a, **k: ZASTEPCZY_DOJAZD,
             "zsynchronizuj_baze_do_csv": lambda *a, **k: None,
         }
         for kod in _segmenty_stalych(STALE_MODULU):
@@ -524,3 +525,101 @@ def test_sprzatanie_z_init_db_jest_idempotentne(tmp_path):
     conn.commit()
 
     assert list(conn.execute("SELECT id_kroku_z, id_kroku_do FROM czasy_dojazdu")) == [(1, 2)]
+
+
+# --- (f) Synchronizacja kolumny "czas dojazdu ze Stavros" z pliku fabrycznego ---
+#
+# Kolumna wchodziła do bazy tylko przy pierwszym imporcie CSV, więc na serwerze z istniejącą bazą
+# poprawione czasy nie miałyby jak się pojawić. Synchronizacja jedzie przy każdym starcie i nie rusza sieci.
+
+def _baza_z_miejscami(tmp_path, wiersze):
+    """Baza z tabelą `miejsca` wypełnioną parami (numer, czas dojazdu)."""
+    sciezka = tmp_path / "miejsca.db"
+    conn = sqlite3.connect(str(sciezka))
+    conn.executescript(SCHEMAT)
+    for numer, czas in wiersze:
+        conn.execute(
+            "INSERT INTO miejsca (numer_miejsca, nazwa, czas_dojazdu, odwiedzone) VALUES (?, ?, ?, 0)",
+            (numer, f"miejsce {numer}", czas),
+        )
+    conn.commit()
+    conn.close()
+    return sciezka
+
+
+def _csv_z_czasami(tmp_path, wiersze):
+    """Plik CSV w kształcie miejsca.csv - tylko kolumny potrzebne synchronizacji."""
+    sciezka = tmp_path / "miejsca.csv"
+    pd.DataFrame(
+        [{"numer miejsca": numer, "nazwa": f"miejsce {numer}", "czas dojazdu ze Stavros": czas}
+         for numer, czas in wiersze]
+    ).to_csv(sciezka, index=False, encoding="utf-8")
+    return sciezka
+
+
+def _uruchom_synchronizacje(sciezka_db, sciezka_csv):
+    ns = {
+        "pd": pd,
+        "os": __import__("os"),
+        "sqlite3": sqlite3,
+        "get_db": lambda: sqlite3.connect(str(sciezka_db), timeout=30.0),
+    }
+    exec(SEGMENTY_FUNKCJI["zsynchronizuj_czasy_dojazdu_z_csv"], ns)
+    zmienione = ns["zsynchronizuj_czasy_dojazdu_z_csv"](str(sciezka_csv))
+    conn = sqlite3.connect(str(sciezka_db))
+    stan = dict(conn.execute("SELECT numer_miejsca, czas_dojazdu FROM miejsca"))
+    conn.close()
+    return zmienione, stan
+
+
+def test_synchronizacja_nadpisuje_reczne_czasy_wartosciami_z_csv(tmp_path):
+    """Ręcznie wpisane czasy rozjeżdżały się z trasowaniem o medianę 7.5 min - plik fabryczny wygrywa."""
+    db = _baza_z_miejscami(tmp_path, [("1", "2 godz. 15 min"), ("2", "25 min")])
+    csv_plik = _csv_z_czasami(tmp_path, [("1", "2 godz. 35 min"), ("2", "35 min")])
+
+    zmienione, stan = _uruchom_synchronizacje(db, csv_plik)
+
+    assert zmienione == 2
+    assert stan == {"1": "2 godz. 35 min", "2": "35 min"}
+
+
+def test_synchronizacja_uzupelnia_puste_pole(tmp_path):
+    """Miejsce bez czasu dojazdu (NULL) ma go dostać, a nie zostać pominięte przez porównanie z NULL-em."""
+    db = _baza_z_miejscami(tmp_path, [("1", None)])
+    csv_plik = _csv_z_czasami(tmp_path, [("1", "40 min")])
+
+    zmienione, stan = _uruchom_synchronizacje(db, csv_plik)
+
+    assert zmienione == 1
+    assert stan == {"1": "40 min"}
+
+
+def test_synchronizacja_jest_idempotentna(tmp_path):
+    """Leci przy każdym starcie aplikacji - drugi przebieg nie ma już nic do zmiany."""
+    db = _baza_z_miejscami(tmp_path, [("1", "20 min")])
+    csv_plik = _csv_z_czasami(tmp_path, [("1", "35 min")])
+
+    assert _uruchom_synchronizacje(db, csv_plik)[0] == 1
+    assert _uruchom_synchronizacje(db, csv_plik)[0] == 0
+
+
+def test_brak_pliku_csv_nie_rusza_bazy(tmp_path):
+    """Obraz bez pliku fabrycznego nie może wyczyścić czasów dojazdu z istniejącej bazy."""
+    db = _baza_z_miejscami(tmp_path, [("1", "20 min")])
+
+    zmienione, stan = _uruchom_synchronizacje(db, tmp_path / "nie_ma.csv")
+
+    assert zmienione == 0
+    assert stan == {"1": "20 min"}
+
+
+def test_synchronizacja_stoi_po_init_db_w_kolejnosci_startu():
+    """Bez tabeli `miejsca` nie ma czego synchronizować - wywołanie musi być po init_db()."""
+    wywolania = [
+        w.value.func.id
+        for w in DRZEWO_APP.body
+        if isinstance(w, ast.Expr) and isinstance(w.value, ast.Call)
+        and isinstance(w.value.func, ast.Name)
+    ]
+    assert "init_db" in wywolania and "zsynchronizuj_czasy_dojazdu_z_csv" in wywolania
+    assert wywolania.index("init_db") < wywolania.index("zsynchronizuj_czasy_dojazdu_z_csv")
