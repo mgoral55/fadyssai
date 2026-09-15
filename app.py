@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import urllib.request
+import urllib.parse
 import json
 import re
 import math
@@ -111,7 +112,7 @@ def zsynchronizuj_baze_do_csv():
 def zaokraglij_do_5_minut(minuty):
     return int(round(minuty / 5.0) * 5)
 
-# ZMIANA: Cache trzyma wyłącznie udane odpowiedzi zewnętrznych API (OSRM, wttr.in). Wartość zastępcza po awarii
+# ZMIANA: Cache trzyma wyłącznie udane odpowiedzi zewnętrznych API (OSRM, Open-Meteo). Wartość zastępcza po awarii
 # nie trafia już do cache na 24 h / 8 h (wcześniej kasował ją dopiero upływ TTL albo twardy reset bazy z CSV),
 # tylko do krótkiego rejestru awarii: przez AWARIA_API_PONOW_PO_S nie powtarzamy timeoutów przy każdym renderze,
 # a po tym czasie próbujemy API ponownie. Rejestr siedzi w st.cache_resource, a nie w zmiennych modułu, bo
@@ -408,18 +409,32 @@ def czy_krok_bazowy(nazwa_kroku):
     return any(w in nazwa_l for w in FRAZY_KROKU_BAZOWEGO)
 
 
-# ZMIANA: Jednozdaniowy skrót opisu miejsca do sekcji "Plan na dzień"
-def skroc_opis_miejsca(opis, max_znakow=160):
-    if opis is None:
-        return ""
+# ZMIANA: Jedno miejsce zamieniające pustą komórkę bazy na tekst zastępczy.
+# pandas 3 czyta kolumny TEXT jako StringDtype(na_value=nan), więc brak wartości wraca jako `nan`,
+# a nie `None` jak w pandas 2 - i `str(nan)` to napis "nan", który trafiał prosto na ekran
+# (godzina ewakuacji, ostrzeżenie czerwonej strefy, taktyka kroku). Rozsypane po widokach testy
+# `not in ["None", "Brak"]` nie miały szans tego złapać, więc sprawdzenie jest tylko tutaj.
+# Zaślepki tekstowe ("-", "Brak") znaczą dla widoku to samo co pusta komórka.
+ZASLEPKI_BAZY = {"", "-", "–", "—", "nan", "none", "null", "brak", "<na>"}
+
+
+def tekst_z_bazy(wartosc, domyslnie=""):
+    """Zwraca oczyszczony tekst z bazy albo `domyslnie`, gdy komórka jest pusta."""
     try:
-        if pd.isna(opis):
-            return ""
+        if wartosc is None or pd.isna(wartosc):
+            return domyslnie
     except (TypeError, ValueError):
+        # pd.isna na liście/tablicy rzuca - taka wartość nie jest pustą komórką.
         pass
 
-    tekst = " ".join(str(opis).split()).strip()
-    if not tekst or tekst in ["None", "nan", "Brak"]:
+    tekst = str(wartosc).strip()
+    return domyslnie if tekst.lower() in ZASLEPKI_BAZY else tekst
+
+
+# ZMIANA: Jednozdaniowy skrót opisu miejsca do sekcji "Plan na dzień"
+def skroc_opis_miejsca(opis, max_znakow=160):
+    tekst = " ".join(tekst_z_bazy(opis).split()).strip()
+    if not tekst:
         return ""
 
     zdanie = re.split(r'(?<=[.!?])\s+', tekst)[0].strip()
@@ -2275,6 +2290,10 @@ def render_loader_kozy(komunikat, rozmiar_px=104):
     # Unikalny prefiks klas i ID: ta sama animacja może trafić na stronę w kilku instancjach,
     # a zduplikowany identyfikator clipPath sklejałby maski między kopiami.
     svg = svg.replace("kozal-", f"kz{random.randrange(16 ** 6):06x}-")
+    # ZMIANA: Puste linie z pliku SVG wypadają przed wklejeniem. Markdown Streamlita kończy blok
+    # surowego HTML na pierwszej pustej linii, więc reszta arkusza animacji lądowała w oknie czatu
+    # jako widoczny tekst CSS zamiast obrazka. Pojedyncze końce linii bloku nie przerywają.
+    svg = "\n".join(linia for linia in svg.splitlines() if linia.strip())
     return (
         '<div style="display: flex; align-items: center; gap: 12px; margin: 4px 0 2px 0;">'
         f'<div style="flex: 0 0 {rozmiar_px}px; width: {rozmiar_px}px; line-height: 0;">{svg}</div>'
@@ -2380,11 +2399,11 @@ def formatuj_posilki_kroku(df_pos):
 
     posiłki_str = []
     for _, prow in df_pos.iterrows():
-        p_rodzaj = str(prow.get('rodzaj_posilku', '')).strip().lower()
+        p_rodzaj = tekst_z_bazy(prow.get('rodzaj_posilku')).lower()
         if ma_obiad_w_domku and 'kolacja' in p_rodzaj:
             continue
-        p_godz = str(prow.get('sugerowana_godzina', '')).strip()
-        p_opis = str(prow.get('opis', '')).strip()
+        p_godz = tekst_z_bazy(prow.get('sugerowana_godzina'))
+        p_opis = tekst_z_bazy(prow.get('opis'))
         
         if p_rodzaj in ['śniadanie', 'sniadanie']:
             nazwa = "Śniadanie"
@@ -2397,9 +2416,9 @@ def formatuj_posilki_kroku(df_pos):
         elif p_rodzaj == 'lunchbox_duzy':
             nazwa = "Duży lunchbox"
         else:
-            nazwa = p_opis.capitalize() if p_opis and p_opis not in ['-', 'nan', 'Brak'] else p_rodzaj.capitalize()
-            
-        if p_godz and p_godz not in ['-', 'nan', 'Brak']:
+            nazwa = p_opis.capitalize() if p_opis else p_rodzaj.capitalize()
+
+        if p_godz:
             posiłki_str.append(f"{nazwa} - ok {p_godz}")
         else:
             posiłki_str.append(nazwa)
@@ -2466,8 +2485,8 @@ def render_action_bar(coords_clean, search_name="", search_name_en="", address="
 # Kolumny trzymaja dlugi tekst w formie "<stan> - <uzasadnienie>" albo "<stan>. <uzasadnienie>",
 # wiec ikona chipa bierze sie z prefiksu, a cale zdanie ladu w rozwinieciu.
 def rozbij_stan_i_opis(wartosc):
-    s = str(wartosc or "").strip()
-    if not s or s.lower() in ("nan", "none", "brak", "-"):
+    s = tekst_z_bazy(wartosc)
+    if not s:
         return "", ""
     czesci = re.split(r"\s+[-–—]\s+|\.\s+", s, maxsplit=1)
     stan = czesci[0].strip().rstrip(".")
@@ -2567,9 +2586,7 @@ def render_chipy_stanu(p, grupa):
         tresc = f"<b>{stan_txt}</b>" + (f" — {opis}" if opis else "")
         return f'<div class="state-chip-panel-row"><span class="state-chip-panel-label">{naglowek}</span>{tresc}</div>'
 
-    strategie = str(p.get('strategie_meltdown') or "").strip()
-    if strategie.lower() in ("nan", "none", "", "-", "brak"):
-        strategie = "{TODO}"
+    strategie = tekst_z_bazy(p.get('strategie_meltdown'), "{TODO}")
 
     panel_melt = (
         akapit("Potencjał meltdownu", stan_melt, opis_melt)
@@ -2629,28 +2646,99 @@ def formatuj_komunikat_bledu_ai(e):
     return f"⚠️ Chwilowy problem z połączeniem ({type(e).__name__})", f"Szczegóły: {msg}"
 
 # --- FUNKCJE POGODOWE ---
+# ZMIANA: Źródłem prognozy jest Open-Meteo zamiast wttr.in. wttr.in dał się wyłożyć na wygasłym
+# certyfikacie TLS (15.09.2026), przez co pogoda znikła i z podsumowania wycieczki, i z kroków planu.
+# Open-Meteo to publiczne API bez klucza, z wyborem konkretnej daty i strefy czasowej, więc znika też
+# zgadywanie, który dzień z listy jest ten właściwy. Timeout idzie z 0,5 s na 4 s - przy 0,5 s żądanie
+# przepadało nawet przy zdrowym API i pogoda gasła na własne życzenie.
+#
+# Aplikacja trzyma własny kształt prognozy (godziny z polami po polsku), a nie surową odpowiedź
+# dostawcy - dzięki temu ewentualna następna podmiana źródła kończy się na jednej funkcji-adapterze.
+OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+POGODA_TIMEOUT_S = 4
+POGODA_STREFA = "Europe/Athens"
+
+# Kody pogodowe WMO (weather_code) w grupach, które faktycznie zmieniają decyzje rodzica na trasie.
+WMO_BEZCHMURNIE = {0, 1}
+WMO_LEKKIE_CHMURY = {2}
+WMO_ZACHMURZENIE = {3, 45, 48}
+WMO_BURZA = {95, 96, 99}
+WMO_DESZCZ = {51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82}
+
+OPISY_WMO = {
+    0: "Bezchmurnie", 1: "Prawie bezchmurnie", 2: "Częściowe zachmurzenie", 3: "Pochmurno",
+    45: "Mgła", 48: "Mgła osadzająca szron",
+    51: "Mżawka", 53: "Mżawka", 55: "Gęsta mżawka", 56: "Marznąca mżawka", 57: "Marznąca mżawka",
+    61: "Słaby deszcz", 63: "Deszcz", 65: "Silny deszcz", 66: "Marznący deszcz", 67: "Marznący deszcz",
+    71: "Śnieg", 73: "Śnieg", 75: "Intensywny śnieg", 77: "Ziarna śniegu",
+    80: "Przelotny deszcz", 81: "Przelotny deszcz", 82: "Ulewa",
+    85: "Przelotny śnieg", 86: "Przelotny śnieg",
+    95: "Burza", 96: "Burza z gradem", 99: "Burza z gradem",
+}
+
+
+def _opis_wmo(kod):
+    return OPISY_WMO.get(kod, "Zmienna pogoda")
+
+
 def pobierz_prognoze_pogody(lat, lon, data_docelowa):
-    klucz = ("wttr", lat, lon, data_docelowa)
+    """Prognoza godzinowa na wskazany dzień albo None, gdy API nie odpowiada."""
+    klucz = ("open_meteo", lat, lon, data_docelowa)
     if not _awaria_api_niedawna(klucz):
         try:
-            return _prognoza_wttr(lat, lon, data_docelowa)
+            return _prognoza_open_meteo(lat, lon, data_docelowa)
         except Exception:
             _zanotuj_awarie_api(klucz)
     return None
 
+
 @st.cache_data(ttl=28800, show_spinner="Running `pobierz_prognoze_pogody(...)`.")
-def _prognoza_wttr(lat, lon, data_docelowa):
-    url = f"https://wttr.in/{lat},{lon}?format=j1"
-    req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
-    with urllib.request.urlopen(req, timeout=0.5) as response:
-        data = json.loads(response.read().decode())
-        weather_list = data.get('weather', [])
-        for day in weather_list:
-            if day.get('date') == data_docelowa:
-                return day
-        if weather_list:
-            return weather_list[0]
-    raise RuntimeError("wttr.in: brak prognozy")
+def _prognoza_open_meteo(lat, lon, data_docelowa):
+    """Adapter Open-Meteo: kolumnowa odpowiedź API na listę godzin w kształcie aplikacji."""
+    zapytanie = urllib.parse.urlencode({
+        "latitude": lat,
+        "longitude": lon,
+        "hourly": "temperature_2m,apparent_temperature,weather_code,wind_speed_10m,uv_index",
+        "timezone": POGODA_STREFA,
+        "start_date": data_docelowa,
+        "end_date": data_docelowa,
+    })
+    req = urllib.request.Request(
+        f"{OPEN_METEO_URL}?{zapytanie}", headers={'User-Agent': 'CretAiApp/1.0'}
+    )
+    with urllib.request.urlopen(req, timeout=POGODA_TIMEOUT_S) as response:
+        dane = json.loads(response.read().decode())
+
+    # Open-Meteo oddaje dane kolumnami (osobna lista na każdą wielkość), więc trzeba je zszyć po indeksie.
+    kolumny = dane.get('hourly') or {}
+    znaczniki = kolumny.get('time') or []
+    if not znaczniki:
+        raise RuntimeError("Open-Meteo: brak prognozy godzinowej")
+
+    godziny = []
+    for i, znacznik in enumerate(znaczniki):
+        kod = _wez_z_kolumny(kolumny, 'weather_code', i, 0)
+        godziny.append({
+            "godzina": int(str(znacznik)[11:13]),
+            "temp": round(_wez_z_kolumny(kolumny, 'temperature_2m', i, 0.0)),
+            "odczuwalna": round(_wez_z_kolumny(kolumny, 'apparent_temperature', i, 0.0)),
+            "wiatr": round(_wez_z_kolumny(kolumny, 'wind_speed_10m', i, 0.0)),
+            "uv": round(_wez_z_kolumny(kolumny, 'uv_index', i, 0.0)),
+            "opis": _opis_wmo(kod),
+            "deszcz": kod in WMO_DESZCZ,
+            "burza": kod in WMO_BURZA,
+            "kod": kod,
+        })
+
+    return {"data": data_docelowa, "godziny": godziny}
+
+
+def _wez_z_kolumny(kolumny, nazwa, indeks, domyslnie):
+    """Wartość z kolumny Open-Meteo; None w środku serii (brak pomiaru) schodzi do wartości domyślnej."""
+    kolumna = kolumny.get(nazwa) or []
+    wartosc = kolumna[indeks] if indeks < len(kolumna) else None
+    return domyslnie if wartosc is None else wartosc
+
 
 def pobierz_szczegoly_pogody_dla_godziny(wspolrzedne, planowana_data, okienko_czasowe="12:00 - 14:00"):
     if not planowana_data or not str(planowana_data).strip():
@@ -2663,79 +2751,81 @@ def pobierz_szczegoly_pogody_dla_godziny(wspolrzedne, planowana_data, okienko_cz
     if not prognoza_dnia:
         return None
 
-    hourly_list = prognoza_dnia.get('hourly', [])
-    target_hour = 12
+    godziny = prognoza_dnia.get('godziny') or []
+    if not godziny:
+        return None
+
+    docelowa_godzina = 12
     if okienko_czasowe and "-" in okienko_czasowe:
         try:
-            target_hour = int(okienko_czasowe.split("-")[0].strip().split(":")[0])
+            docelowa_godzina = int(okienko_czasowe.split("-")[0].strip().split(":")[0])
         except Exception:
             pass
 
-    dopasowana_godzina, min_diff = None, 999
-    for h in hourly_list:
-        try:
-            diff = abs(int(h.get('time', '0')) // 100 - target_hour)
-            if diff < min_diff:
-                min_diff, dopasowana_godzina = diff, h
-        except Exception:
-            pass
+    dopasowana = min(godziny, key=lambda h: abs(h["godzina"] - docelowa_godzina))
+    return {
+        "temp": dopasowana["temp"],
+        "feel": dopasowana["odczuwalna"],
+        "desc": dopasowana["opis"],
+        "wind": dopasowana["wiatr"],
+        "uv": dopasowana["uv"],
+        "data": planowana_data,
+    }
 
-    if dopasowana_godzina:
-        return {
-            "temp": dopasowana_godzina.get('tempC', '—'),
-            "feel": dopasowana_godzina.get('FeelsLikeC', '—'),
-            "desc": dopasowana_godzina.get('weatherDesc', [{}])[0].get('value', 'Sunny'),
-            "wind": dopasowana_godzina.get('windspeedKmph', '—'),
-            "uv": dopasowana_godzina.get('uvIndex', '—'),
-            "data": planowana_data
-        }
-    return None
 
 def renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data):
     if not planowana_data or not str(planowana_data).strip() or kroki_df.empty:
         return
 
-    ostrzezenia, max_temp, min_temp = [], -99, 99
-    opisy_pogody = []
-    max_wind = 0
-    deszcz_prognozowany = False
-
+    godziny_trasy = []
     for _, k in kroki_df.iterrows():
         lat, lon = sparsuj_wspolrzedne(k['wspolrzedne'])
-        if lat is not None and lon is not None:
-            prognoza = pobierz_prognoze_pogody(lat, lon, str(planowana_data))
-            if prognoza and 'hourly' in prognoza:
-                for h in prognoza['hourly']:
-                    t = int(h.get('tempC', 20))
-                    max_temp = max(max_temp, t)
-                    min_temp = min(min_temp, t)
-                    w_spd = int(h.get('windspeedKmph', 0))
-                    max_wind = max(max_wind, w_spd)
-                    
-                    desc = h.get('weatherDesc', [{}])[0].get('value', '').strip()
-                    if desc:
-                        opisy_pogody.append(desc)
+        if lat is None or lon is None:
+            continue
+        prognoza = pobierz_prognoze_pogody(lat, lon, str(planowana_data))
+        if prognoza:
+            godziny_trasy.extend(prognoza.get('godziny') or [])
 
-    desc_lower_all = " ".join(opisy_pogody).lower()
-    if any(w in desc_lower_all for w in ['rain', 'deszcz', 'shower', 'drizzle']):
-        deszcz_prognozowany = True
+    # ZMIANA: Bez ani jednego odczytu karta mówi wprost, że danych nie ma. Wcześniej szła w świat
+    # wartownikami z inicjalizacji (min_temp=99, max_temp=-99) i przy każdej awarii API rodzic czytał
+    # "99°C – -99°C" oraz wyssany z palca opis "Przeważnie pogodnie • Brak opadów".
+    if not godziny_trasy:
+        st.markdown("""
+        <div class="overview-card" style="margin-top: 4px; margin-bottom: 12px; background-color: #FAF8F2; border: 1.5px solid #D6D2C4;">
+            <div style="font-size: 10pt; font-weight: 900; color: #2B2118;">🌤️ Podsumowanie pogody: {TODO}</div>
+            <div style="font-size: 9pt; color: #8C827A; font-weight: 700; margin-top: 2px;">
+                Serwis pogodowy nie odpowiada. Spróbuj odświeżyć stronę za kilka minut.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        return
+
+    max_temp = max(h["temp"] for h in godziny_trasy)
+    min_temp = min(h["temp"] for h in godziny_trasy)
+    max_wiatr = max(h["wiatr"] for h in godziny_trasy)
+    deszcz_prognozowany = any(h["deszcz"] for h in godziny_trasy)
+    burza_prognozowana = any(h["burza"] for h in godziny_trasy)
+    kody = {h["kod"] for h in godziny_trasy}
+
+    ostrzezenia = []
+    if deszcz_prognozowany:
         ostrzezenia.append("🌧️ Możliwe przelotne opady deszczu na trasie!")
-    if any(w in desc_lower_all for w in ['storm', 'thunder', 'burza']):
+    if burza_prognozowana:
         ostrzezenia.append("⚡ Ryzyko burz i wyładowań!")
     if max_temp >= 32:
         ostrzezenia.append(f"🔥 Wysoka temperatura (do {max_temp}°C) – bezwzględnie unikaj słońca w południe.")
 
-    if any(w in desc_lower_all for w in ['sunny', 'clear']):
+    if kody <= WMO_BEZCHMURNIE:
         glowny_stan = "☀️ Słonecznie i bezchmurnie"
-    elif any(w in desc_lower_all for w in ['partly cloudy']):
+    elif kody <= (WMO_BEZCHMURNIE | WMO_LEKKIE_CHMURY):
         glowny_stan = "⛅ Częściowo słonecznie z lekkim zachmurzeniem"
-    elif any(w in desc_lower_all for w in ['cloudy', 'overcast']):
+    elif kody & WMO_ZACHMURZENIE:
         glowny_stan = "☁️ Umiarkowane / duże zachmurzenie"
     else:
         glowny_stan = "🌤️ Przeważnie pogodnie"
 
     opady_tekst = "🌧️ Możliwy deszcz" if deszcz_prognozowany else "💧 Brak opadów"
-    wiatr_tekst = f"💨 Wiatr do {max_wind} km/h" if max_wind > 0 else ""
+    wiatr_tekst = f"💨 Wiatr do {max_wiatr} km/h" if max_wiatr > 0 else ""
 
     ostrzezenia_html = "".join([f'<div style="color: #DC5050; font-weight: 800; font-size: 8.5pt; margin-top: 3px;">{ost}</div>' for ost in ostrzezenia])
 
@@ -4763,10 +4853,10 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                         # ZMIANA: Bez czyszczenia cache po mutacjach bazy - poza _pakiet_offline_b64_z_cache, która
                         # trzyma odcisk danych w kluczu i unieważnia się sama, żadna funkcja @st.cache_data nie czyta bazy, a jej klucz
                         # to wyłącznie argumenty: _osrm_czas_przejazdu(lat1, lon1, lat2, lon2),
-                        # _osrm_geometria_trasy(lat1, lon1, lat2, lon2), _prognoza_wttr(lat, lon, data_docelowa),
+                        # _osrm_geometria_trasy(lat1, lon1, lat2, lon2), _prognoza_open_meteo(lat, lon, data_docelowa),
                         # pobierz_zdjecie_miejsca_b64(numer_miejsca, nazwa_miejsca), pobierz_logo_b64(sciezka_pliku), sciezka_claude_cli().
                         # Czyszczenie wymuszało tylko zimne pobrania przy kolejnym renderze: OSRM 4 s timeout i 2x2 s na odcinek trasy,
-                        # wttr.in 0,5 s na krok. Awarie API nie wchodzą do cache, tylko do rejestru ponawianego po AWARIA_API_PONOW_PO_S,
+                        # Open-Meteo 4 s na krok. Awarie API nie wchodzą do cache, tylko do rejestru ponawianego po AWARIA_API_PONOW_PO_S,
                         # więc nieudany strzał nie zostaje na 24 h / 8 h. Uwaga: zastępczy tekst czasu przejazdu, który
                         # przelicz_i_zsynchronizuj_wycieczke zapisuje w czasy_dojazdu (a utworz_nowe_miejsce w miejsca.czas_dojazdu),
                         # zostaje w bazie aż do kolejnego przeliczenia - dokładnie tak jak przed tą zmianą; rejestr rządzi wyłącznie
@@ -4910,8 +5000,8 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         return
 
     w_gen = wycieczka_row.iloc[0]
-    tytul_wycieczki = w_gen.get('tytul_wycieczki', 'Wycieczka')
-    planowana_data_val = w_gen.get('planowana_data', '')
+    tytul_wycieczki = tekst_z_bazy(w_gen.get('tytul_wycieczki'), 'Wycieczka')
+    planowana_data_val = tekst_z_bazy(w_gen.get('planowana_data'))
     parsed_date, dzien_val, miesiac_val, dzien_tyg_val = sformatuj_date_pl(planowana_data_val)
     
     if st.button(f"📅 Planowana data: {dzien_val} {miesiac_val} ({dzien_tyg_val}) ▾", key=f"btn_date_picker_{wycieczka_id}", use_container_width=True):
@@ -4919,19 +5009,22 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
         
     st.markdown(f'<div class="trip-top-section"><div class="trip-main-title">{tytul_wycieczki}</div></div>', unsafe_allow_html=True)
     
-    if pd.notna(w_gen.get('calosciowy_opis_wycieczki')) and str(w_gen['calosciowy_opis_wycieczki']).strip():
+    opis_wycieczki = tekst_z_bazy(w_gen.get('calosciowy_opis_wycieczki'))
+    if opis_wycieczki:
         st.markdown(f"""
         <div style="margin-top: 4px; margin-bottom: 8px;">
             <div class="section-unified-header">📝 Cel wycieczki</div>
-            <div class="section-body-text">{w_gen['calosciowy_opis_wycieczki']}</div>
+            <div class="section-body-text">{opis_wycieczki}</div>
         </div>
         """, unsafe_allow_html=True)
 
     if pokaz_pogode:
         renderuj_podsumowanie_pogody_wycieczki(kroki_df, planowana_data_val)
 
-    taktyka_dnia_val = w_gen.get('calosciowa_taktyka_dnia')
-    taktyka_tekst = str(taktyka_dnia_val).strip() if (pd.notna(taktyka_dnia_val) and str(taktyka_dnia_val).strip() not in ['-', 'nan', 'None']) else "Brak zdefiniowanej taktyki. Zdefiniuj ją w asystencie AI."
+    taktyka_tekst = tekst_z_bazy(
+        w_gen.get('calosciowa_taktyka_dnia'),
+        "Brak zdefiniowanej taktyki. Zdefiniuj ją w asystencie AI.",
+    )
     
     st.markdown(f"""
     <div class="tactics-alert-box">
@@ -4940,16 +5033,19 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
     </div>
     """, unsafe_allow_html=True)
 
-    pobudka_val = w_gen.get('pobudka', '06:00') if pd.notna(w_gen.get('pobudka')) else '06:00'
-    ogarnianie_val = w_gen.get('szacowany_czas_ogarniania_rano', '0.5h') if pd.notna(w_gen.get('szacowany_czas_ogarniania_rano')) else '0.5h'
-    wyjazd_val = w_gen.get('czas_wyjazdu', '06:30') if pd.notna(w_gen.get('czas_wyjazdu')) else '06:30'
-    
+    pobudka_val = tekst_z_bazy(w_gen.get('pobudka'), '06:00')
+    ogarnianie_val = tekst_z_bazy(w_gen.get('szacowany_czas_ogarniania_rano'), '0.5h')
+    wyjazd_val = tekst_z_bazy(w_gen.get('czas_wyjazdu'), '06:30')
+    powrot_val = tekst_z_bazy(w_gen.get('szacowana_godzina_powrotu'), '17:33')
+
     if not kroki_df.empty:
-        pobudka_val = kroki_df.iloc[0]['okienko_zwiedzania'].split("-")[0].strip() if "-" in str(kroki_df.iloc[0]['okienko_zwiedzania']) else pobudka_val
-        wyjazd_val = kroki_df.iloc[0]['okienko_zwiedzania'].split("-")[1].strip() if "-" in str(kroki_df.iloc[0]['okienko_zwiedzania']) else wyjazd_val
-        powrot_val = kroki_df.iloc[-1]['okienko_zwiedzania'].split("-")[0].strip() if "-" in str(kroki_df.iloc[-1]['okienko_zwiedzania']) else w_gen.get('szacowana_godzina_powrotu', '17:33')
-    else:
-        powrot_val = w_gen.get('szacowana_godzina_powrotu', '17:33')
+        okno_pierwszego = tekst_z_bazy(kroki_df.iloc[0]['okienko_zwiedzania'])
+        okno_ostatniego = tekst_z_bazy(kroki_df.iloc[-1]['okienko_zwiedzania'])
+        if "-" in okno_pierwszego:
+            pobudka_val = okno_pierwszego.split("-")[0].strip()
+            wyjazd_val = okno_pierwszego.split("-")[1].strip()
+        if "-" in okno_ostatniego:
+            powrot_val = okno_ostatniego.split("-")[0].strip()
 
     st.markdown('<div class="section-unified-header">🧭 Logistyka</div>', unsafe_allow_html=True)
     col_log1, col_log2, col_log3 = st.columns(3)
@@ -5047,15 +5143,15 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
     for idx, (_, k) in enumerate(kroki_df.iterrows()):
         krok_row_id = int(k['id'])
-        nazwa = str(k['nazwa'])
+        nazwa = tekst_z_bazy(k['nazwa'])
         nazwa_lower = nazwa.lower()
-        okienko = str(k.get('okienko_zwiedzania', ''))
-        krok_num = str(k['krok_wycieczki'])
-        wspolrzedne = str(k.get('wspolrzedne', ''))
+        okienko = tekst_z_bazy(k.get('okienko_zwiedzania'))
+        krok_num = tekst_z_bazy(k['krok_wycieczki'])
+        wspolrzedne = tekst_z_bazy(k.get('wspolrzedne'))
         coords_clean = wspolrzedne.replace(" ", "")
-        
+
         godzina_start = okienko.split("-")[0].strip() if "-" in okienko else (okienko if okienko else "08:00")
-        godzina_koniec = okienko.split("-")[1].strip() if "-" in okienko else str(k.get('godzina_ewakuacji', '')).strip()
+        godzina_koniec = okienko.split("-")[1].strip() if "-" in okienko else tekst_z_bazy(k.get('godzina_ewakuacji'))
         
         is_cottage_step = czy_krok_bazowy(nazwa)
 
@@ -5196,9 +5292,7 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
             ))
         
         elif is_custom_flat:
-            opis_kroku_cust = str(k.get('opis', '')).strip()
-            if opis_kroku_cust in ["Brak", "None"]:
-                opis_kroku_cust = ""
+            opis_kroku_cust = tekst_z_bazy(k.get('opis'))
 
             tytul_kroku_display = nazwa
             if "rynek" in nazwa_lower or "targ" in nazwa_lower:
@@ -5236,14 +5330,14 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
             pogoda_kroku = pobierz_szczegoly_pogody_dla_godziny(k['wspolrzedne'], planowana_data_val, okienko)
             pogoda_html = f'<div style="background-color: #FAF8F2; border: 1.5px solid #D8D2BC; border-radius: 14px; padding: 8px 12px; margin-bottom: 10px; text-align: center;"><div style="font-size: 8pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 2px;">☀️ POGODA ({pogoda_kroku["data"]})</div><div style="font-size: 9.5pt; font-weight: 800; color: #2B2118;">{pogoda_kroku["temp"]}°C (odcz. {pogoda_kroku["feel"]}°C), {pogoda_kroku["desc"]} 💨 {pogoda_kroku["wind"]} km/h | UV {pogoda_kroku["uv"]}</div></div>' if pogoda_kroku else ""
-            opis_glowny = str(k.get('opis', '')).strip()
-            opis_glowny_html = f'<div class="step-desc-bubble">{opis_glowny}</div>' if (opis_glowny and opis_glowny != "None") else ""
+            opis_glowny = tekst_z_bazy(k.get('opis'))
+            opis_glowny_html = f'<div class="step-desc-bubble">{opis_glowny}</div>' if opis_glowny else ""
 
-            ewakuacja_val = str(k.get('godzina_ewakuacji', '')).strip()
-            evac_html = f'<div class="step-evac-pill"><div class="step-evac-pill-title">🚨 Godzina ewakuacji</div><div class="step-evac-pill-val">{ewakuacja_val}</div></div>' if (ewakuacja_val and ewakuacja_val not in ["None", "Brak"]) else ""
+            ewakuacja_val = tekst_z_bazy(k.get('godzina_ewakuacji'))
+            evac_html = f'<div class="step-evac-pill"><div class="step-evac-pill-title">🚨 Godzina ewakuacji</div><div class="step-evac-pill-val">{ewakuacja_val}</div></div>' if ewakuacja_val else ""
 
-            ostrzezenie_val = str(k.get('czerwona_strefa_ostrzezenie', '')).strip()
-            warn_html = f'<div class="step-warn-box"><div class="step-warn-title">⚠️ Ostrzeżenie (Czerwona strefa)</div><div class="step-warn-text">{ostrzezenie_val}</div></div>' if (ostrzezenie_val and ostrzezenie_val not in ["None", "Brak"]) else ""
+            ostrzezenie_val = tekst_z_bazy(k.get('czerwona_strefa_ostrzezenie'))
+            warn_html = f'<div class="step-warn-box"><div class="step-warn-title">⚠️ Ostrzeżenie (Czerwona strefa)</div><div class="step-warn-text">{ostrzezenie_val}</div></div>' if ostrzezenie_val else ""
 
             if matched_place_id:
                 cur_tab = "route" if st.session_state.active_tab == "route" else "map"
@@ -5271,9 +5365,9 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 f'<summary>🎯 Taktyka & Regeneracja</summary>'
                 f'<div style="margin-top: 8px; border-top: 1px solid #D1C7AE; padding-top: 6px;">'
                 f'<div class="step-subitem-title" style="color: #8C5338;">🎯 Taktyka</div>'
-                f'<div class="step-subitem-body">{k.get("podsumowanie_taktyki", "Brak szczegółów taktyki")}</div>'
+                f'<div class="step-subitem-body">{tekst_z_bazy(k.get("podsumowanie_taktyki"), "Brak szczegółów taktyki")}</div>'
                 f'<div class="step-subitem-title" style="color: #6D8257; margin-top: 6px;">🌿 Regeneracja</div>'
-                f'<div class="step-subitem-body">{k.get("strefa_luzu_i_regeneracji", "Brak strefy regeneracji")}</div>'
+                f'<div class="step-subitem-body">{tekst_z_bazy(k.get("strefa_luzu_i_regeneracji"), "Brak strefy regeneracji")}</div>'
                 f'</div>'
                 f'</details>'
                 f'###SHOPPING_LIST_PLACEHOLDER_{krok_row_id}###'
@@ -5532,12 +5626,12 @@ def generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_miejsca_ref):
         return None
 
     w = wyc.iloc[0]
-    tytul = w.get('tytul_wycieczki', 'Trasa Dnia')
-    taktyka = w.get('calosciowa_taktyka_dnia', 'Brak szczegółów')
-    pobudka = w.get('pobudka', '06:00')
-    wyjazd = w.get('czas_wyjazdu', '06:30')
-    powrot = w.get('szacowana_godzina_powrotu', '17:30')
-    data_w = w.get('planowana_data', '')
+    tytul = tekst_z_bazy(w.get('tytul_wycieczki'), 'Trasa Dnia')
+    taktyka = tekst_z_bazy(w.get('calosciowa_taktyka_dnia'), 'Brak szczegółów')
+    pobudka = tekst_z_bazy(w.get('pobudka'), '06:00')
+    wyjazd = tekst_z_bazy(w.get('czas_wyjazdu'), '06:30')
+    powrot = tekst_z_bazy(w.get('szacowana_godzina_powrotu'), '17:30')
+    data_w = tekst_z_bazy(w.get('planowana_data'))
     
     # ZMIANA: Pobranie i sformatowanie stałych punktów z panelu bocznego do widoku offline
     rynek_dane, _ = pobierz_dane_rynku_dla_daty(data_w)
@@ -5589,21 +5683,21 @@ def generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_miejsca_ref):
     kroki_cards_html = []
     for _, k in kroki.iterrows():
         k_id = int(k['id'])
-        nazwa = k.get('nazwa', '')
-        okno = k.get('okienko_zwiedzania', '')
-        wsp = str(k.get('wspolrzedne', '')).replace(' ', '')
-        opis = k.get('opis', '')
-        ewakuacja = str(k.get('godzina_ewakuacji', '')).strip()
-        ostrzezenie = str(k.get('czerwona_strefa_ostrzezenie', '')).strip()
-        taktyka_k = str(k.get('podsumowanie_taktyki', '')).strip()
+        nazwa = tekst_z_bazy(k.get('nazwa'))
+        okno = tekst_z_bazy(k.get('okienko_zwiedzania'))
+        wsp = tekst_z_bazy(k.get('wspolrzedne')).replace(' ', '')
+        opis = tekst_z_bazy(k.get('opis'))
+        ewakuacja = tekst_z_bazy(k.get('godzina_ewakuacji'))
+        ostrzezenie = tekst_z_bazy(k.get('czerwona_strefa_ostrzezenie'))
+        taktyka_k = tekst_z_bazy(k.get('podsumowanie_taktyki'))
 
         # Formatowanie posiłków analogicznie do głównej aplikacji
         df_p = posilki_wszystkie[posilki_wszystkie['id_kroku'] == k_id]
         posilki_lista = []
         for _, prow in df_p.iterrows():
-            p_rodz = str(prow.get('rodzaj_posilku', '')).strip().lower()
-            p_godz = str(prow.get('sugerowana_godzina', '')).strip()
-            p_opis = str(prow.get('opis', '')).strip()
+            p_rodz = tekst_z_bazy(prow.get('rodzaj_posilku')).lower()
+            p_godz = tekst_z_bazy(prow.get('sugerowana_godzina'))
+            p_opis = tekst_z_bazy(prow.get('opis'))
 
             if 'śniadan' in p_rodz or 'sniadan' in p_rodz:
                 label = "Śniadanie"
@@ -5616,19 +5710,18 @@ def generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_miejsca_ref):
             elif p_rodz == 'lunchbox_duzy':
                 label = "Duży lunchbox"
             else:
-                label = p_opis.capitalize() if p_opis and p_opis not in ['-', 'nan', 'Brak'] else p_rodz.capitalize()
+                label = p_opis.capitalize() if p_opis else p_rodz.capitalize()
 
-            if p_godz and p_godz not in ['-', 'nan', 'Brak']:
+            if p_godz:
                 posilki_lista.append(f"{label} - ok {p_godz}")
             else:
                 posilki_lista.append(label)
 
         posilki_badge = f'<div class="meal-badge">🍴 {" / ".join(posilki_lista)}</div>' if posilki_lista else ''
         
-        # Filtrowanie pustych wartości "None" / "-"
-        evac_badge = f'<div class="evac-badge">🚨 Godzina ewakuacji: <b>{ewakuacja}</b></div>' if ewakuacja and ewakuacja not in ['None', '-', 'nan'] else ''
-        warn_box = f'<div class="warn-box">⚠️ <b>Czerwona Strefa:</b> {ostrzezenie}</div>' if ostrzezenie and ostrzezenie not in ['None', '-', 'nan'] else ''
-        taktyka_box = f'<div class="tactics-box">🎯 <b>Taktyka:</b> {taktyka_k}</div>' if taktyka_k and taktyka_k not in ['None', '-', 'nan'] else ''
+        evac_badge = f'<div class="evac-badge">🚨 Godzina ewakuacji: <b>{ewakuacja}</b></div>' if ewakuacja else ''
+        warn_box = f'<div class="warn-box">⚠️ <b>Czerwona Strefa:</b> {ostrzezenie}</div>' if ostrzezenie else ''
+        taktyka_box = f'<div class="tactics-box">🎯 <b>Taktyka:</b> {taktyka_k}</div>' if taktyka_k else ''
         is_cottage_krok = any(w in nazwa.lower() for w in ["domek", "wyjazd z domku", "powrót do domku", "powrot do domku", "start", "powrót", "powrot"])
         lat_krok, lon_krok = sparsuj_wspolrzedne(wsp)
         if lat_krok is not None and lon_krok is not None and not is_cottage_krok:
@@ -5646,7 +5739,7 @@ def generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_miejsca_ref):
             {posilki_badge}
             {evac_badge}
             {warn_box}
-            <div class="step-desc">{opis if opis and opis not in ['None', 'nan'] else ''}</div>
+            <div class="step-desc">{opis}</div>
             {taktyka_box}
             {geo_btn}
         </div>

@@ -1,4 +1,4 @@
-"""Testy regresyjne cache zewnętrznych API (OSRM, wttr.in).
+"""Testy regresyjne cache zewnętrznych API (OSRM, Open-Meteo).
 
 Cache `@st.cache_data` trzyma teraz wyłącznie udane odpowiedzi, a awaria trafia do rejestru
 awarii (`AWARIA_API_PONOW_PO_S`) żyjącego w `@st.cache_resource`, a nie do cache na 24 h / 8 h.
@@ -22,7 +22,9 @@ import json
 import math
 import threading
 import types
+import urllib.parse
 
+import pandas as pd
 import pytest
 
 from conftest import SCIEZKA_APP, wczytaj_funkcje_z_app
@@ -38,10 +40,24 @@ BADANE_FUNKCJE = [
     "pobierz_geometrie_trasy_osrm",
     "_osrm_geometria_trasy",
     "pobierz_prognoze_pogody",
-    "_prognoza_wttr",
+    "_prognoza_open_meteo",
+    "_wez_z_kolumny",
+    "_opis_wmo",
 ]
 
-STALE_MODULU = ["AWARIA_API_PONOW_PO_S", "AWARIA_API_PROG_SPRZATANIA"]
+STALE_MODULU = [
+    "AWARIA_API_PONOW_PO_S",
+    "AWARIA_API_PROG_SPRZATANIA",
+    "OPEN_METEO_URL",
+    "POGODA_TIMEOUT_S",
+    "POGODA_STREFA",
+    "WMO_BEZCHMURNIE",
+    "WMO_LEKKIE_CHMURY",
+    "WMO_ZACHMURZENIE",
+    "WMO_BURZA",
+    "WMO_DESZCZ",
+    "OPISY_WMO",
+]
 
 # Opakowania widoczne dla reszty app.py - muszą być bez cache, żeby wartość zastępcza nie wpadła do cache.
 NAZWY_PUBLICZNE = {
@@ -56,7 +72,7 @@ NAZWY_PUBLICZNE = {
 NAZWY_Z_CACHE_DATA = {
     "_osrm_czas_przejazdu": "Running `oblicz_czas_przejazdu_osrm(...)`.",
     "_osrm_geometria_trasy": "Running `pobierz_geometrie_trasy_osrm(...)`.",
-    "_prognoza_wttr": "Running `pobierz_prognoze_pogody(...)`.",
+    "_prognoza_open_meteo": "Running `pobierz_prognoze_pogody(...)`.",
 }
 
 # Zmienne modułowe zerowałyby się przy każdym rerunie skryptu Streamlita - rejestr ma ich nie używać.
@@ -142,7 +158,11 @@ class ZegarAtrapa:
 
 
 def _atrapa_urllib(siec):
-    return types.SimpleNamespace(request=types.SimpleNamespace(Request=Zapytanie, urlopen=siec))
+    # `parse` jedzie prawdziwy - adapter Open-Meteo skleja nim query stringa, a test sprawdza URL.
+    return types.SimpleNamespace(
+        request=types.SimpleNamespace(Request=Zapytanie, urlopen=siec),
+        parse=urllib.parse,
+    )
 
 
 # --- Ładowanie kodu z app.py ---
@@ -162,6 +182,11 @@ def _segmenty_stalych(nazwy):
 
 SEGMENTY_STALYCH = _segmenty_stalych(STALE_MODULU)
 SEGMENTY_FUNKCJI = wczytaj_funkcje_z_app(BADANE_FUNKCJE)
+# Widok podsumowania pogody ładowany osobno - rysuje przez Streamlita, więc nie wchodzi
+# do wspólnego namespace'u testów sieciowych.
+SEGMENT_PODSUMOWANIA = wczytaj_funkcje_z_app(
+    ["renderuj_podsumowanie_pogody_wycieczki"]
+)["renderuj_podsumowanie_pogody_wycieczki"]
 
 
 def _wezel_funkcji(nazwa):
@@ -281,8 +306,8 @@ def test_prosta_linia_jest_identyczna_jak_przed_zmiana(cel):
 
 
 def test_brak_prognozy_jest_identyczny_jak_przed_zmiana():
-    """Padnięte wttr.in dalej daje None, a nie wyjątek czy pustą strukturę."""
-    assert Srodowisko([OSError("timeout wttr")])["pobierz_prognoze_pogody"](*DOMEK, "2026-09-12") is None
+    """Padnięte API pogodowe dalej daje None, a nie wyjątek czy pustą strukturę."""
+    assert Srodowisko([OSError("timeout pogody")])["pobierz_prognoze_pogody"](*DOMEK, "2026-09-12") is None
 
 
 # --- Rejestr awarii: tłumienie powtórek i wygasanie ---
@@ -354,38 +379,87 @@ def test_geometria_po_dwoch_awariach_daje_prosta_linie_i_wpis_w_rejestrze():
     assert ("osrm_geometria",) + DOMEK + KNOSSOS in srodowisko.rejestr
 
 
-# --- Prognoza pogody ---
+# --- Prognoza pogody (Open-Meteo) ---
+#
+# Open-Meteo oddaje dane kolumnami: `time` plus po jednej liście na każdą wielkość, indeksowane równolegle.
+# Aplikacja zszywa je we własny kształt (lista godzin), więc testy pilnują właśnie tego przejścia,
+# a nie surowej odpowiedzi dostawcy.
 
-PROGNOZA = {
-    "weather": [
-        {"date": "2026-09-11", "maxtempC": "28"},
-        {"date": "2026-09-12", "maxtempC": "31"},
-    ]
-}
-
-
-def test_pogoda_zwraca_dzien_o_pasujacej_dacie():
-    """Z listy dni bierzemy ten, o który pytał krok wycieczki."""
-    srodowisko = Srodowisko([PROGNOZA])
-    assert srodowisko["pobierz_prognoze_pogody"](*DOMEK, "2026-09-12") == PROGNOZA["weather"][1]
-
-
-def test_pogoda_bez_pasujacej_daty_wraca_do_pierwszego_dnia():
-    """Data poza horyzontem prognozy nie może wysypać widoku - bierzemy pierwszy dzień."""
-    srodowisko = Srodowisko([PROGNOZA])
-    assert srodowisko["pobierz_prognoze_pogody"](*DOMEK, "2026-12-24") == PROGNOZA["weather"][0]
+def odpowiedz_pogody(godziny, **kolumny):
+    """Buduje kolumnową odpowiedź Open-Meteo dla podanych godzin dnia."""
+    data = "2026-09-12"
+    domyslne = {
+        "temperature_2m": [24.4] * len(godziny),
+        "apparent_temperature": [26.6] * len(godziny),
+        "weather_code": [0] * len(godziny),
+        "wind_speed_10m": [11.5] * len(godziny),
+        "uv_index": [7.4] * len(godziny),
+    }
+    domyslne.update(kolumny)
+    return {"hourly": {"time": [f"{data}T{g:02d}:00" for g in godziny], **domyslne}}
 
 
-def test_pogoda_z_pusta_lista_dni_to_awaria():
-    """Odpowiedź bez dni jest bezużyteczna - None dla UI, wpis w rejestrze zamiast cache."""
-    srodowisko = Srodowisko([{"weather": []}])
+def test_pogoda_sklada_kolumny_w_godziny():
+    """Kolumnowa odpowiedź musi wyjść jako lista godzin z polami, których używa widok."""
+    srodowisko = Srodowisko([odpowiedz_pogody([11, 12])])
+    prognoza = srodowisko["pobierz_prognoze_pogody"](*DOMEK, "2026-09-12")
+
+    assert prognoza["data"] == "2026-09-12"
+    assert [g["godzina"] for g in prognoza["godziny"]] == [11, 12]
+    # Wartości lądują w UI jako liczby całkowite - stopnie po przecinku nie niosą tu informacji.
+    assert prognoza["godziny"][0] == {
+        "godzina": 11, "temp": 24, "odczuwalna": 27, "wiatr": 12, "uv": 7,
+        "opis": "Bezchmurnie", "deszcz": False, "burza": False, "kod": 0,
+    }
+
+
+def test_pogoda_pyta_o_konkretna_date_i_strefe():
+    """Dzień wybiera API, a nie zgadywanie po liście - w zapytaniu jedzie data i strefa czasowa."""
+    srodowisko = Srodowisko([odpowiedz_pogody([12])])
+    srodowisko["pobierz_prognoze_pogody"](*DOMEK, "2026-09-12")
+
+    (url, naglowki, timeout), = srodowisko.siec.zapytania
+    assert url.startswith("https://api.open-meteo.com/v1/forecast?")
+    assert "start_date=2026-09-12&end_date=2026-09-12" in url
+    assert "timezone=Europe%2FAthens" in url
+    assert naglowki == NAGLOWEK
+    assert timeout == 4
+
+
+@pytest.mark.parametrize(
+    "kod, opis, deszcz, burza",
+    [
+        (0, "Bezchmurnie", False, False),
+        (61, "Słaby deszcz", True, False),
+        (80, "Przelotny deszcz", True, False),
+        (95, "Burza", False, True),
+        (123, "Zmienna pogoda", False, False),
+    ],
+)
+def test_kod_wmo_przeklada_sie_na_opis_i_flagi(kod, opis, deszcz, burza):
+    """Ostrzeżenia na karcie wycieczki biorą się z kodu WMO, nie z dopasowywania angielskich napisów."""
+    srodowisko = Srodowisko([odpowiedz_pogody([12], weather_code=[kod])])
+    godzina, = srodowisko["pobierz_prognoze_pogody"](*DOMEK, "2026-09-12")["godziny"]
+    assert (godzina["opis"], godzina["deszcz"], godzina["burza"]) == (opis, deszcz, burza)
+
+
+def test_dziura_w_serii_nie_wysypuje_prognozy():
+    """Brak pojedynczego pomiaru (None w kolumnie) schodzi do zera, nie do wyjątku."""
+    srodowisko = Srodowisko([odpowiedz_pogody([12], uv_index=[None], wind_speed_10m=[None])])
+    godzina, = srodowisko["pobierz_prognoze_pogody"](*DOMEK, "2026-09-12")["godziny"]
+    assert (godzina["uv"], godzina["wiatr"]) == (0, 0)
+
+
+def test_pogoda_bez_godzin_to_awaria():
+    """Odpowiedź bez godzin jest bezużyteczna - None dla UI, wpis w rejestrze zamiast cache."""
+    srodowisko = Srodowisko([{"hourly": {"time": []}}])
     assert srodowisko["pobierz_prognoze_pogody"](*DOMEK, "2026-09-12") is None
-    assert ("wttr",) + DOMEK + ("2026-09-12",) in srodowisko.rejestr
+    assert ("open_meteo",) + DOMEK + ("2026-09-12",) in srodowisko.rejestr
 
 
 def test_pogoda_po_wyjatku_daje_none_bez_dobijania_api():
-    """Timeout wttr.in tłumiony jest tak samo jak awarie OSRM."""
-    srodowisko = Srodowisko([OSError("timeout wttr")])
+    """Timeout serwisu pogodowego tłumiony jest tak samo jak awarie OSRM."""
+    srodowisko = Srodowisko([OSError("timeout pogody")])
 
     assert srodowisko["pobierz_prognoze_pogody"](*DOMEK, "2026-09-12") is None
     assert srodowisko["pobierz_prognoze_pogody"](*DOMEK, "2026-09-12") is None
@@ -402,7 +476,7 @@ def test_nieznany_klucz_nie_jest_awaria():
 def test_swiezo_zanotowana_awaria_jest_niedawna():
     """Zaraz po zanotowaniu klucz blokuje kolejne strzały."""
     srodowisko = Srodowisko([])
-    klucz = ("wttr", 35.0, 24.0, "2026-09-12")
+    klucz = ("open_meteo", 35.0, 24.0, "2026-09-12")
     srodowisko["_zanotuj_awarie_api"](klucz)
     assert srodowisko["_awaria_api_niedawna"](klucz) is True
 
@@ -427,8 +501,8 @@ def test_rejestr_przycina_wygasle_wpisy_po_przekroczeniu_progu():
     assert len(srodowisko.rejestr) == prog + 1, "Do progu nic nie jest kasowane"
 
     srodowisko.zegar.przesun(srodowisko["AWARIA_API_PONOW_PO_S"])
-    srodowisko["_zanotuj_awarie_api"](("wttr", "swiezy"))
-    assert list(srodowisko.rejestr) == [("wttr", "swiezy")]
+    srodowisko["_zanotuj_awarie_api"](("open_meteo", "swiezy"))
+    assert list(srodowisko.rejestr) == [("open_meteo", "swiezy")]
 
 
 # --- Sposób trzymania rejestru i cache (czytane z AST, bo dekoratory nie wchodzą do testu) ---
@@ -480,3 +554,65 @@ def test_rejestr_nie_wisi_na_zmiennej_modulu(nazwa):
         if getattr(cel, "id", None) == nazwa
     ]
     assert przypisania == [], f"{nazwa} nie przetrwa rerunu Streamlita - rejestr ma żyć w st.cache_resource"
+
+
+# --- Widok podsumowania pogody na karcie wycieczki ---
+#
+# Funkcja rysuje kartę przez `st.markdown`, więc test podstawia atrapę Streamlita i czyta,
+# co faktycznie poszłoby do HTML.
+
+class StAtrapa:
+    """Zbiera wywołania st.markdown - test sprawdza treść, która trafiłaby na ekran."""
+
+    def __init__(self):
+        self.markdown = []
+
+    def __call__(self, tresc, **_):
+        self.markdown.append(tresc)
+
+    @property
+    def html(self):
+        return "\n".join(self.markdown)
+
+
+def _podsumowanie_html(prognoza):
+    """Renderuje kartę podsumowania dla podanej prognozy i zwraca HTML, który poszedłby na ekran."""
+    st_atrapa = StAtrapa()
+    ns = {
+        "st": types.SimpleNamespace(markdown=st_atrapa),
+        "sparsuj_wspolrzedne": lambda wspolrzedne: DOMEK,
+        "pobierz_prognoze_pogody": lambda lat, lon, data: prognoza,
+    }
+    for kod in _segmenty_stalych(["WMO_BEZCHMURNIE", "WMO_LEKKIE_CHMURY", "WMO_ZACHMURZENIE"]):
+        exec(kod, ns)
+    exec(SEGMENT_PODSUMOWANIA, ns)
+
+    kroki = pd.DataFrame([{"wspolrzedne": "35.5914, 24.0918"}])
+    ns["renderuj_podsumowanie_pogody_wycieczki"](kroki, "2026-09-12")
+    return st_atrapa.html
+
+
+def test_podsumowanie_bez_danych_mowi_wprost_ze_ich_nie_ma():
+    """Padnięte API nie może dawać wyssanych z palca stopni - wcześniej szło '99°C – -99°C'."""
+    html = _podsumowanie_html(None)
+
+    assert "{TODO}" in html
+    assert "nie odpowiada" in html
+    assert "99" not in html, "wartowniki z inicjalizacji nie mogą wyciec do UI"
+
+
+def test_podsumowanie_z_danymi_podaje_zakres_i_ostrzezenia():
+    """Przy poprawnej prognozie karta pokazuje zakres temperatur i ostrzeżenie z kodu WMO."""
+    prognoza = {"data": "2026-09-12", "godziny": [
+        {"godzina": 9, "temp": 24, "odczuwalna": 26, "wiatr": 12, "uv": 6,
+         "opis": "Bezchmurnie", "deszcz": False, "burza": False, "kod": 0},
+        {"godzina": 15, "temp": 33, "odczuwalna": 36, "wiatr": 21, "uv": 9,
+         "opis": "Burza", "deszcz": False, "burza": True, "kod": 95},
+    ]}
+    html = _podsumowanie_html(prognoza)
+
+    assert "24°C – 33°C" in html
+    assert "Ryzyko burz" in html
+    assert "Wysoka temperatura (do 33°C)" in html
+    assert "Wiatr do 21 km/h" in html
+    assert "{TODO}" not in html

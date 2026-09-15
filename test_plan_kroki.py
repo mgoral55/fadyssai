@@ -14,10 +14,11 @@ import sqlite3
 import pandas as pd
 import pytest
 
-from conftest import wczytaj_funkcje_z_app
+from conftest import wczytaj_funkcje_z_app, wczytaj_stale_z_app
 
 # Funkcje wyciągane ze źródła aplikacji i uruchamiane w testach bez zmian.
 BADANE_FUNKCJE = [
+    "tekst_z_bazy",
     "_reindex_kroki",
     "_wstaw_krok_do_wycieczki",
     "_usun_krok_z_wycieczki",
@@ -89,6 +90,7 @@ class Plan:
             # Poza zakresem tych testów: walidacja AuDHD i przeliczanie tras (OSRM, sieć).
             "sprawdz_ryzyka_audhd_dla_kroku": lambda *a, **k: (True, ""),
             "przelicz_i_zsynchronizuj_wycieczke": lambda *a, **k: None,
+            **wczytaj_stale_z_app(["ZASLEPKI_BAZY"]),
         }
         for nazwa_f, kod in wczytaj_funkcje_z_app(BADANE_FUNKCJE).items():
             exec(kod, self.ns)

@@ -11,10 +11,11 @@ import urllib.parse
 
 import pytest
 
-from conftest import wczytaj_funkcje_z_app
+from conftest import wczytaj_funkcje_z_app, wczytaj_stale_z_app
 
 BADANE_FUNKCJE = [
     "sparsuj_wspolrzedne",
+    "tekst_z_bazy",
     "rozbij_stan_i_opis",
     "_svg_slupki_trudnosci",
     "ikona_trudnosci",
@@ -37,6 +38,8 @@ def app_ns():
         "DOMEK_LAT": DOMEK_LAT,
         "DOMEK_LON": DOMEK_LON,
         "pd": type("PdStub", (), {"isna": staticmethod(lambda v: v is None)}),
+        # Stała czytana przez tekst_z_bazy - trzymana w app.py obok funkcji, tu podana wprost.
+        "ZASLEPKI_BAZY": frozenset({"", "-", "\u2013", "\u2014", "nan", "none", "null", "brak", "<na>"}),
     }
     segmenty = wczytaj_funkcje_z_app(BADANE_FUNKCJE)
     for nazwa in BADANE_FUNKCJE:

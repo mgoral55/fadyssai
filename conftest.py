@@ -25,3 +25,23 @@ def wczytaj_funkcje_z_app(nazwy):
     brakujace = [n for n in nazwy if n not in segmenty]
     assert not brakujace, f"Nie znaleziono funkcji w app.py: {brakujace}"
     return segmenty
+
+
+def wczytaj_stale_z_app(nazwy):
+    """Zwraca {nazwa: wartość} dla modułowych stałych z app.py.
+
+    Wyciągnięta funkcja czyta stałe swojego modułu przez globalny namespace, więc test musi je
+    podać razem z nią - przepisanie wartości do testu rozjeżdżałoby się z app.py po cichu.
+    """
+    zrodlo = io.open(SCIEZKA_APP, encoding="utf-8").read()
+    drzewo = ast.parse(zrodlo)
+    wartosci = {}
+    for wezel in drzewo.body:
+        if not isinstance(wezel, ast.Assign):
+            continue
+        for cel in wezel.targets:
+            if isinstance(cel, ast.Name) and cel.id in nazwy:
+                wartosci[cel.id] = ast.literal_eval(wezel.value)
+    brakujace = [n for n in nazwy if n not in wartosci]
+    assert not brakujace, f"Nie znaleziono stałych w app.py: {brakujace}"
+    return wartosci

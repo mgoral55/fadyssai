@@ -64,6 +64,17 @@ def test_render_wstawia_svg_i_komunikat(funkcje):
     assert "@keyframes" in html, "styl animacji musi jechać razem z inline SVG"
 
 
+def test_render_nie_ma_pustych_linii(funkcje):
+    """Markdown Streamlita kończy blok surowego HTML na pustej linii.
+
+    Plik SVG rozdziela sekcje pustymi liniami dla czytelności - gdyby trafiły do HTML,
+    reszta arkusza animacji wyświetliłaby się rodzicowi w czacie jako goły tekst CSS.
+    """
+    html = funkcje["render_loader_kozy"]("🧠 Sprawdzam strefy cienia...")
+    puste = [nr for nr, linia in enumerate(html.splitlines(), 1) if not linia.strip()]
+    assert not puste, f"puste linie w HTML loadera (numery: {puste}) urwą blok HTML w markdownie"
+
+
 def test_kazda_instancja_ma_wlasne_identyfikatory(funkcje):
     """Dwa loadery na jednej stronie nie mogą dzielić id clipPath ani nazw keyframes."""
     render = funkcje["render_loader_kozy"]
