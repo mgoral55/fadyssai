@@ -1669,7 +1669,9 @@ div.st-key-btn_date_picker { margin-bottom: 10px !important; }
 .place-icon-btn, .place-icon-btn:visited, .place-icon-btn:hover { color: #2B2118 !important; }
 .place-icon-btn.done { background-color: #7E9B6B; border-color: #5F7A50; }
 .place-icon-btn.done, .place-icon-btn.done:visited, .place-icon-btn.done:hover { color: #FAF8F2 !important; }
-.place-map-box { border-radius: 16px; overflow: hidden; border: 1.5px solid #E2DEC8; }
+/* Mapa jednego miejsca dostaje ramke w stylu kart; klucz kontenera zawiera numer
+   miejsca, wiec selektor dopasowuje prefiks. */
+div[class*="st-key-mapa_miejsca_"] iframe { border-radius: 16px; border: 1.5px solid #E2DEC8; }
 
 /* --- CHIPY STANU: jeden rozwiniety naraz, panel szczegolow na pelna szerokosc ---
    Wylacznosc daje atrybut `name` na <details>. Panel siedzi wewnatrz chipa (inaczej nie
