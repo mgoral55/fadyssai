@@ -111,6 +111,54 @@ oraz `wycieczki.csv` (np. `Pałac Minojski w Knossos (ruiny pałacu)`, `Cretaqua
 Aplikacja przy starcie synchronizuje nazwy do bazy (`zsynchronizuj_nazwy_miejsc_z_csv`), a sekcja „Plan na dzień”
 wyświetla je bezpośrednio w tytule wiersza. Funkcje nawigacji i dopasowywania kroków automatycznie oczyszczają nawiasy.
 
+## Tryb offline (PWA + service worker)
+
+Streamlit to aplikacja serwerowa — interfejs to cienki klient na WebSockecie do
+`/_stcore/stream`. Bez sieci nie wstanie i żadna konfiguracja tego nie zmieni. Offline
+działa więc **osobna, statyczna strona** z zapisanym planem dnia, a nie sama aplikacja.
+
+Elementy:
+
+- `static/sw.js` — service worker, zasięg `/app/static/`.
+- `static/offline.html` — punkt wejścia offline, `start_url` manifestu PWA.
+- `static/ping.txt` — sonda łączności (worker nigdy jej nie cache'uje).
+- `enableStaticServing = true` w `.streamlit/config.toml` — bez tego `/app/static/`
+  zwraca 404. Katalog `static/` wchodzi do obrazu przez `COPY . .`.
+
+Przepływ: aplikacja przy wejściu w plan dnia generuje samodzielny HTML
+(`generuj_autonomiczny_pakiet_offline_html`) i oddaje go do `window.__cretaiZapiszPakietOffline`,
+które pisze go do Cache Storage (przez `postMessage` do workera, pod kluczem
+`/app/static/dossier.html`) oraz do `localStorage` jako zapasu. `offline.html` przy starcie
+sonduje `ping.txt`: gdy sieć jest — przekierowuje na `/`, gdy nie ma — renderuje pakiet.
+Wymuszenie widoku offline przy działającej sieci: `/app/static/offline.html?offline=1`.
+
+Dwie rzeczy wynikają wprost z ograniczeń Streamlita i trzeba je znać:
+
+- **Zasięg workera to `/app/static/`, nie `/`.** Streamlit nie ustawia nagłówka
+  `Service-Worker-Allowed`, więc szerszego zasięgu nie da się uzyskać bez proxy przed
+  aplikacją. Skutek: wejście offline na goły `https://crete.mroczkowski.cc/` daje błąd sieci
+  przeglądarki. Offline działa **ikona PWA z ekranu głównego**, bo jej `start_url` celuje
+  w `/app/static/offline.html`. Gdyby to kiedyś przeszkadzało, lekarstwem jest proxy
+  (np. Caddy) serwujący `/sw.js` z roota i przekierowanie ingress tunelu na jego port.
+- **Rejestracja workera musi biec w realmie okna nadrzędnego.** `st.components.v1.html`
+  renderuje sandboxowany iframe; `register()` wywołany w jego wnętrzu kończy się
+  `An unknown error occurred when fetching the script`. Dlatego sekcja manifestu
+  wstrzykuje `<script id="cretai-sw-bootstrap">` do `window.parent.document`.
+
+Worker nie zapisuje odpowiedzi, które nie są `basic`/`ok` albo są przekierowaniem
+(`mozna_zapisac`) — bez tego wygaśnięcie sesji Cloudflare Access wsadziłoby do cache ekran
+logowania zamiast planu dnia.
+
+Weryfikacja po deployu (z zalogowaną sesją Access lub tunelem do `127.0.0.1:8501`):
+
+```
+curl -sSo /dev/null -w '%{http_code} %{content_type}\n' http://127.0.0.1:8501/app/static/sw.js
+curl -sSo /dev/null -w '%{http_code}\n' http://127.0.0.1:8501/app/static/offline.html
+```
+
+Worker musi wyjść jako `200 application/javascript`. Po zmianie `static/sw.js` trzeba
+podnieść `CACHE_VERSION` — inaczej stary cache zostaje na urządzeniach.
+
 ## Uwagi eksploatacyjne
 
 - `HEALTHCHECK` z `Dockerfile` odpytuje `/_stcore/health` z wnętrza kontenera, więc

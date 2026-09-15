@@ -1327,7 +1327,17 @@ pwa_manifest_script = """
         const manifestData = {
             "name": "CretAi",
             "short_name": "CretAi",
-            "start_url": win.location.href,
+            // ZMIANA: start_url celuje w stronę offline wewnątrz zasięgu service workera
+            // (`/app/static/`), bo tylko ona wstaje bez sieci. Gdy internet jest, strona
+            // natychmiast przekierowuje na "/" i użytkownik nie widzi różnicy.
+            //
+            // Oba adresy muszą być absolutne: manifest jest wstrzykiwany jako Data URI,
+            // a adres względny nie ma wtedy bazy do rozwiązania — przeglądarka odrzuca
+            // taki wpis i cicho wraca do adresu dokumentu. Jawny `scope` jest konieczny,
+            // bo domyślny to katalog `start_url` (`/app/static/`), a przy nim nawigacja
+            // na "/" wypadałaby z aplikacji do zwykłej karty przeglądarki.
+            "start_url": win.location.origin + "/app/static/offline.html",
+            "scope": win.location.origin + "/",
             "id": "cretai-pwa-app",
             "display": "standalone",
             "orientation": "portrait",
@@ -1377,6 +1387,85 @@ pwa_manifest_script = """
             }
             m.content = metaInfo.content;
         });
+
+        // 6. Bootstrap service workera obsługującego tryb offline.
+        // Kod musi wykonać się w realmie okna nadrzędnego, a nie tutaj: iframe komponentu
+        // Streamlita jest sandboxowany, więc pobranie skryptu workera z jego wnętrza kończy
+        // się "An unknown error occurred when fetching the script". Wstrzykujemy więc
+        // element <script> do dokumentu nadrzędnego i tam rejestrujemy workera.
+        // Streamlit nie ustawia nagłówka `Service-Worker-Allowed`, więc zasięg workera
+        // zostaje ograniczony do katalogu skryptu (`/app/static/`).
+        if (!doc.getElementById("cretai-sw-bootstrap")) {
+            const bootstrap = doc.createElement("script");
+            bootstrap.id = "cretai-sw-bootstrap";
+            bootstrap.textContent = `
+                (function() {
+                    window.__cretaiKolejkaOffline = window.__cretaiKolejkaOffline || [];
+
+                    // Rejestracja startuje od razu, a jej promise jest zapamiętany.
+                    // Bez tego pierwszy zapis pakietu przepadał: "getRegistration" potrafi
+                    // rozwiązać się na undefined, zanim "register" zdąży utworzyć rejestrację,
+                    // więc pakiet lądował tylko w localStorage.
+                    if (navigator.serviceWorker && !window.__cretaiRejestracjaSW) {
+                        window.__cretaiRejestracjaSW = navigator.serviceWorker
+                            .register("/app/static/sw.js", { scope: "/app/static/" })
+                            .catch(function(err) {
+                                console.warn("Rejestracja service workera nieudana:", err);
+                                return null;
+                            });
+                    }
+
+                    // Strona aplikacji leży poza zasięgiem workera, więc nigdy nie jest
+                    // przez niego kontrolowana i "serviceWorker.ready" tu nie zadziała.
+                    // Pakiet trafia do workera z zapamiętanej rejestracji, a gdy ten jest
+                    // dopiero instalowany — po przejściu w stan "activated".
+                    function dajAktywnegoWorkera() {
+                        if (!navigator.serviceWorker) {
+                            return Promise.resolve(null);
+                        }
+                        const zrodlo = window.__cretaiRejestracjaSW ||
+                            navigator.serviceWorker.getRegistration("/app/static/");
+                        return Promise.resolve(zrodlo).then(function(reg) {
+                            if (!reg) { return null; }
+                            if (reg.active) { return reg.active; }
+                            const oczekujacy = reg.waiting || reg.installing;
+                            if (!oczekujacy) { return null; }
+                            return new Promise(function(resolve) {
+                                oczekujacy.addEventListener("statechange", function() {
+                                    if (oczekujacy.state === "activated") {
+                                        resolve(reg.active || oczekujacy);
+                                    }
+                                });
+                            });
+                        });
+                    }
+
+                    window.__cretaiZapiszPakietOffline = function(html, tripId) {
+                        if (!html) { return; }
+                        try {
+                            window.localStorage.setItem("cretai_active_route_html", html);
+                            window.localStorage.setItem("cretai_active_route_id", tripId);
+                        } catch (e) {
+                            // Przepełniony localStorage nie może przerwać zapisu do Cache Storage.
+                            console.warn("Zapis pakietu offline w localStorage nieudany:", e);
+                        }
+                        dajAktywnegoWorkera().then(function(worker) {
+                            if (!worker) { return; }
+                            worker.postMessage({ type: "CACHE_DOSSIER", html: html, tripId: tripId });
+                        }).catch(function(e) {
+                            console.warn("Zapis pakietu offline w Cache Storage nieudany:", e);
+                        });
+                    };
+
+                    // Pakiet mógł zostać zgłoszony, zanim ten skrypt się wykonał.
+                    const kolejka = window.__cretaiKolejkaOffline.splice(0);
+                    kolejka.forEach(function(poz) {
+                        window.__cretaiZapiszPakietOffline(poz.html, poz.tripId);
+                    });
+                })();
+            `;
+            doc.head.appendChild(bootstrap);
+        }
 
     } catch (e) {
         console.warn("Błąd wstrzykiwania manifestu PWA:", e);
@@ -5222,17 +5311,26 @@ def generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_miejsca_ref):
 </html>"""
 
 def wstrzyknij_automatyczny_cache_offline(wycieczka_id, df_wszystkie_miejsca_ref):
-    """Zapisuje pakiet offline w tle w localStorage przeglądarki."""
+    """Zapisuje pakiet offline w tle: w Cache Storage service workera i w localStorage."""
     html_dossier = generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_wszystkie_miejsca_ref)
     if not html_dossier:
         return
 
     b64_payload = base64.b64encode(html_dossier.encode('utf-8')).decode('utf-8')
 
+    # ZMIANA: Pakiet trafia dwiema drogami — do Cache Storage (droga główna, czyta z niej
+    # /app/static/offline.html, limit dużo wyższy niż ~5 MB localStorage i bez ryzyka
+    # osobnego magazynu PWA na iOS) oraz do localStorage jako zapasu. Sam zapis wykonuje
+    # `window.__cretaiZapiszPakietOffline` z okna nadrzędnego: iframe komponentu jest
+    # sandboxowany i operacje na service workerze z jego wnętrza zawodzą.
     js_code = f"""
     <script>
     (function() {{
         const b64Data = "{b64_payload}";
+        const tripId = "{wycieczka_id}";
+        const win = window.parent || window;
+        let decodedHtml = "";
+
         try {{
             const binString = window.atob(b64Data);
             const len = binString.length;
@@ -5240,9 +5338,21 @@ def wstrzyknij_automatyczny_cache_offline(wycieczka_id, df_wszystkie_miejsca_ref
             for (let i = 0; i < len; i++) {{
                 bytes[i] = binString.charCodeAt(i);
             }}
-            const decodedHtml = new TextDecoder().decode(bytes);
-            window.localStorage.setItem('cretai_active_route_html', decodedHtml);
-            window.localStorage.setItem('cretai_active_route_id', "{wycieczka_id}");
+            decodedHtml = new TextDecoder().decode(bytes);
+        }} catch(e) {{
+            console.error("Błąd dekodowania pakietu offline:", e);
+            return;
+        }}
+
+        try {{
+            if (typeof win.__cretaiZapiszPakietOffline === "function") {{
+                win.__cretaiZapiszPakietOffline(decodedHtml, tripId);
+            }} else {{
+                // Bootstrap workera jeszcze się nie wykonał — kolejka zostanie opróżniona,
+                // gdy skrypt z sekcji manifestu wystartuje.
+                win.__cretaiKolejkaOffline = win.__cretaiKolejkaOffline || [];
+                win.__cretaiKolejkaOffline.push({{ html: decodedHtml, tripId: tripId }});
+            }}
         }} catch(e) {{
             console.error("Błąd zapisu offline:", e);
         }}

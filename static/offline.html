@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#2E251E">
+<title>CretAi</title>
+<style>
+  :root { --tlo: #B4C29D; --karta: #F6F0DD; --tekst: #2B2118; --accent: #8C5338; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px; min-height: 100vh;
+    background: var(--tlo); color: var(--tekst);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .panel {
+    background: var(--karta); border-radius: 16px; padding: 24px 20px;
+    max-width: 420px; width: 100%; text-align: center;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+  }
+  .ikona { font-size: 34pt; line-height: 1; margin-bottom: 10px; }
+  h1 { font-size: 14pt; margin: 0 0 8px; font-weight: 900; }
+  p { font-size: 10.5pt; margin: 0 0 16px; line-height: 1.5; color: #5C5349; }
+  button {
+    background: var(--accent); color: #FFF; border: none; border-radius: 12px;
+    padding: 12px 18px; font-size: 11pt; font-weight: 800; width: 100%;
+    cursor: pointer; margin-top: 6px; font-family: inherit;
+  }
+  button.drugi { background: transparent; color: var(--accent); border: 2px solid var(--accent); }
+  .ukryty { display: none; }
+</style>
+</head>
+<body>
+
+<div class="panel" id="panel-ladowanie">
+  <div class="ikona">🧭</div>
+  <h1>CretAi</h1>
+  <p id="status-tekst">Sprawdzam połączenie…</p>
+  <button class="drugi" id="btn-wymus-offline">Pokaż zapisany plan</button>
+</div>
+
+<div class="panel ukryty" id="panel-brak">
+  <div class="ikona">📭</div>
+  <h1>Brak zapisanej trasy</h1>
+  <p>Na tym urządzeniu nie ma jeszcze pakietu offline. Otwórz CretAi przy działającym
+     internecie i wejdź w plan dnia — zapisze się automatycznie.</p>
+  <button id="btn-ponow">Spróbuj połączyć się z aplikacją</button>
+</div>
+
+<script>
+(function() {
+  "use strict";
+
+  var SCIEZKA_DOSSIER = "/app/static/dossier.html";
+  var SCIEZKA_PING = "/app/static/ping.txt";
+  var KLUCZ_LOCALSTORAGE = "cretai_active_route_html";
+  var LIMIT_SONDY_MS = 2500;
+
+  var params = new URLSearchParams(window.location.search);
+  var wymuszony_offline = params.get("offline") === "1";
+  var przekierowanie_zablokowane = wymuszony_offline;
+
+  function pokaz(id) {
+    ["panel-ladowanie", "panel-brak"].forEach(function(pid) {
+      document.getElementById(pid).classList.toggle("ukryty", pid !== id);
+    });
+  }
+
+  /*
+   * Sonda sprawdza wyłącznie osiągalność sieci, nie ważność sesji. Jeśli ciasteczko
+   * Cloudflare Access wygasło, zapytanie dostaje przekierowanie na ekran logowania —
+   * w trybie `no-cors` kończy się to odpowiedzią nieprzezroczystą, którą też uznajemy
+   * za sukces. To zamierzone: użytkownik ma wtedy trafić na logowanie, a nie na
+   * nieaktualny plan dnia.
+   */
+  function czy_aplikacja_osiagalna() {
+    if (navigator.onLine === false) {
+      return Promise.resolve(false);
+    }
+
+    var controller = new AbortController();
+    var timer = setTimeout(function() { controller.abort(); }, LIMIT_SONDY_MS);
+
+    return fetch(SCIEZKA_PING + "?t=" + Date.now(), {
+      method: "GET",
+      mode: "no-cors",
+      cache: "no-store",
+      signal: controller.signal
+    }).then(function() {
+      clearTimeout(timer);
+      return true;
+    }).catch(function() {
+      clearTimeout(timer);
+      return false;
+    });
+  }
+
+  /*
+   * Dwa źródła, bo zapis idzie dwiema drogami. Cache Storage jest źródłem głównym
+   * (większy limit, pisany przez service workera), localStorage zostaje jako zapas
+   * na wypadek, gdyby worker nie był jeszcze aktywny przy pierwszym uruchomieniu.
+   */
+  function wczytaj_dossier() {
+    return fetch(SCIEZKA_DOSSIER, { cache: "no-store" })
+      .then(function(odpowiedz) {
+        if (!odpowiedz || !odpowiedz.ok) { throw new Error("brak w cache"); }
+        return odpowiedz.text();
+      })
+      .catch(function() {
+        try {
+          return window.localStorage.getItem(KLUCZ_LOCALSTORAGE) || "";
+        } catch (e) {
+          return "";
+        }
+      });
+  }
+
+  function wyrenderuj_dossier() {
+    przekierowanie_zablokowane = true;
+    return wczytaj_dossier().then(function(html) {
+      if (!html || html.indexOf("<") === -1) {
+        pokaz("panel-brak");
+        return false;
+      }
+      document.open();
+      document.write(html);
+      document.close();
+      return true;
+    });
+  }
+
+  document.getElementById("btn-wymus-offline").addEventListener("click", function() {
+    wyrenderuj_dossier();
+  });
+
+  document.getElementById("btn-ponow").addEventListener("click", function() {
+    window.location.replace("/");
+  });
+
+  if (wymuszony_offline) {
+    document.getElementById("status-tekst").textContent = "Wczytuję zapisany plan…";
+    wyrenderuj_dossier();
+    return;
+  }
+
+  czy_aplikacja_osiagalna().then(function(osiagalna) {
+    if (przekierowanie_zablokowane) {
+      return;
+    }
+    if (osiagalna) {
+      window.location.replace("/");
+      return;
+    }
+    document.getElementById("status-tekst").textContent =
+      "Brak internetu. Wczytuję zapisany plan dnia…";
+    wyrenderuj_dossier();
+  });
+})();
+</script>
+</body>
+</html>

@@ -3,6 +3,11 @@
 # aplikacja za tunelem Cloudflare wisi na "Please wait...". Localhost jest dozwolony zawsze.
 corsAllowedOrigins = ["https://crete.mroczkowski.cc"]
 
+# Katalog `static/` (service worker + strona wejściowa offline) jest serwowany pod
+# `/app/static/`. Bez tego wpisu Streamlit zwraca 404 i PWA nie ma punktu startowego,
+# który działa bez sieci.
+enableStaticServing = true
+
 [browser]
 gatherUsageStats = false
 
