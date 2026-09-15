@@ -1637,6 +1637,15 @@ div.st-key-nav_btn_zabytek button p::before { content: "🏛️"; }
 div.st-key-nav_btn_map button p::before { content: "🗺️"; }
 div.st-key-nav_btn_route button p::before { content: "🚗"; }
 
+/* ZMIANA: Ukryte przyciski-cele mostka nawigacji. Kotwica w ręcznie budowanym HTML nie może być
+   przyciskiem Streamlita bez rozwalenia układu, więc klik z kotwicy jest przekładany na klik ukrytego
+   przycisku o tym samym kluczu. `display: none` nie przeszkadza w programowym kliknięciu. */
+div[class*="st-key-navlink_"] { display: none !important; }
+
+/* Powrót z karty miejsca do planu: zwykły przycisk Streamlita doprowadzony do wyglądu dawnej kotwicy. */
+div.st-key-btn_powrot_do_planu { margin-bottom: 8px !important; }
+div.st-key-btn_powrot_do_planu button { width: 100% !important; border: 2px solid #D6CEBA !important; border-radius: 16px !important; padding: 10px 14px !important; font-weight: 900 !important; box-shadow: 0 4px 12px rgba(0,0,0,0.18) !important; }
+
 .adventure-header { background: #2E251E; border: none; border-radius: 18px; padding: 8px 14px; display: flex; align-items: center; gap: 10px; margin-bottom: 8px; box-shadow: 0 4px 14px rgba(46, 37, 30, 0.15); }
 .adventure-header-img { height: 28px; width: auto; max-width: 100px; object-fit: contain; }
 .adventure-title-text { font-size: 1.05rem; font-weight: 900; color: #F9F7F1; letter-spacing: 0.02em; text-transform: uppercase; }
@@ -2541,7 +2550,7 @@ def render_chipy_stanu(p, grupa):
 
 # --- IKONY AKCJI W NAGŁÓWKU KARTY MIEJSCA ---
 def render_place_icon_actions(coords_clean, search_name="", search_name_en="", address="",
-                              czy_odwiedzone=False, url_visit="#"):
+                              czy_odwiedzone=False, url_visit="#", klucz_nav_visit=""):
     """Nawigacja / Google / oznaczenie odwiedzenia jako trzy kwadratowe ikony."""
     linki = zbuduj_linki_miejsca(coords_clean, search_name, search_name_en, address)
     ikony = [
@@ -2554,7 +2563,9 @@ def render_place_icon_actions(coords_clean, search_name="", search_name_en="", a
     klasa_vis = "place-icon-btn done" if czy_odwiedzone else "place-icon-btn"
     tytul_vis = "Miejsce odwiedzone — kliknij, aby przywrócić" if czy_odwiedzone else "Oznacz jako odwiedzone"
     ikony.append(
-        f'<a href="{url_visit}" target="_self" class="{klasa_vis}" title="{tytul_vis}" aria-label="{tytul_vis}">✓</a>'
+        # ZMIANA: Klik przechwytuje mostek nawigacji i woła ukryty przycisk, więc dialog otwiera się bez
+        # przeładowania. Adres w href zostaje jako zapas, gdyby mostek nie wstał.
+        f'<a href="{url_visit}" target="_self" data-cretai-nav="{klucz_nav_visit}" class="{klasa_vis}" title="{tytul_vis}" aria-label="{tytul_vis}">✓</a>'
     )
     return f'<div class="place-icon-col">{"".join(ikony)}</div>'
 
@@ -4898,6 +4909,9 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
     total_steps = len(kroki_df)
     timeline_full_html = ['<div class="timeline-master-container">', '<div class="timeline-master-continuous-line"></div>']
+    # ZMIANA: Cele mostka nawigacji zbierane podczas budowy osi czasu, renderowane jako ukryte przyciski
+    # zaraz po jej wypisaniu.
+    linki_kart_miejsc = []
 
     df_pos_sniadanie = posilki_wszystkie_df[
         (posilki_wszystkie_df['id_kroku'].isin(kroki_df['id'].tolist())) & 
@@ -5123,10 +5137,15 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
             if matched_place_id:
                 cur_tab = "route" if st.session_state.active_tab == "route" else "map"
-                # ZMIANA: Doklejenie parametru &user= zapobiegające resetowi sesji
+                # ZMIANA: Kotwica zostaje jako zapas w adresie (i dla otwarcia w nowej karcie), ale klik
+                # przechwytuje mostek nawigacji i wywołuje ukryty przycisk o kluczu z data-cretai-nav,
+                # więc karta miejsca otwiera się bez przeładowania strony. Klucz niesie id kroku, bo to samo
+                # miejsce może wystąpić w planie więcej niż raz.
+                klucz_nav_miejsca = f"navlink_miejsce_{krok_row_id}"
+                linki_kart_miejsc.append((klucz_nav_miejsca, matched_place_id, cur_tab))
                 place_url = f"?tab=zabytek&place={matched_place_id}&return_tab={cur_tab}&return_trip={wycieczka_id}&user={aktualny_uzytkownik}"
                 place_link_html = (
-                    f'<a href="{place_url}" target="_self" class="step-action-vertical-btn" '
+                    f'<a href="{place_url}" target="_self" data-cretai-nav="{klucz_nav_miejsca}" class="step-action-vertical-btn" '
                     f'style="background-color: #FAF8F2 !important; border: 2px solid #8C5338 !important; color: #8C5338 !important; margin-bottom: 8px; font-weight: 900; text-decoration: none;">'
                     f'<span>🏛️</span><span>Pokaż kartę miejsca #{matched_place_id}</span></a>'
                 )
@@ -5218,6 +5237,16 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 full_timeline_string = full_timeline_string.replace(ph, "")
 
     st.markdown(full_timeline_string, unsafe_allow_html=True)
+
+    # ZMIANA: Ukryte cele mostka nawigacji dla linków "Pokaż kartę miejsca" z osi czasu
+    for klucz_nav, nr_miejsca_nav, zakladka_powrotu_nav in linki_kart_miejsc:
+        st.button(
+            f"Pokaż kartę miejsca #{nr_miejsca_nav}",
+            key=klucz_nav,
+            on_click=przejdz_do_karty_miejsca,
+            args=(nr_miejsca_nav, zakladka_powrotu_nav, wycieczka_id),
+        )
+
     st.markdown('<div class="section-unified-header">🛒 Zaopatrzenie</div>', unsafe_allow_html=True)
     df_wszystkie_zakupy = zakupy_wszystkie_df
 
@@ -5734,8 +5763,9 @@ if "place" in st.query_params:
     st.session_state.active_place_id = str(st.query_params["place"]).strip()
     st.session_state.active_tab = "zabytek"
 
-# ZMIANA: Ikona "✓" w naglowku karty miejsca wchodzi przez parametr URL, bo musi stac w jednym
-# rzedzie z linkami nawigacji. Parametr kasujemy od razu, by dialog nie wracal przy kazdym rerunie.
+# ZMIANA: Ścieżka zapasowa ikony "✓" z naglowka karty miejsca. Normalnie klik przechwytuje mostek nawigacji
+# i woła ukryty przycisk bez przeładowania; parametr URL zostaje w href kotwicy i działa, gdyby mostek nie
+# wstał. Parametr kasujemy od razu, by dialog nie wracal przy kazdym rerunie.
 if "visit" in st.query_params:
     if st.session_state.get("active_place_id"):
         st.session_state.pending_visit_toggle = str(st.session_state.active_place_id).strip()
@@ -5780,15 +5810,86 @@ def przelacz_zakladke(nowa_zakladka):
     st.session_state.return_trip = None
     st.session_state.pop("target_trip_id", None)
     st.query_params["tab"] = nowa_zakladka
-    # ZMIANA: Parametr user musi zostać w adresie. Skrypt synchronizujący profil z localStorage przeładowuje
-    # stronę, gdy w URL brakuje ?user=, a zapis w pamięci telefonu istnieje - bez tego każde przejście między
-    # zakładkami kończyłoby się właśnie tym pełnym przeładowaniem, które ta zmiana likwiduje.
-    uzytkownik_sesji = st.session_state.get("aktualny_uzytkownik")
-    if uzytkownik_sesji:
-        st.query_params["user"] = uzytkownik_sesji
+    _ustaw_user_w_adresie()
     for klucz_url in ("place", "trip", "return_tab", "return_trip"):
         if klucz_url in st.query_params:
             del st.query_params[klucz_url]
+
+
+def _ustaw_user_w_adresie():
+    """Adres zawsze nosi ?user=, bo bez niego skrypt synchronizujący profil przeładowuje stronę."""
+    uzytkownik_sesji = st.session_state.get("aktualny_uzytkownik")
+    if uzytkownik_sesji:
+        st.query_params["user"] = uzytkownik_sesji
+
+
+# ZMIANA: Przejścia w obrębie karty miejsca też przestają być kotwicami. Callbacki widgetów wołają st.rerun()
+# bez zasięgu, czyli pełny przebieg skryptu - potrzebny, bo routing zakładek stoi na najwyższym poziomie,
+# a przycisk karty miejsca siedzi w fragmencie karty wycieczki.
+def przejdz_do_karty_miejsca(numer_miejsca, zakladka_powrotu, wycieczka_powrotu):
+    st.session_state.active_tab = "zabytek"
+    st.session_state.active_place_id = str(numer_miejsca)
+    st.session_state.return_tab = str(zakladka_powrotu)
+    st.session_state.return_trip = str(wycieczka_powrotu)
+    st.query_params["tab"] = "zabytek"
+    st.query_params["place"] = str(numer_miejsca)
+    st.query_params["return_tab"] = str(zakladka_powrotu)
+    st.query_params["return_trip"] = str(wycieczka_powrotu)
+    _ustaw_user_w_adresie()
+    st.rerun()
+
+
+def wroc_do_planu(zakladka_powrotu, wycieczka_powrotu):
+    st.session_state.active_tab = str(zakladka_powrotu)
+    st.session_state.active_place_id = None
+    # ZMIANA: Powrót na mapę wskazuje wprost wycieczkę z podpisu przycisku. Dawna kotwica niosła return_trip
+    # tylko po to, by przeżył on przeładowanie, i po powrocie lądowało się na domyślnym wyborze.
+    if str(zakladka_powrotu) == "map" and wycieczka_powrotu:
+        st.session_state.target_trip_id = str(wycieczka_powrotu)
+        st.query_params["trip"] = str(wycieczka_powrotu)
+    st.query_params["tab"] = str(zakladka_powrotu)
+    _ustaw_user_w_adresie()
+    for klucz_url in ("place", "return_tab", "return_trip"):
+        if klucz_url in st.query_params:
+            del st.query_params[klucz_url]
+    st.rerun()
+
+
+def otworz_dialog_odwiedzenia(numer_miejsca):
+    st.session_state.pending_visit_toggle = str(numer_miejsca)
+    st.rerun()
+
+
+# ZMIANA: Część linków nawigacji stoi wewnątrz ręcznie budowanego HTML - ikona "✓" musi zostać w jednym rzędzie
+# z ikonami nawigacji, a przycisk karty miejsca wewnątrz rozwijanego kroku planu. Przyciski Streamlita rozwaliłyby
+# ten układ, więc mostek przechwytuje kliknięcie w kotwicę z atrybutem data-cretai-nav i przekłada je na kliknięcie
+# ukrytego przycisku o tym samym kluczu. Gdy przycisku nie ma w DOM, kotwica działa po staremu (pełne
+# przeładowanie) - to zapas, nie ścieżka główna.
+def zainstaluj_mostek_linkow_nawigacji():
+    st.components.v1.html("""
+    <script>
+    (function() {
+        const dok = (window.parent || window).document;
+        if (dok.__cretaiMostekNawigacji) { return; }
+        dok.__cretaiMostekNawigacji = true;
+        dok.addEventListener("click", function(zdarzenie) {
+            const cel = zdarzenie.target;
+            if (!cel || typeof cel.closest !== "function") { return; }
+            const kotwica = cel.closest("a[data-cretai-nav]");
+            if (!kotwica) { return; }
+            const klucz = kotwica.getAttribute("data-cretai-nav") || "";
+            if (!/^[A-Za-z0-9_]+$/.test(klucz)) { return; }
+            const przycisk = dok.querySelector("div.st-key-" + klucz + " button");
+            if (!przycisk) { return; }
+            zdarzenie.preventDefault();
+            przycisk.click();
+        }, true);
+    })();
+    </script>
+    """, height=0)
+
+
+zainstaluj_mostek_linkow_nawigacji()
 
 with st.container(key="top_nav"):
     kolumny_nawigacji = st.columns(len(ZAKLADKI_NAWIGACJI), gap="small")
@@ -5957,35 +6058,17 @@ elif st.session_state.active_tab == "zabytek":
     ret_trip = st.session_state.get("return_trip")
 
     if ret_tab and ret_trip:
-        if ret_tab == "map":
-            # ZMIANA: Przekazywanie parametru user przy powrotach
-            powrot_url = f"?tab=map&return_trip={ret_trip}&user={aktualny_uzytkownik}"
-        else:
-            powrot_url = f"?tab={ret_tab}&user={aktualny_uzytkownik}"
         nazwa_docelowa = "Trasy Dnia" if ret_tab == "route" else f"Wycieczki #{ret_trip}"
-        
-        st.markdown(f"""
-        <div style="margin-bottom: 8px;">
-            <a href="{powrot_url}" target="_self" style="
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 8px;
-                background-color: #2E251E;
-                color: #FAF8F2 !important;
-                text-decoration: none;
-                padding: 10px 14px;
-                border-radius: 16px;
-                font-size: 9.5pt;
-                font-weight: 900;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.18);
-                border: 2px solid #D6CEBA;
-            ">
-                <span>◀</span><span>Wróć do planu: {nazwa_docelowa}</span>
-            </a>
-        </div>
-        """, unsafe_allow_html=True)
-    
+        # ZMIANA: Powrót do planu na przycisku zamiast kotwicy - kotwica przeładowywała dokument i gasiła sesję.
+        # Wygląd dawnej ciemnej pigułki odtwarza styl po kluczu przycisku.
+        st.button(
+            f"◀ Wróć do planu: {nazwa_docelowa}",
+            key="btn_powrot_do_planu",
+            use_container_width=True,
+            on_click=wroc_do_planu,
+            args=(ret_tab, ret_trip),
+        )
+
     if tryb_karty_miejsca:
         if st.button("◀ Wszystkie miejsca", key="btn_wroc_do_listy_miejsc", use_container_width=True):
             st.session_state.active_place_id = None
@@ -6139,6 +6222,7 @@ elif st.session_state.active_tab == "zabytek":
                 f"?tab=zabytek&place={urllib.parse.quote(str(docelowy_nr))}"
                 f"&user={urllib.parse.quote(str(aktualny_uzytkownik))}{powrot_qs}&visit=1"
             )
+            klucz_nav_visit = f"navlink_odwiedzone_{re.sub(r'[^A-Za-z0-9_]', '_', str(docelowy_nr))}"
             ikony_akcji_html = render_place_icon_actions(
                 coords_clean=coords_p,
                 search_name=p.get('nazwa', ''),
@@ -6146,6 +6230,15 @@ elif st.session_state.active_tab == "zabytek":
                 address=p.get('adres', ''),
                 czy_odwiedzone=czy_odwiedzone,
                 url_visit=url_visit,
+                klucz_nav_visit=klucz_nav_visit,
+            )
+            # ZMIANA: Ukryty cel mostka dla ikony "✓" - musi stać przed markdownem z ikoną, żeby przycisk był
+            # już w DOM, gdy użytkownik zdąży kliknąć.
+            st.button(
+                "Oznacz odwiedzenie",
+                key=klucz_nav_visit,
+                on_click=otworz_dialog_odwiedzenia,
+                args=(docelowy_nr,),
             )
 
             st.markdown(f"""<div class="overview-card" style="margin-top: 6px; overflow: hidden;">
