@@ -1656,6 +1656,52 @@ div.st-key-btn_date_picker { margin-bottom: 10px !important; }
 .logistics-pill-title { font-size: 7.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 2px; display: flex; align-items: center; gap: 4px; }
 .logistics-pill-value { font-size: 10pt; font-weight: 900; color: #2B2118; }
 
+/* --- KARTA JEDNEGO MIEJSCA: hero, tytul, ikony akcji --- */
+.place-hero { width: calc(100% + 28px); height: 185px; margin: -14px -14px 12px -14px; overflow: hidden; border-radius: 18px 18px 0 0; background-color: #EDE8D6; }
+.place-hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.place-title-row { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.place-title-left { flex: 1; min-width: 0; }
+.place-cat-badge { display: inline-block; color: #FAF8F2; font-size: 8pt; font-weight: 800; padding: 2px 8px; border-radius: 10px; margin-bottom: 3px; white-space: nowrap; }
+.place-title { font-size: 13pt; font-weight: 900; color: #2B2118; line-height: 1.2; }
+.place-title small { font-size: 9.5pt; font-weight: 700; color: #6B5B50; }
+.place-icon-col { display: flex; gap: 6px; flex-shrink: 0; }
+.place-icon-btn { width: 38px; height: 38px; border-radius: 12px; background-color: #C3CBB5; border: 1.5px solid #ACB79C; display: flex; align-items: center; justify-content: center; font-size: 15pt; text-decoration: none !important; }
+.place-icon-btn, .place-icon-btn:visited, .place-icon-btn:hover { color: #2B2118 !important; }
+.place-icon-btn.done { background-color: #7E9B6B; border-color: #5F7A50; }
+.place-icon-btn.done, .place-icon-btn.done:visited, .place-icon-btn.done:hover { color: #FAF8F2 !important; }
+.place-map-box { border-radius: 16px; overflow: hidden; border: 1.5px solid #E2DEC8; }
+
+/* --- CHIPY STANU: jeden rozwiniety naraz, panel szczegolow na pelna szerokosc ---
+   Wylacznosc daje atrybut `name` na <details>. Panel siedzi wewnatrz chipa (inaczej nie
+   dalby sie z nim powiazac bez <input>, a te w markdownie Streamlita sa kontrolowane przez
+   Reacta i traca stan przy kliknieciu), wiec wylamuje sie ze swojej kolumny ujemnym
+   marginesem: szerokosc 3 kolumn + 2 przerwy, przesunieta na poczatek wiersza.
+   `align-items: start` trzyma pozostale chipy przy ich wlasnej wysokosci. */
+.state-chip-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; align-items: start; margin-top: 8px; }
+details.state-chip { min-width: 0; }
+details.state-chip > summary { list-style: none; cursor: pointer; background-color: #FAF8F2; border: 1.5px solid #E2DEC8; border-radius: 14px; padding: 7px 8px; display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
+details.state-chip > summary::-webkit-details-marker { display: none; }
+details.state-chip > summary::marker { content: ""; }
+.state-chip-ic { font-size: 15pt; line-height: 1; display: flex; align-items: center; justify-content: center; min-height: 20px; }
+.state-chip-tx { font-size: 7.5pt; font-weight: 900; color: #2B2118; line-height: 1.15; }
+.state-chip-sub { font-size: 6.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; letter-spacing: 0.02em; }
+
+/* Zaznaczony chip: ciemne tlo marki */
+details.state-chip[open] > summary { background-color: #8C5338; border-color: #6F3F28; }
+details.state-chip[open] > summary .state-chip-tx { color: #FAF8F2; }
+details.state-chip[open] > summary .state-chip-sub { color: #E8D9C9; }
+/* Slupki trudnosci musza odciac sie od ciemnego tla zaznaczonego chipa */
+details.state-chip[open] > summary svg rect[fill="#8C5338"] { fill: #FAF8F2; }
+details.state-chip[open] > summary svg rect[fill="#D6CEBC"] { fill: #6F3F28; }
+
+.state-chip-panel { background-color: #FAF8F2; border: 1.5px solid #C8B79C; border-radius: 14px; padding: 10px 12px; margin-top: 6px; width: calc(300% + 12px); box-sizing: border-box; }
+details.state-chip:nth-child(2) > .state-chip-panel { margin-left: calc(-100% - 6px); }
+details.state-chip:nth-child(3) > .state-chip-panel { margin-left: calc(-200% - 12px); }
+.state-chip-panel-title { font-size: 8.5pt; font-weight: 900; color: #8C5338; text-transform: uppercase; margin-bottom: 5px; }
+.state-chip-panel-row { font-size: 9pt; color: #2B2118; font-weight: 600; line-height: 1.45; margin-bottom: 4px; }
+.state-chip-panel-row:last-child { margin-bottom: 0; }
+.state-chip-panel-label { display: block; font-size: 7.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; }
+
 .overview-details-card { background-color: #F6F0DD; border: 1.5px solid #E2DEC8; border-radius: 20px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
 .overview-details-card summary { font-size: 9.5pt; color: #2B2118; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: center; }
 .overview-details-card summary::-webkit-details-marker { display: none; }
@@ -2285,7 +2331,7 @@ def formatuj_posilki_kroku(df_pos):
     return f"<span style='color:#8C5338; font-weight:700;'>{' / '.join(posiłki_str)}</span>" if posiłki_str else ""
 
 # ZMIANA: Nawigacja po angielskiej nazwie i adresie z bazy danych
-def render_action_bar(coords_clean, search_name="", search_name_en="", address=""):
+def zbuduj_linki_miejsca(coords_clean, search_name="", search_name_en="", address=""):
     czysta_nazwa = re.sub(r'^\d+[\.\)]\s*', '', str(search_name)).strip() if search_name else ""
     czysta_nazwa_en = re.sub(r'^\d+[\.\)]\s*', '', str(search_name_en)).strip() if search_name_en and str(search_name_en).strip() not in ['None', 'nan'] else ""
     czysty_adres = str(address).strip() if address and str(address).strip() not in ['None', 'nan'] else ""
@@ -2320,14 +2366,169 @@ def render_action_bar(coords_clean, search_name="", search_name_en="", address="
     else:
         query_nav = f"{DOMEK_LAT},{DOMEK_LON}"
 
-    google_search_btn = f'<a href="https://www.google.com/search?q={urllib.parse.quote(pelne_zapytanie)}" target="_blank" class="step-action-vertical-btn"><span>🔍</span><span>Szukaj w Google</span></a>' if pelne_zapytanie else ""
-    
+    return {
+        "nav_url": f"https://www.google.com/maps/search/?api=1&query={query_nav}",
+        "google_url": f"https://www.google.com/search?q={urllib.parse.quote(pelne_zapytanie)}" if pelne_zapytanie else "",
+        "fraza": pelne_zapytanie,
+    }
+
+def render_action_bar(coords_clean, search_name="", search_name_en="", address=""):
+    linki = zbuduj_linki_miejsca(coords_clean, search_name, search_name_en, address)
+    google_search_btn = (
+        f'<a href="{linki["google_url"]}" target="_blank" class="step-action-vertical-btn">'
+        f'<span>🔍</span><span>Szukaj w Google</span></a>'
+    ) if linki["google_url"] else ""
+
     return f"""
     <div class="step-action-vertical-bar">
-        <a href="https://www.google.com/maps/search/?api=1&query={query_nav}" target="_blank" class="step-action-vertical-btn"><span>🧭</span><span>Nawiguj do tego miejsca</span></a>
+        <a href="{linki["nav_url"]}" target="_blank" class="step-action-vertical-btn"><span>🧭</span><span>Nawiguj do tego miejsca</span></a>
         {google_search_btn}
     </div>
     """
+
+# --- CHIPY STANU MIEJSCA (trudnosc / slonce / meltdown) ---
+# Kolumny trzymaja dlugi tekst w formie "<stan> - <uzasadnienie>" albo "<stan>. <uzasadnienie>",
+# wiec ikona chipa bierze sie z prefiksu, a cale zdanie ladu w rozwinieciu.
+def rozbij_stan_i_opis(wartosc):
+    s = str(wartosc or "").strip()
+    if not s or s.lower() in ("nan", "none", "brak", "-"):
+        return "", ""
+    czesci = re.split(r"\s+[-–—]\s+|\.\s+", s, maxsplit=1)
+    stan = czesci[0].strip().rstrip(".")
+    reszta = czesci[1].strip() if len(czesci) > 1 else ""
+    return stan, reszta
+
+def _svg_slupki_trudnosci(poziom):
+    wysokosci = [7, 12, 17]
+    prostokaty = "".join(
+        f'<rect x="{2 + i * 8}" y="{19 - wysokosci[i]}" width="6" height="{wysokosci[i]}" rx="2" '
+        f'fill="{"#8C5338" if i < poziom else "#D6CEBC"}"/>'
+        for i in range(3)
+    )
+    return f'<svg width="26" height="20" viewBox="0 0 26 20" aria-hidden="true">{prostokaty}</svg>'
+
+def ikona_trudnosci(stan):
+    s = str(stan).lower()
+    if "łatw" in s or "latw" in s:
+        return _svg_slupki_trudnosci(1), "Trudność łatwa"
+    if "trudn" in s:
+        return _svg_slupki_trudnosci(3), "Trudność trudna"
+    if "średni" in s or "sredni" in s:
+        return _svg_slupki_trudnosci(2), "Trudność średnia"
+    return _svg_slupki_trudnosci(0), "Trudność: {TODO}"
+
+def ikona_slonca(stan, opis=""):
+    s = str(stan).lower()
+    pelny = f"{stan} {opis}".lower()
+    pierwszy = s.split("/")[0].strip()
+    if "wewn" in pierwszy or "wnętrz" in pierwszy or "wnetrz" in pierwszy:
+        if "klimatyz" in pelny:
+            return "❄️", "Klimatyzacja"
+        return "🏛️", "Wnętrze"
+    if "półcień" in pierwszy or "polcien" in pierwszy or "półcien" in pierwszy:
+        return "⛅", "Półcień"
+    if "cień" in pierwszy or "cien" in pierwszy:
+        return "🌳", "Cień naturalny"
+    if "słońc" in pierwszy or "slonc" in pierwszy or "słonecz" in pierwszy:
+        return "☀️", "Pełne słońce"
+    # Plaze i tawerny opisano odwrotna skala - stopniem OCHRONY, nie ekspozycji
+    if "brak ochrony" in pierwszy or "bez ochrony" in pierwszy:
+        return "☀️", "Pełne słońce"
+    if "częściow" in pierwszy or "czesciow" in pierwszy:
+        return "⛅", "Półcień"
+    if "dobra" in pierwszy or "pełna ochrona" in pierwszy or "pelna ochrona" in pierwszy:
+        if "klimatyz" in pelny:
+            return "❄️", "Klimatyzacja"
+        return "🌳", "Cień naturalny"
+    return "☀️", "Słońce: {TODO}"
+
+def ikona_meltdownu(stan):
+    s = str(stan).lower()
+    if "ekstremaln" in s:
+        return "💀", "Meltdown ekstremalny"
+    if ("średni do wysoki" in s) or ("sredni do wysoki" in s):
+        return "❤️", "Meltdown średni–wysoki"
+    if ("niski do średni" in s) or ("niski do sredni" in s):
+        return "💛", "Meltdown niski–średni"
+    if "wysoki" in s:
+        return "🖤", "Meltdown wysoki"
+    if "średni" in s or "sredni" in s:
+        return "🧡", "Meltdown średni"
+    if "niski" in s:
+        return "💚", "Meltdown niski"
+    return "🧡", "Meltdown: {TODO}"
+
+def _chip_stanu(grupa, ikona_html, etykieta, podpis, tytul_szczegolu, tresc_szczegolu):
+    return (
+        f'<details class="state-chip" name="{grupa}">'
+        f'<summary><span class="state-chip-ic">{ikona_html}</span>'
+        f'<span class="state-chip-tx">{etykieta}</span>'
+        f'<span class="state-chip-sub">{podpis}</span></summary>'
+        f'<div class="state-chip-panel">'
+        f'<div class="state-chip-panel-title">{tytul_szczegolu}</div>'
+        f'{tresc_szczegolu}</div>'
+        f'</details>'
+    )
+
+def render_chipy_stanu(p, grupa):
+    """Trzy klikalne chipy (trudność / słońce / meltdown).
+
+    Jeden rozwinięty naraz (atrybut `name` na `<details>`), panel szczegółów wyłamuje się
+    z kolumny chipa na pełną szerokość wiersza. Całość to czysty HTML i CSS, więc klik nie
+    kosztuje reruna Streamlita. Widgetów `<input>` tu użyć nie można - React renderujący
+    markdown cofa im stan `checked` w trakcie obsługi kliknięcia.
+    """
+    stan_trud, opis_trud = rozbij_stan_i_opis(p.get('trudnosc_adhd'))
+    stan_slon, opis_slon = rozbij_stan_i_opis(p.get('ochrona_slonce'))
+    stan_melt, opis_melt = rozbij_stan_i_opis(p.get('potencjal_meltdownu'))
+
+    ikona_trud, etyk_trud = ikona_trudnosci(stan_trud)
+    ikona_slon, etyk_slon = ikona_slonca(stan_slon, opis_slon)
+    ikona_melt, etyk_melt = ikona_meltdownu(stan_melt)
+
+    def akapit(naglowek, stan, opis):
+        stan_txt = stan if stan else "{TODO}"
+        tresc = f"<b>{stan_txt}</b>" + (f" — {opis}" if opis else "")
+        return f'<div class="state-chip-panel-row"><span class="state-chip-panel-label">{naglowek}</span>{tresc}</div>'
+
+    strategie = str(p.get('strategie_meltdown') or "").strip()
+    if strategie.lower() in ("nan", "none", "", "-", "brak"):
+        strategie = "{TODO}"
+
+    panel_melt = (
+        akapit("Potencjał meltdownu", stan_melt, opis_melt)
+        + f'<div class="state-chip-panel-row"><span class="state-chip-panel-label">Strategia zaradcza</span>{strategie}</div>'
+    )
+
+    chipy = (
+        _chip_stanu(grupa, ikona_trud, etyk_trud, "poziom trudności",
+                    "\U0001f4ca Poziom trudności ADHD", akapit("Ocena", stan_trud, opis_trud))
+        + _chip_stanu(grupa, ikona_slon, etyk_slon, "ochrona",
+                      "☀️ Ochrona przed słońcem", akapit("Ekspozycja", stan_slon, opis_slon))
+        + _chip_stanu(grupa, ikona_melt, etyk_melt, "sensoryka",
+                      "\U0001f9e0 Specyfika AuDHD i sensoryka", panel_melt)
+    )
+    return f'<div class="state-chip-row">{chipy}</div>'
+
+
+# --- IKONY AKCJI W NAGŁÓWKU KARTY MIEJSCA ---
+def render_place_icon_actions(coords_clean, search_name="", search_name_en="", address="",
+                              czy_odwiedzone=False, url_visit="#"):
+    """Nawigacja / Google / oznaczenie odwiedzenia jako trzy kwadratowe ikony."""
+    linki = zbuduj_linki_miejsca(coords_clean, search_name, search_name_en, address)
+    ikony = [
+        f'<a href="{linki["nav_url"]}" target="_blank" class="place-icon-btn" title="Nawiguj do tego miejsca" aria-label="Nawiguj">🧭</a>'
+    ]
+    if linki["google_url"]:
+        ikony.append(
+            f'<a href="{linki["google_url"]}" target="_blank" class="place-icon-btn" title="Szukaj w Google" aria-label="Szukaj w Google">🔍</a>'
+        )
+    klasa_vis = "place-icon-btn done" if czy_odwiedzone else "place-icon-btn"
+    tytul_vis = "Miejsce odwiedzone — kliknij, aby przywrócić" if czy_odwiedzone else "Oznacz jako odwiedzone"
+    ikony.append(
+        f'<a href="{url_visit}" target="_self" class="{klasa_vis}" title="{tytul_vis}" aria-label="{tytul_vis}">✓</a>'
+    )
+    return f'<div class="place-icon-col">{"".join(ikony)}</div>'
 
 def formatuj_komunikat_bledu_ai(e):
     kod = getattr(e, 'kod', None) or getattr(e, 'code', None) or getattr(e, 'status_code', None)
@@ -5505,6 +5706,13 @@ if "place" in st.query_params:
     st.session_state.active_place_id = str(st.query_params["place"]).strip()
     st.session_state.active_tab = "zabytek"
 
+# ZMIANA: Ikona "✓" w naglowku karty miejsca wchodzi przez parametr URL, bo musi stac w jednym
+# rzedzie z linkami nawigacji. Parametr kasujemy od razu, by dialog nie wracal przy kazdym rerunie.
+if "visit" in st.query_params:
+    if st.session_state.get("active_place_id"):
+        st.session_state.pending_visit_toggle = str(st.session_state.active_place_id).strip()
+    del st.query_params["visit"]
+
 if "return_tab" in st.query_params:
     st.session_state.return_tab = st.query_params["return_tab"]
 if "return_trip" in st.query_params:
@@ -5709,8 +5917,14 @@ elif st.session_state.active_tab == "map":
         renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=pobierz_aktywna_wycieczke_id(), inline=True)
 
 elif st.session_state.active_tab == "zabytek":
-    render_adventure_header("CretAi • Baza Miejsc")
-    
+    # ZMIANA: Widok jednego miejsca to osobny tryb - bez belki tytulowej, filtrow i mapy przegladowej.
+    # Filtry i mapa ze wszystkimi pinami sluza wyszukiwaniu, wiec pokazujemy je tylko na liscie miejsc.
+    docelowy_nr = str(st.session_state.active_place_id).strip() if st.session_state.active_place_id else None
+    tryb_karty_miejsca = bool(docelowy_nr)
+
+    if not tryb_karty_miejsca:
+        render_adventure_header("CretAi • Baza Miejsc")
+
     ret_tab = st.session_state.get("return_tab")
     ret_trip = st.session_state.get("return_trip")
 
@@ -5744,6 +5958,13 @@ elif st.session_state.active_tab == "zabytek":
         </div>
         """, unsafe_allow_html=True)
     
+    if tryb_karty_miejsca:
+        if st.button("◀ Wszystkie miejsca", key="btn_wroc_do_listy_miejsc", use_container_width=True):
+            st.session_state.active_place_id = None
+            if "place" in st.query_params:
+                del st.query_params["place"]
+            st.rerun()
+
     all_cats = list(CATEGORIES_CONFIG.keys())
     active_cat = st.session_state.selected_category
 
@@ -5771,25 +5992,31 @@ elif st.session_state.active_tab == "zabytek":
     if st.session_state.show_visited_places:
         filtr_label += " (z odwiedzonymi)"
 
-    with st.popover(filtr_label, use_container_width=True):
-        st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;'>Kategoria miejsc</div>", unsafe_allow_html=True)
-        col_c1, col_c2 = st.columns(2)
-        for idx, cat_name in enumerate(all_cats):
-            col_target = col_c1 if idx % 2 == 0 else col_c2
-            slug = CATEGORIES_CONFIG[cat_name]["slug"]
-            cat_icon = CATEGORIES_CONFIG[cat_name].get("icon") or "📍"
-            with col_target:
-                btn_txt = f"✓ {cat_name}" if active_cat == cat_name else f"{cat_icon} {cat_name}"
-                if st.button(btn_txt, key=f"pop_btn_cat_{slug}", use_container_width=True):
-                    st.session_state.selected_category = None if active_cat == cat_name else cat_name
-                    st.rerun()
-        if active_cat:
-            if st.button("Pokaż wszystkie kategorie", use_container_width=True):
-                st.session_state.selected_category = None
-                st.rerun()
+    if tryb_karty_miejsca:
+        # Filtry sluza wyszukiwaniu na liscie miejsc. W karcie jednego miejsca zostaja w DOM
+        # (inaczej Streamlit czysci stan checkboxa), ale sa ukryte.
+        st.markdown("<style>div.st-key-filtry_miejsc_wrapper { display: none !important; }</style>", unsafe_allow_html=True)
 
-        st.markdown("<div style='border-top: 1px solid #D1C7AE; margin: 8px 0 6px 0;'></div>", unsafe_allow_html=True)
-        st.checkbox("Pokaż odwiedzone miejsca", key="show_visited_places")
+    with st.container(key="filtry_miejsc_wrapper"):
+        with st.popover(filtr_label, use_container_width=True):
+            st.markdown("<div style='font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;'>Kategoria miejsc</div>", unsafe_allow_html=True)
+            col_c1, col_c2 = st.columns(2)
+            for idx, cat_name in enumerate(all_cats):
+                col_target = col_c1 if idx % 2 == 0 else col_c2
+                slug = CATEGORIES_CONFIG[cat_name]["slug"]
+                cat_icon = CATEGORIES_CONFIG[cat_name].get("icon") or "📍"
+                with col_target:
+                    btn_txt = f"✓ {cat_name}" if active_cat == cat_name else f"{cat_icon} {cat_name}"
+                    if st.button(btn_txt, key=f"pop_btn_cat_{slug}", use_container_width=True):
+                        st.session_state.selected_category = None if active_cat == cat_name else cat_name
+                        st.rerun()
+            if active_cat:
+                if st.button("Pokaż wszystkie kategorie", use_container_width=True):
+                    st.session_state.selected_category = None
+                    st.rerun()
+
+            st.markdown("<div style='border-top: 1px solid #D1C7AE; margin: 8px 0 6px 0;'></div>", unsafe_allow_html=True)
+            st.checkbox("Pokaż odwiedzone miejsca", key="show_visited_places")
 
     df_miejsca_filtrowane = df_miejsca.copy()
     if not df_miejsca_filtrowane.empty:
@@ -5802,44 +6029,44 @@ elif st.session_state.active_tab == "zabytek":
         df_miejsca_filtrowane['sort_num'] = pd.to_numeric(df_miejsca_filtrowane['numer_miejsca'], errors='coerce').fillna(9999)
         df_miejsca_filtrowane = df_miejsca_filtrowane.sort_values(by='sort_num').drop(columns=['sort_num'])
 
-    m_miejsca = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="OpenStreetMap")
-    zaaplikuj_style_mapy(m_miejsca)
-    dodaj_marker_domku(m_miejsca)
+    if not tryb_karty_miejsca:
+        # Mapa przegladowa ze wszystkimi pinami sluzy tylko wyszukiwaniu na liscie miejsc.
+        m_miejsca = folium.Map(location=[35.2401, 24.8093], zoom_start=8, tiles="OpenStreetMap")
+        zaaplikuj_style_mapy(m_miejsca)
+        dodaj_marker_domku(m_miejsca)
 
-    marker_coords_dict = {}
-    if not df_miejsca_filtrowane.empty:
-        for _, row in df_miejsca_filtrowane.iterrows():
-            lat, lon = sparsuj_wspolrzedne(row.get('wspolrzedne'))
-            if lat is not None and lon is not None:
-                num = str(row.get('numer_miejsca', '')).strip()
-                nazwa_p = str(row.get('nazwa', '')).strip()
-                kolor = "#A8A29E" if bool(row.get('odwiedzone', 0)) else pobierz_kolor_kategorii(row.get('kategoria_normalizowana', 'Other'))
-                marker_coords_dict[(round(lat, 4), round(lon, 4))] = (num, nazwa_p)
-                icon_html = stworz_znacznik_html(num, kolor, 24)
-                folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12), class_name="custom-map-pin"), tooltip=f"#{num} {nazwa_p}").add_to(m_miejsca)
+        marker_coords_dict = {}
+        if not df_miejsca_filtrowane.empty:
+            for _, row in df_miejsca_filtrowane.iterrows():
+                lat, lon = sparsuj_wspolrzedne(row.get('wspolrzedne'))
+                if lat is not None and lon is not None:
+                    num = str(row.get('numer_miejsca', '')).strip()
+                    nazwa_p = str(row.get('nazwa', '')).strip()
+                    kolor = "#A8A29E" if bool(row.get('odwiedzone', 0)) else pobierz_kolor_kategorii(row.get('kategoria_normalizowana', 'Other'))
+                    marker_coords_dict[(round(lat, 4), round(lon, 4))] = (num, nazwa_p)
+                    icon_html = stworz_znacznik_html(num, kolor, 24)
+                    folium.Marker([lat, lon], icon=folium.DivIcon(html=icon_html, icon_size=(24, 24), icon_anchor=(12, 12), class_name="custom-map-pin"), tooltip=f"#{num} {nazwa_p}").add_to(m_miejsca)
 
-    map_output = st_folium(m_miejsca, width=None, height=230, returned_objects=["last_object_clicked"], key="map_places_view")
+        map_output = st_folium(m_miejsca, width=None, height=230, returned_objects=["last_object_clicked"], key="map_places_view")
 
-    if map_output and map_output.get("last_object_clicked"):
-        c_lat, c_lng = map_output["last_object_clicked"].get("lat"), map_output["last_object_clicked"].get("lng")
-        if c_lat is not None and c_lng is not None:
-            click_pt = (round(c_lat, 4), round(c_lng, 4))
-            if st.session_state.last_map_click_place != click_pt:
-                st.session_state.last_map_click_place = click_pt
-                match_info = marker_coords_dict.get(click_pt)
-                if not match_info:
-                    for (mlat, mlon), data_tuple in marker_coords_dict.items():
-                        if abs(mlat - c_lat) < 0.005 and abs(mlon - c_lng) < 0.005:
-                            match_info = data_tuple
-                            break
-                if match_info:
-                    clicked_id, clicked_nazwa = match_info
-                    st.session_state.active_place_id = str(clicked_id).strip()
-                    st.query_params["place"] = str(clicked_id).strip()
-                    st.session_state["flash_toast"] = f"📍 Wybrano: #{clicked_id} {clicked_nazwa}"
-                    st.rerun()
-
-    docelowy_nr = str(st.session_state.active_place_id).strip() if st.session_state.active_place_id else None
+        if map_output and map_output.get("last_object_clicked"):
+            c_lat, c_lng = map_output["last_object_clicked"].get("lat"), map_output["last_object_clicked"].get("lng")
+            if c_lat is not None and c_lng is not None:
+                click_pt = (round(c_lat, 4), round(c_lng, 4))
+                if st.session_state.last_map_click_place != click_pt:
+                    st.session_state.last_map_click_place = click_pt
+                    match_info = marker_coords_dict.get(click_pt)
+                    if not match_info:
+                        for (mlat, mlon), data_tuple in marker_coords_dict.items():
+                            if abs(mlat - c_lat) < 0.005 and abs(mlon - c_lng) < 0.005:
+                                match_info = data_tuple
+                                break
+                    if match_info:
+                        clicked_id, clicked_nazwa = match_info
+                        st.session_state.active_place_id = str(clicked_id).strip()
+                        st.query_params["place"] = str(clicked_id).strip()
+                        st.session_state["flash_toast"] = f"📍 Wybrano: #{clicked_id} {clicked_nazwa}"
+                        st.rerun()
 
     if docelowy_nr:
         with get_db() as conn:
@@ -5853,17 +6080,78 @@ elif st.session_state.active_tab == "zabytek":
             czy_odwiedzone = bool(p.get('odwiedzone', 0))
 
             zdjecie_b64 = pobierz_zdjecie_miejsca_b64(numer_miejsca=docelowy_nr, nazwa_miejsca=p.get('nazwa'))
-            zdjecie_html = f"""<div style="width: calc(100% + 28px); height: 185px; margin: -14px -14px 12px -14px; overflow: hidden; border-radius: 18px 18px 0 0; background-color: #EDE8D6;"><img src="{zdjecie_b64}" style="width: 100%; height: 100%; object-fit: cover; display: block;" alt="{p.get('nazwa')}" /></div>""" if zdjecie_b64 else ""
+            zdjecie_html = (
+                f'<div class="place-hero"><img src="{zdjecie_b64}" alt="{p.get("nazwa")}" /></div>'
+                if zdjecie_b64 else
+                '<div class="place-hero" style="display:flex; align-items:center; justify-content:center; '
+                'font-size:9pt; font-weight:800; color:#8C5338;">{TODO} brak zdjęcia</div>'
+            )
+
+            # ZMIANA: Krotki deskryptor z nawiasu w nazwie renderujemy mniejsza czcionka pod plakietka kategorii
+            nazwa_pelna = str(p.get('nazwa', '')).strip()
+            dopisek_match = re.match(r'^(.*?)\s*(\([^()]*\))\s*$', nazwa_pelna)
+            if dopisek_match:
+                nazwa_glowna = dopisek_match.group(1).strip()
+                nazwa_dopisek = f' <small>{dopisek_match.group(2)}</small>'
+            else:
+                nazwa_glowna, nazwa_dopisek = nazwa_pelna, ""
+
+            # ZMIANA: Nawigacja, Google i oznaczenie odwiedzenia jako trzy ikony po prawej od tytulu
+            powrot_qs = ""
+            if st.session_state.get("return_tab"):
+                powrot_qs += f"&return_tab={urllib.parse.quote(str(st.session_state.get('return_tab')))}"
+            if st.session_state.get("return_trip"):
+                powrot_qs += f"&return_trip={urllib.parse.quote(str(st.session_state.get('return_trip')))}"
+            url_visit = (
+                f"?tab=zabytek&place={urllib.parse.quote(str(docelowy_nr))}"
+                f"&user={urllib.parse.quote(str(aktualny_uzytkownik))}{powrot_qs}&visit=1"
+            )
+            ikony_akcji_html = render_place_icon_actions(
+                coords_clean=coords_p,
+                search_name=p.get('nazwa', ''),
+                search_name_en=p.get('nazwa_angielska', ''),
+                address=p.get('adres', ''),
+                czy_odwiedzone=czy_odwiedzone,
+                url_visit=url_visit,
+            )
 
             st.markdown(f"""<div class="overview-card" style="margin-top: 6px; overflow: hidden;">
 {zdjecie_html}
-<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
-<div style="font-size: 13pt; font-weight: 900; color: #2B2118; line-height: 1.2;">{p.get('numer_miejsca')}. {p.get('nazwa')}</div>
-<span style="background-color: {kolor_p}; color: #FAF8F2; font-size: 8pt; font-weight: 800; padding: 2px 8px; border-radius: 10px;">{kat_p}</span>
+<div class="place-title-row">
+<div class="place-title-left">
+<span class="place-cat-badge" style="background-color: {kolor_p};">{pobierz_ikonke_kategorii(kat_p)} {kat_p}</span>
+<div class="place-title">{p.get('numer_miejsca')}. {nazwa_glowna}{nazwa_dopisek}</div>
+</div>
+{ikony_akcji_html}
 </div>
 <div class="overview-card-text">{p.get('opis', '')}</div>
 </div>""", unsafe_allow_html=True)
 
+            # ZMIANA: Mapa wycentrowana na tym jednym miejscu, zamiast przegladowej mapy calej Krety
+            lat_m, lon_m = sparsuj_wspolrzedne(p.get('wspolrzedne'))
+            st.markdown('<div class="overview-card-title" style="margin-top: 2px;"><span>🗺️</span> POŁOŻENIE</div>', unsafe_allow_html=True)
+            if lat_m is not None and lon_m is not None:
+                m_jedno = folium.Map(location=[lat_m, lon_m], zoom_start=14, tiles="OpenStreetMap")
+                zaaplikuj_style_mapy(m_jedno)
+                folium.Marker(
+                    [lat_m, lon_m],
+                    icon=folium.DivIcon(
+                        html=stworz_znacznik_html(str(p.get('numer_miejsca')), kolor_p, 30),
+                        icon_size=(30, 30), icon_anchor=(15, 15), class_name="custom-map-pin"
+                    ),
+                    tooltip=f"#{p.get('numer_miejsca')} {nazwa_pelna}"
+                ).add_to(m_jedno)
+                with st.container(key=f"mapa_miejsca_{docelowy_nr}"):
+                    st_folium(m_jedno, width=None, height=220, returned_objects=[], key=f"map_single_place_{docelowy_nr}")
+            else:
+                st.markdown(
+                    '<div class="overview-card" style="text-align: center; font-size: 9pt; font-weight: 800; color: #8C5338;">'
+                    '{TODO} brak współrzędnych tego miejsca w bazie</div>',
+                    unsafe_allow_html=True
+                )
+
+            # ZMIANA: Trudnosc, oslona przed sloncem i meltdown wchodza tu jako klikalne chipy,
+            # zamiast trzech osobnych kart pod spodem
             st.markdown(f"""<div class="overview-card">
 <div class="overview-card-title"><span>ℹ️</span> INFORMACJE PRAKTYCZNE</div>
 <div class="logistics-grid">
@@ -5884,25 +6172,8 @@ elif st.session_state.active_tab == "zabytek":
 <div class="logistics-pill-value" style="font-size: 9.5pt;">{p.get('godziny_otwarcia', '—')}</div>
 </div>
 </div>
+{render_chipy_stanu(p, f"chipy_miejsca_{docelowy_nr}")}
 </div>""", unsafe_allow_html=True)
-
-            st.markdown(f"""<div class="overview-card">
-<div class="overview-card-title"><span>📊</span> POZIOM TRUDNOŚCI</div>
-<div class="overview-card-text">{p.get('trudnosc_adhd', 'Średni')}</div>
-</div>""", unsafe_allow_html=True)
-
-            st.markdown(f"""<div class="overview-card">
-<div class="overview-card-title"><span>☀️</span> OCHRONA PRZED SŁOŃCEM</div>
-<div class="overview-card-text">{p.get('ochrona_slonce', 'Standardowa')}</div>
-</div>""", unsafe_allow_html=True)
-
-            st.markdown(f"""<details class="overview-details-card">
-<summary>🧠 SPECYFIKA AuDHD & SENSORYKA</summary>
-<div style="margin-top: 8px; border-top: 1px solid #D1C7AE; padding-top: 6px;">
-<div style="font-size: 9pt; color: #2B2118; margin-bottom: 4px;"><b>Potencjał meltdownu:</b> {p.get('potencjal_meltdownu', 'Średni')}</div>
-<div style="font-size: 9pt; color: #2B2118;"><b>Strategia zaradcza:</b> {p.get('strategie_meltdown', 'Brak')}</div>
-</div>
-</details>""", unsafe_allow_html=True)
 
             zadania_miejsca = sparsuj_liste_zadan(p.get('zadania_dla_dzieci', ''))
             if zadania_miejsca:
@@ -5915,18 +6186,9 @@ elif st.session_state.active_tab == "zabytek":
                             zapisz_status_zadania(klucz, nowy_stan)
                             st.rerun()
 
-            # ZMIANA: Przekazanie angielskiej nazwy oraz adresu z bazy do nawigacji
-            html_action_bar = render_action_bar(
-                coords_clean=coords_p, 
-                search_name=p.get('nazwa', ''), 
-                search_name_en=p.get('nazwa_angielska', ''), 
-                address=p.get('adres', '')
-            )
-            if html_action_bar:
-                st.markdown(html_action_bar, unsafe_allow_html=True)
-
-            btn_vis_label = "✓ Miejsce odwiedzone (przywróć)" if czy_odwiedzone else "🎯 Oznacz jako odwiedzone"
-            if st.button(btn_vis_label, key=f"btn_toggle_vis_{docelowy_nr}", use_container_width=True):
+            # ZMIANA: Nawigacja, Google i oznaczenie odwiedzenia sa teraz ikonami w naglowku karty,
+            # wiec pionowy pasek akcji i osobny przycisk odwiedzenia znikaja jako duplikaty.
+            if st.session_state.pop("pending_visit_toggle", None) == docelowy_nr:
                 potwierdz_odwiedzenie_dialog(docelowy_nr, p.get('nazwa'), czy_odwiedzone)
 
             renderuj_sekcje_notatek(id_miejsca=str(docelowy_nr))

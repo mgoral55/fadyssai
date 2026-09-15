@@ -4,3 +4,5 @@ miejsca_backup.csv
 wycieczki_backup.csv
 __pycache__/
 *.pyc
+cretai.db-shm
+cretai.db-wal
