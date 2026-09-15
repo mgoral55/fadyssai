@@ -1729,7 +1729,13 @@ div[class*="st-key-mapa_miejsca_"] iframe { border-radius: 16px; border: 1.5px s
    selektory lapia prefiks. Zdjecie idzie przez st.image (URL z media store), nie base64 -
    27 obrazkow w jednym widoku, kazdy rerun przesylalby inaczej kilka MB. */
 div[class*="st-key-ryba_karta_"] { background-color: #F6F0DD; border: 1.5px solid #E2DEC8; border-radius: 20px; padding: 12px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
-div[class*="st-key-ryba_karta_"] [data-testid="stImage"] img { width: 100%; height: 170px; object-fit: cover; border-radius: 14px; display: block; cursor: zoom-in; }
+/* Zdjęcie skaluje się w całości zamiast być przycięte do paska: proporcje gatunków idą od 0.44
+   (pionowa iglicznia) do 2.15, a kadrowanie do stałej wysokości ucinało rybom głowy i ogony -
+   w katalogu do rozpoznawania zwierząt to dyskwalifikuje zdjęcie. Sufit wysokości trzyma karty
+   w ryzach, a szerokość dobiera się sama, więc nigdzie nie ma pustych pasów tła. */
+/* Streamlit wpisuje szerokość obrazka w atrybut style, więc bez !important pionowe zdjęcia zostałyby
+   rozciągnięte do szerokości karty. */
+div[class*="st-key-ryba_karta_"] [data-testid="stImage"] img { width: auto !important; max-width: 100% !important; height: auto !important; max-height: 240px !important; object-fit: contain; border-radius: 14px; display: block; margin: 0 auto; cursor: zoom-in; }
 /* Po powiekszeniu ten sam obrazek zostaje w tej samej ramce, wiec kadrowanie do 170px splaszczaloby
    go na pelnym ekranie. Tryb pelnoekranowy poznajemy po przycisku zamykajacym w pasku narzedzi -
    klasy emocji sa generowane i zmieniaja sie miedzy wydaniami Streamlita. */
