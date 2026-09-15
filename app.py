@@ -1725,6 +1725,8 @@ div[class*="st-key-ryba_karta_widziane_"] { background-color: #E7EEDF; border-co
 .ryba-chip.szansa-czesta { background-color: #C3CBB5; border-color: #ACB79C; }
 .ryba-chip.szansa-rzadkosc { background-color: #8C5338; border-color: #6F3F28; color: #FAF8F2; }
 .ryba-uwaga { margin-top: 6px; background-color: #F7E4D7; border: 1.5px solid #D9A283; border-radius: 12px; padding: 7px 9px; font-size: 8.5pt; font-weight: 800; color: #7A3B1C; line-height: 1.35; }
+.ryba-link { display: inline-block; margin-top: 8px; background-color: #C3CBB5; border: 1.5px solid #ACB79C; border-radius: 12px; padding: 5px 10px; font-size: 8.5pt; font-weight: 800; text-decoration: none !important; }
+.ryba-link, .ryba-link:visited, .ryba-link:hover { color: #2B2118 !important; }
 .ryba-zrodlo { margin-top: 6px; font-size: 6.5pt; font-weight: 700; color: #8A7E72; }
 .ryba-pasek-postepu { height: 12px; background-color: #EDE8D6; border: 1.5px solid #E2DEC8; border-radius: 10px; overflow: hidden; margin-top: 6px; }
 .ryba-pasek-postepu > div { height: 100%; background-color: #7E9B6B; }
@@ -2984,7 +2986,8 @@ KATALOG_RYB_ZDJECIA = os.path.join("zdjecia", "ryby")
 PREFIKS_KLUCZA_RYBY = "ryba_"
 KOLUMNY_KATALOGU_RYB = [
     "numer", "slug", "nazwa_pl", "nazwa_lacinska", "grupa", "szansa", "rozmiar",
-    "gdzie_szukac", "opis", "ostrzezenie", "autor_zdjecia", "licencja_zdjecia", "zrodlo_zdjecia",
+    "gdzie_szukac", "opis", "ostrzezenie", "link_opisu", "autor_zdjecia", "licencja_zdjecia",
+    "zrodlo_zdjecia",
 ]
 
 
@@ -3032,6 +3035,12 @@ def przelacz_status_ryby(slug):
         klucz_statusu_ryby(slug),
         bool(st.session_state.get(f"cb_ryba_{slug}")),
     )
+
+
+def etykieta_linku_opisu(url):
+    """Artykuł po polsku, gdy istnieje - przy sześciu gatunkach Wikipedia ma tylko wersję angielską."""
+    jezyk = "PL" if "pl.wikipedia.org" in str(url) else "EN"
+    return f"📖 Dłuższy opis na Wikipedii ({jezyk})"
 
 
 def klasa_chipa_szansy(szansa):
@@ -5931,6 +5940,11 @@ def renderuj_katalog_ryb():
                 f'<div class="ryba-uwaga">⚠️ {ryba["ostrzezenie"]}</div>'
                 if str(ryba["ostrzezenie"]).strip() else ""
             )
+            link_html = (
+                f'<a class="ryba-link" href="{ryba["link_opisu"]}" target="_blank" rel="noopener noreferrer">'
+                f'{etykieta_linku_opisu(ryba["link_opisu"])}</a>'
+                if str(ryba["link_opisu"]).strip() else ""
+            )
             zrodlo_html = (
                 f'<div class="ryba-zrodlo">fot. {ryba["autor_zdjecia"]} • {ryba["licencja_zdjecia"]} • Wikimedia Commons</div>'
                 if str(ryba["autor_zdjecia"]).strip() else ""
@@ -5941,6 +5955,7 @@ def renderuj_katalog_ryb():
 <div class="ryba-chipy">{"".join(chipy)}</div>
 <div class="overview-card-text">{ryba["opis"]}</div>
 {uwaga_html}
+{link_html}
 {zrodlo_html}""", unsafe_allow_html=True)
 
             st.checkbox(

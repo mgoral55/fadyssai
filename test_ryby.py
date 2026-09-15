@@ -19,6 +19,7 @@ BADANE_FUNKCJE = [
     "sciezka_zdjecia_ryby",
     "klucz_statusu_ryby",
     "klasa_chipa_szansy",
+    "etykieta_linku_opisu",
 ]
 
 KATALOG_REPO = os.path.dirname(os.path.abspath(__file__))
@@ -30,7 +31,8 @@ DOZWOLONE_SZANSE = {"Pewniak", "Częsta", "Rzadkość"}
 
 KOLUMNY_KATALOGU_RYB = [
     "numer", "slug", "nazwa_pl", "nazwa_lacinska", "grupa", "szansa", "rozmiar",
-    "gdzie_szukac", "opis", "ostrzezenie", "autor_zdjecia", "licencja_zdjecia", "zrodlo_zdjecia",
+    "gdzie_szukac", "opis", "ostrzezenie", "link_opisu", "autor_zdjecia", "licencja_zdjecia",
+    "zrodlo_zdjecia",
 ]
 
 
@@ -78,6 +80,22 @@ def test_kazdy_gatunek_ma_nazwe_opis_i_atrybucje(katalog):
         assert ryba["autor_zdjecia"].strip(), ryba["slug"]
         assert ryba["licencja_zdjecia"].strip().startswith("CC"), ryba["slug"]
         assert ryba["zrodlo_zdjecia"].startswith("https://"), ryba["slug"]
+
+
+def test_kazdy_gatunek_ma_link_do_dluzszego_opisu(katalog):
+    linki = []
+    for _, ryba in katalog.iterrows():
+        link = ryba["link_opisu"].strip()
+        assert link.startswith("https://"), ryba["slug"]
+        assert ".wikipedia.org/wiki/" in link, ryba["slug"]
+        linki.append(link)
+    assert len(linki) == len(set(linki))
+
+
+def test_etykieta_linku_rozpoznaje_jezyk(app_ns):
+    etykieta = app_ns["etykieta_linku_opisu"]
+    assert etykieta("https://pl.wikipedia.org/wiki/Salpa").endswith("(PL)")
+    assert etykieta("https://en.wikipedia.org/wiki/Pterois_miles").endswith("(EN)")
 
 
 def test_grupy_i_szanse_sa_ze_slownika(katalog):
