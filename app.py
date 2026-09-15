@@ -1708,6 +1708,27 @@ div.st-key-btn_date_picker { margin-bottom: 10px !important; }
    miejsca, wiec selektor dopasowuje prefiks. */
 div[class*="st-key-mapa_miejsca_"] iframe { border-radius: 16px; border: 1.5px solid #E2DEC8; }
 
+/* --- KATALOG RYB: karta gatunku ze zdjeciem, chipami i checkboxem odhaczenia ---
+   Karta to kontener Streamlita (nie czysty markdown), bo checkbox musi siedziec w srodku,
+   a widget nie da sie wstawic w blok HTML. Klucz kontenera niesie slug gatunku, wiec
+   selektory lapia prefiks. Zdjecie idzie przez st.image (URL z media store), nie base64 -
+   27 obrazkow w jednym widoku, kazdy rerun przesylalby inaczej kilka MB. */
+div[class*="st-key-ryba_karta_"] { background-color: #F6F0DD; border: 1.5px solid #E2DEC8; border-radius: 20px; padding: 12px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
+div[class*="st-key-ryba_karta_"] [data-testid="stImage"] img { width: 100%; height: 170px; object-fit: cover; border-radius: 14px; display: block; }
+div[class*="st-key-ryba_karta_widziane_"] { background-color: #E7EEDF; border-color: #A9BE97; }
+.ryba-nazwa { font-size: 12.5pt; font-weight: 900; color: #2B2118; line-height: 1.15; }
+.ryba-lacina { font-size: 8.5pt; font-weight: 700; font-style: italic; color: #6B5B50; margin-bottom: 6px; }
+.ryba-odhaczona { display: inline-block; background-color: #7E9B6B; color: #FAF8F2; font-size: 7.5pt; font-weight: 900; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
+.ryba-chipy { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.ryba-chip { font-size: 7.5pt; font-weight: 800; color: #2B2118; background-color: #FAF8F2; border: 1.5px solid #E2DEC8; border-radius: 10px; padding: 3px 7px; }
+.ryba-chip.szansa-pewniak { background-color: #7E9B6B; border-color: #5F7A50; color: #FAF8F2; }
+.ryba-chip.szansa-czesta { background-color: #C3CBB5; border-color: #ACB79C; }
+.ryba-chip.szansa-rzadkosc { background-color: #8C5338; border-color: #6F3F28; color: #FAF8F2; }
+.ryba-uwaga { margin-top: 6px; background-color: #F7E4D7; border: 1.5px solid #D9A283; border-radius: 12px; padding: 7px 9px; font-size: 8.5pt; font-weight: 800; color: #7A3B1C; line-height: 1.35; }
+.ryba-zrodlo { margin-top: 6px; font-size: 6.5pt; font-weight: 700; color: #8A7E72; }
+.ryba-pasek-postepu { height: 12px; background-color: #EDE8D6; border: 1.5px solid #E2DEC8; border-radius: 10px; overflow: hidden; margin-top: 6px; }
+.ryba-pasek-postepu > div { height: 100%; background-color: #7E9B6B; }
+
 /* --- CHIPY STANU: jeden rozwiniety naraz, panel szczegolow na pelna szerokosc ---
    Wylacznosc daje atrybut `name` na <details>. Panel siedzi wewnatrz chipa (inaczej nie
    dalby sie z nim powiazac bez <input>, a te w markdownie Streamlita sa kontrolowane przez
@@ -2953,6 +2974,70 @@ def render_shopping_checkbox_list(df_items, key_prefix):
             # Zasięg "fragment" wymaga wywołania z wnętrza fragmentu - jedyne miejsca wywołania tej funkcji
             # są w renderuj_karte_wycieczki, która jest fragmentem.
             st.rerun(scope="fragment")
+
+# --- KATALOG RYB I ZWIERZAT DO SNORKLOWANIA ---
+# Dane sa statyczne (gatunek nie zmienia sie w trakcie wyjazdu), wiec zostaja w CSV obok
+# miejsc, a nie w bazie. W bazie siedzi wylacznie to, co rodzina odhacza - w tej samej
+# tabeli `statusy_zadan`, ktora obsluguje zadania dla dzieci; klucz to `ryba_<slug>`.
+KATALOG_RYB_CSV = "ryby.csv"
+KATALOG_RYB_ZDJECIA = os.path.join("zdjecia", "ryby")
+PREFIKS_KLUCZA_RYBY = "ryba_"
+KOLUMNY_KATALOGU_RYB = [
+    "numer", "slug", "nazwa_pl", "nazwa_lacinska", "grupa", "szansa", "rozmiar",
+    "gdzie_szukac", "opis", "ostrzezenie", "autor_zdjecia", "licencja_zdjecia", "zrodlo_zdjecia",
+]
+
+
+@st.cache_data
+def wczytaj_katalog_ryb(sciezka_csv=KATALOG_RYB_CSV):
+    if not os.path.exists(sciezka_csv):
+        return pd.DataFrame(columns=KOLUMNY_KATALOGU_RYB)
+    df = pd.read_csv(sciezka_csv, dtype=str, keep_default_na=False)
+    for kolumna in KOLUMNY_KATALOGU_RYB:
+        if kolumna not in df.columns:
+            df[kolumna] = ""
+    df = df[df["slug"].astype(str).str.strip() != ""]
+    df["sort_num"] = pd.to_numeric(df["numer"], errors="coerce").fillna(9999)
+    return df.sort_values("sort_num").drop(columns=["sort_num"]).reset_index(drop=True)
+
+
+def sciezka_zdjecia_ryby(slug, katalog=KATALOG_RYB_ZDJECIA):
+    for rozszerzenie in ("jpg", "jpeg", "png", "webp"):
+        sciezka = os.path.join(katalog, f"{slug}.{rozszerzenie}")
+        if os.path.exists(sciezka):
+            return sciezka
+    return None
+
+
+def klucz_statusu_ryby(slug):
+    return f"{PREFIKS_KLUCZA_RYBY}{slug}"
+
+
+def pobierz_statusy_ryb():
+    """Wszystkie odhaczenia jednym zapytaniem - 27 osobnych SELECT-ow na render to marnotrawstwo."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT klucz, ukonczone FROM statusy_zadan WHERE klucz LIKE ?",
+            (PREFIKS_KLUCZA_RYBY + "%",),
+        )
+        return {
+            str(klucz)[len(PREFIKS_KLUCZA_RYBY):]: bool(ukonczone)
+            for klucz, ukonczone in cursor.fetchall()
+        }
+
+
+def przelacz_status_ryby(slug):
+    zapisz_status_zadania(
+        klucz_statusu_ryby(slug),
+        bool(st.session_state.get(f"cb_ryba_{slug}")),
+    )
+
+
+def klasa_chipa_szansy(szansa):
+    mapa = {"Pewniak": "szansa-pewniak", "Częsta": "szansa-czesta", "Rzadkość": "szansa-rzadkosc"}
+    return mapa.get(str(szansa).strip(), "")
+
 
 def pobierz_wszystkie_miejsca():
     with get_db() as conn:
@@ -5753,6 +5838,120 @@ def wstrzyknij_automatyczny_cache_offline(wycieczka_id, df_wszystkie_miejsca_ref
     """
     wstrzyknij_ukryty_skrypt(js_code, "cache_offline")
 
+def renderuj_katalog_ryb():
+    df_ryby = wczytaj_katalog_ryb()
+
+    if df_ryby.empty:
+        st.markdown(
+            '<div class="overview-card" style="text-align: center; font-size: 9pt; font-weight: 800; color: #8C5338;">'
+            '{TODO} brak pliku ryby.csv - katalog gatunkow nie zostal wgrany</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    statusy = pobierz_statusy_ryb()
+    wszystkich = len(df_ryby)
+    widzianych = sum(1 for slug in df_ryby["slug"] if statusy.get(str(slug).strip()))
+    procent = int(round(100 * widzianych / wszystkich)) if wszystkich else 0
+
+    st.markdown(f"""<div class="overview-card">
+<div class="overview-card-title"><span>🐠</span> NASZ POŁÓW WZROKOWY</div>
+<div class="overview-card-text">Widzieliśmy <b>{widzianych}</b> z <b>{wszystkich}</b> gatunków ({procent}%).</div>
+<div class="ryba-pasek-postepu"><div style="width: {procent}%;"></div></div>
+</div>""", unsafe_allow_html=True)
+
+    grupy = [g for g in ("Ryby", "Bezkręgowce", "Żółwie") if g in set(df_ryby["grupa"])]
+    aktywna_grupa = st.session_state.get("ryby_grupa")
+
+    etykieta_filtra = f"🌪️ Filtr: {aktywna_grupa}" if aktywna_grupa else "🌪️ Filtry i opcje widoku"
+    with st.popover(etykieta_filtra, use_container_width=True):
+        st.markdown(
+            "<div style='font-size: 8.5pt; font-weight: 800; color: #8C5338; text-transform: uppercase; margin-bottom: 4px;'>Grupa zwierząt</div>",
+            unsafe_allow_html=True,
+        )
+        # Dwie kolumny, nie jedna na grupę - przy trzech kolumnach nazwa "Bezkręgowce" urywa się wielokropkiem.
+        kolumny_grup = st.columns(2)
+        for indeks, grupa in enumerate(grupy):
+            with kolumny_grup[indeks % 2]:
+                podpis = f"✓ {grupa}" if aktywna_grupa == grupa else grupa
+                if st.button(podpis, key=f"pop_btn_grupa_ryb_{generuj_slug_miejsca(grupa)}", use_container_width=True):
+                    st.session_state.ryby_grupa = None if aktywna_grupa == grupa else grupa
+                    st.rerun()
+        if aktywna_grupa:
+            if st.button("Pokaż wszystkie grupy", key="pop_btn_grupa_ryb_reset", use_container_width=True):
+                st.session_state.ryby_grupa = None
+                st.rerun()
+
+        st.markdown("<div style='border-top: 1px solid #D1C7AE; margin: 8px 0 6px 0;'></div>", unsafe_allow_html=True)
+        st.checkbox("Ukryj już zaznaczone", key="ryby_ukryj_widziane")
+        st.checkbox("Tylko te, na które trzeba uważać", key="ryby_tylko_uwagi")
+
+    df_widoczne = df_ryby.copy()
+    if aktywna_grupa:
+        df_widoczne = df_widoczne[df_widoczne["grupa"] == aktywna_grupa]
+    if st.session_state.get("ryby_tylko_uwagi"):
+        df_widoczne = df_widoczne[df_widoczne["ostrzezenie"].astype(str).str.strip() != ""]
+    if st.session_state.get("ryby_ukryj_widziane"):
+        df_widoczne = df_widoczne[~df_widoczne["slug"].map(lambda x: statusy.get(str(x).strip(), False))]
+
+    if df_widoczne.empty:
+        st.markdown(
+            '<div class="overview-card" style="text-align: center; font-size: 9pt; font-weight: 800; color: #8C5338;">'
+            'Żaden gatunek nie pasuje do wybranych filtrów.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    for _, ryba in df_widoczne.iterrows():
+        slug = str(ryba["slug"]).strip()
+        widziana = bool(statusy.get(slug))
+        # ZMIANA: Odhaczony gatunek dostaje inny klucz kontenera, bo to jedyny sposob na warunkowe
+        # tlo karty - Streamlit nie pozwala dolozyc klasy do wyrenderowanego kontenera.
+        klucz_kontenera = f"ryba_karta_widziane_{slug}" if widziana else f"ryba_karta_{slug}"
+
+        with st.container(key=klucz_kontenera):
+            sciezka_zdjecia = sciezka_zdjecia_ryby(slug)
+            if sciezka_zdjecia:
+                st.image(sciezka_zdjecia, width="stretch")
+            else:
+                st.markdown(
+                    '<div style="height: 170px; border-radius: 14px; background-color: #EDE8D6; display: flex; '
+                    'align-items: center; justify-content: center; font-size: 9pt; font-weight: 800; color: #8C5338;">'
+                    '{TODO} brak zdjęcia</div>',
+                    unsafe_allow_html=True,
+                )
+
+            odhaczona_html = '<span class="ryba-odhaczona">✅ WIDZIANA</span>' if widziana else ""
+            chipy = [
+                f'<span class="ryba-chip {klasa_chipa_szansy(ryba["szansa"])}">🎯 {ryba["szansa"]}</span>',
+                f'<span class="ryba-chip">📏 {ryba["rozmiar"]}</span>',
+                f'<span class="ryba-chip">🔎 {ryba["gdzie_szukac"]}</span>',
+            ]
+            uwaga_html = (
+                f'<div class="ryba-uwaga">⚠️ {ryba["ostrzezenie"]}</div>'
+                if str(ryba["ostrzezenie"]).strip() else ""
+            )
+            zrodlo_html = (
+                f'<div class="ryba-zrodlo">fot. {ryba["autor_zdjecia"]} • {ryba["licencja_zdjecia"]} • Wikimedia Commons</div>'
+                if str(ryba["autor_zdjecia"]).strip() else ""
+            )
+
+            st.markdown(f"""<div class="ryba-nazwa">{ryba["numer"]}. {ryba["nazwa_pl"]}{odhaczona_html}</div>
+<div class="ryba-lacina">{ryba["nazwa_lacinska"]}</div>
+<div class="ryba-chipy">{"".join(chipy)}</div>
+<div class="overview-card-text">{ryba["opis"]}</div>
+{uwaga_html}
+{zrodlo_html}""", unsafe_allow_html=True)
+
+            st.checkbox(
+                "Już to widzieliśmy!",
+                value=widziana,
+                key=f"cb_ryba_{slug}",
+                on_change=przelacz_status_ryby,
+                args=(slug,),
+            )
+
+
 # --- GŁÓWNY ROUTING ZAKŁADEK I PARAMETRÓW POWROTNYCH ---
 if "tab" in st.query_params:
     st.session_state.active_tab = st.query_params["tab"]
@@ -5797,7 +5996,7 @@ if "filter_map_places" not in st.session_state:
 
 df_miejsca = pobierz_wszystkie_miejsca()
 
-ZAKLADKI_NAWIGACJI = (("zabytek", "Miejsca"), ("map", "Wycieczki"), ("route", "Trasa Dnia"))
+ZAKLADKI_NAWIGACJI = (("zabytek", "Miejsca"), ("map", "Wycieczki"), ("route", "Trasa Dnia"), ("ryby", "Ryby"))
 
 # ZMIANA: Wejście z górnej nawigacji jest wejściem "od zera" w dany tab - kasujemy parametry URL i klucze stanu
 # opisujące poprzednią ścieżkę (otwarte miejsce, ślad powrotu, wskazaną wycieczkę). Wcześniej robiło to za nas
@@ -5921,6 +6120,15 @@ if st.session_state.active_tab == "route":
     renderuj_karte_wycieczki(akt_id, df_miejsca, pokaz_mape=True, pokaz_pogode=True)
     st.markdown('<div class="section-unified-header">🤖 Asystent AI</div>', unsafe_allow_html=True)
     renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=akt_id, inline=True)
+
+elif st.session_state.active_tab == "ryby":
+    render_adventure_header("CretAi • Ryby Krety")
+    st.markdown(
+        '<div class="overview-card-text" style="margin-bottom: 8px;">Lista zwierząt, które da się zobaczyć '
+        'z maską przy brzegu Krety. Zaznaczaj, kogo już upolowaliście wzrokiem.</div>',
+        unsafe_allow_html=True,
+    )
+    renderuj_katalog_ryb()
 
 elif st.session_state.active_tab == "map":
     render_adventure_header("CretAi • Nasze wycieczki")
