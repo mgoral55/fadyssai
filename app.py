@@ -4410,7 +4410,8 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                         # ZMIANA: Zapis odpowiedzi i odświeżenie UI zależne od faktycznego wykonania akcji w bazie
                         zapisz_wiadomosc_w_db(uzytkownik, "model", assistant_reply)
                         st.markdown(assistant_reply)
-                        # ZMIANA: Bez czyszczenia cache po mutacjach bazy - żadna funkcja @st.cache_data nie czyta bazy, a jej klucz
+                        # ZMIANA: Bez czyszczenia cache po mutacjach bazy - poza _pakiet_offline_b64_z_cache, która
+                        # trzyma odcisk danych w kluczu i unieważnia się sama, żadna funkcja @st.cache_data nie czyta bazy, a jej klucz
                         # to wyłącznie argumenty: _osrm_czas_przejazdu(lat1, lon1, lat2, lon2),
                         # _osrm_geometria_trasy(lat1, lon1, lat2, lon2), _prognoza_wttr(lat, lon, data_docelowa),
                         # pobierz_zdjecie_miejsca_b64(numer_miejsca, nazwa_miejsca), pobierz_logo_b64(sciezka_pliku), sciezka_claude_cli().
@@ -5087,9 +5088,9 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 st.rerun()
                 
     # Przycisk otwarcia widoku offline dopasowany idealnie do szerokości kontenera
-    offline_html = generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_wszystkie_miejsca_ref)
-    if offline_html:
-        b64_dossier = base64.b64encode(offline_html.encode('utf-8')).decode('utf-8')
+    # ZMIANA: Ten sam pakiet co zapis w tle, wzięty z cache zamiast budowany po raz drugi w tym samym przebiegu
+    b64_dossier, _ = pobierz_pakiet_offline_b64(wycieczka_id, df_wszystkie_miejsca_ref)
+    if b64_dossier:
         btn_offline_js = f"""
         <!DOCTYPE html>
         <html>
@@ -5400,13 +5401,56 @@ def generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_miejsca_ref):
 </body>
 </html>"""
 
+# ZMIANA: Pakiet offline powstawał dwa razy na każdy przebieg trasy - raz pod przycisk otwarcia widoku,
+# raz pod zapis w tle - i za każdym razem jechał do przeglądarki jako blok base64. Odcisk danych
+# wejściowych pozwala zbudować go raz i nie wysyłać ponownie, dopóki plan, posiłki, zakupy i baza miejsc
+# stoją w miejscu.
+def _odcisk_danych_pakietu_offline(wycieczka_id, df_miejsca_ref):
+    """Skrót wszystkiego, co wchodzi do pakietu offline - zmienia się dokładnie wtedy, gdy zmienia się jego treść."""
+    zapytania = (
+        ('SELECT * FROM wycieczka WHERE id = ?', (str(wycieczka_id),)),
+        ('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', (str(wycieczka_id),)),
+        ('SELECT * FROM posilki_kroku', ()),
+        ('SELECT * FROM zakupy WHERE id_wycieczki = ?', (str(wycieczka_id),)),
+    )
+    czesci = []
+    with get_db() as conn:
+        cursor = conn.cursor()
+        for zapytanie, parametry in zapytania:
+            cursor.execute(zapytanie, parametry)
+            czesci.append(repr(cursor.fetchall()))
+    czesci.append(str(int(pd.util.hash_pandas_object(df_miejsca_ref, index=True).sum())))
+    return hashlib.md5("|".join(czesci).encode("utf-8")).hexdigest()
+
+
+# ZMIANA: Wyjątek od zasady "żadna funkcja @st.cache_data nie czyta bazy" - ta czyta, ale odcisk danych jest
+# częścią klucza, więc mutacja bazy sama unieważnia wpis i czyszczenie cache po zapisie nadal jest zbędne.
+@st.cache_data(show_spinner=False, max_entries=8)
+def _pakiet_offline_b64_z_cache(wycieczka_id, odcisk_danych, _df_miejsca_ref):
+    html_pakietu = generuj_autonomiczny_pakiet_offline_html(wycieczka_id, _df_miejsca_ref)
+    if not html_pakietu:
+        return None
+    return base64.b64encode(html_pakietu.encode('utf-8')).decode('utf-8')
+
+
+def pobierz_pakiet_offline_b64(wycieczka_id, df_miejsca_ref):
+    """Zwraca (pakiet offline w base64, odcisk danych). Pakiet jest None, gdy wycieczki nie ma w bazie."""
+    odcisk = _odcisk_danych_pakietu_offline(wycieczka_id, df_miejsca_ref)
+    return _pakiet_offline_b64_z_cache(str(wycieczka_id), odcisk, df_miejsca_ref), odcisk
+
+
 def wstrzyknij_automatyczny_cache_offline(wycieczka_id, df_wszystkie_miejsca_ref):
     """Zapisuje pakiet offline w tle: w Cache Storage service workera i w localStorage."""
-    html_dossier = generuj_autonomiczny_pakiet_offline_html(wycieczka_id, df_wszystkie_miejsca_ref)
-    if not html_dossier:
+    b64_payload, odcisk_pakietu = pobierz_pakiet_offline_b64(wycieczka_id, df_wszystkie_miejsca_ref)
+    if not b64_payload:
         return
 
-    b64_payload = base64.b64encode(html_dossier.encode('utf-8')).decode('utf-8')
+    # ZMIANA: Ten sam pakiet nie jedzie do przeglądarki po raz drugi. Kolejne przebiegi skryptu przy
+    # niezmienionym planie pomijają cały komponent, więc nie ma ani kodowania, ani transferu blobu.
+    znacznik_wyslania = (str(wycieczka_id), odcisk_pakietu)
+    if st.session_state.get("offline_pakiet_wyslany") == znacznik_wyslania:
+        return
+    st.session_state["offline_pakiet_wyslany"] = znacznik_wyslania
 
     # ZMIANA: Pakiet trafia dwiema drogami — do Cache Storage (droga główna, czyta z niej
     # /app/static/offline.html, limit dużo wyższy niż ~5 MB localStorage i bez ryzyka
