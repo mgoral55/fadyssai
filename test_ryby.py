@@ -167,3 +167,11 @@ def test_zakladka_ryb_jest_podpieta_w_nawigacji():
     assert '("ryby", "Ryby")' in zrodlo
     assert 'active_tab == "ryby"' in zrodlo
     assert "renderuj_katalog_ryb()" in zrodlo
+
+
+def test_mostek_powiekszania_zdjec_jest_wstrzykiwany():
+    # Klik w zdjęcie ma odpalać pełny ekran Streamlita, a nie otwierać nowej strony.
+    zrodlo = io.open(os.path.join(KATALOG_REPO, "app.py"), encoding="utf-8").read()
+    assert "zainstaluj_mostek_powiekszania_zdjec()" in zrodlo
+    assert '__cretaiMostekZdjecRyb' in zrodlo
+    assert 'data-testid="stElementToolbar"' in zrodlo

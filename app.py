@@ -1714,7 +1714,11 @@ div[class*="st-key-mapa_miejsca_"] iframe { border-radius: 16px; border: 1.5px s
    selektory lapia prefiks. Zdjecie idzie przez st.image (URL z media store), nie base64 -
    27 obrazkow w jednym widoku, kazdy rerun przesylalby inaczej kilka MB. */
 div[class*="st-key-ryba_karta_"] { background-color: #F6F0DD; border: 1.5px solid #E2DEC8; border-radius: 20px; padding: 12px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
-div[class*="st-key-ryba_karta_"] [data-testid="stImage"] img { width: 100%; height: 170px; object-fit: cover; border-radius: 14px; display: block; }
+div[class*="st-key-ryba_karta_"] [data-testid="stImage"] img { width: 100%; height: 170px; object-fit: cover; border-radius: 14px; display: block; cursor: zoom-in; }
+/* Po powiekszeniu ten sam obrazek zostaje w tej samej ramce, wiec kadrowanie do 170px splaszczaloby
+   go na pelnym ekranie. Tryb pelnoekranowy poznajemy po przycisku zamykajacym w pasku narzedzi -
+   klasy emocji sa generowane i zmieniaja sie miedzy wydaniami Streamlita. */
+[data-testid="stFullScreenFrame"]:has([data-testid="stElementToolbar"] button[aria-label="Close fullscreen"]) img { height: auto !important; max-height: 100% !important; object-fit: contain !important; cursor: zoom-out; }
 div[class*="st-key-ryba_karta_widziane_"] { background-color: #E7EEDF; border-color: #A9BE97; }
 .ryba-nazwa { font-size: 12.5pt; font-weight: 900; color: #2B2118; line-height: 1.15; }
 .ryba-lacina { font-size: 8.5pt; font-weight: 700; font-style: italic; color: #6B5B50; margin-bottom: 6px; }
@@ -5847,7 +5851,35 @@ def wstrzyknij_automatyczny_cache_offline(wycieczka_id, df_wszystkie_miejsca_ref
     """
     wstrzyknij_ukryty_skrypt(js_code, "cache_offline")
 
+# ZMIANA: Klikniecie w zdjecie gatunku ma je powiekszyc, a nie robic nic. Streamlit ma wlasny
+# tryb pelnoekranowy obrazka, ale odpala go wylacznie przycisk w pasku narzedzi elementu, ktory na
+# telefonie jest niewidoczny (pojawia sie na hover). Mostek przeklada klikniecie w sam obrazek na
+# klikniecie tego przycisku - te sama technika, co mostek linkow nawigacji.
+def zainstaluj_mostek_powiekszania_zdjec():
+    wstrzyknij_ukryty_skrypt("""
+    <script>
+    (function() {
+        const dok = (window.parent || window).document;
+        if (dok.__cretaiMostekZdjecRyb) { return; }
+        dok.__cretaiMostekZdjecRyb = true;
+        dok.addEventListener("click", function(zdarzenie) {
+            const cel = zdarzenie.target;
+            if (!cel || cel.tagName !== "IMG" || typeof cel.closest !== "function") { return; }
+            if (!cel.closest('div[class*="st-key-ryba_karta_"]')) { return; }
+            const ramka = cel.closest('[data-testid="stFullScreenFrame"]');
+            if (!ramka) { return; }
+            const przycisk = ramka.querySelector('[data-testid="stElementToolbar"] button');
+            if (!przycisk) { return; }
+            zdarzenie.preventDefault();
+            przycisk.click();
+        }, true);
+    })();
+    </script>
+    """, "powiekszanie_zdjec_ryb")
+
+
 def renderuj_katalog_ryb():
+    zainstaluj_mostek_powiekszania_zdjec()
     df_ryby = wczytaj_katalog_ryb()
 
     if df_ryby.empty:
