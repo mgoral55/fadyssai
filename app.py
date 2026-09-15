@@ -46,6 +46,14 @@ def pobierz_dane_rynku_dla_daty(data_str):
         weekday = date.today().weekday()
     return LAIKI_SCHEDULE.get(weekday), weekday
 
+# Skrypty bez wlasnego widoku (manifest PWA, synchronizacja profilu, cache offline)
+# dostaja wlasny kontener, ktory arkusz stylow wyjmuje z ukladu. Bez tego Streamlit
+# wlicza kazdy taki element w 16px odstepu pionowego bloku i gora strony puchnie
+# o kilkadziesiat pikseli pustego tla.
+def wstrzyknij_ukryty_skrypt(kod_js, klucz):
+    with st.container(key=f"ukryty_skrypt_{klucz}"):
+        st.components.v1.html(kod_js, height=0)
+
 # --- 0. BAZA DANYCH (CONCURRENCY & WAL) ---
 # Stan zapisywalny (baza + backupy CSV) trafia do CRETAI_DATA_DIR, aby przetrwać odtworzenie kontenera.
 DATA_DIR = os.environ.get("CRETAI_DATA_DIR", ".")
@@ -1497,13 +1505,31 @@ pwa_manifest_script = """
 })();
 </script>
 """
-st.components.v1.html(pwa_manifest_script, height=0)
+wstrzyknij_ukryty_skrypt(pwa_manifest_script, "manifest_pwa")
 
 st.markdown("""
 <style>
 header[data-testid="stHeader"] { background-color: transparent !important; box-shadow: none !important; }
 [data-testid="stHeaderActionElements"] { display: none !important; }
-.block-container { padding-top: 0.6rem !important; padding-bottom: 120px !important; max-width: 540px; }
+/* ZMIANA: Pasek narzedzi Streamlita ("Deploy" i menu) jest przyklejony do prawego gornego
+   rogu okna i nachodzil na trzeci przycisk gornej nawigacji. Aplikacja jest PWA na telefon,
+   wiec deweloperski pasek i tak nie ma tu zastosowania. */
+[data-testid="stToolbar"] { display: none !important; }
+header[data-testid="stHeader"], .stAppHeader { height: 0 !important; min-height: 0 !important; }
+.block-container { padding-top: 0 !important; padding-bottom: 120px !important; max-width: 540px; }
+/* ZMIANA: Elementy bez wlasnego widoku - wstrzykiwane arkusze stylow i skrypty w iframe
+   zerowej wysokosci - i tak dostawaly 16px odstepu z pionowego bloku Streamlita, co
+   dawalo kilkadziesiat pikseli pustego tla nad gorna nawigacja i pod nia. Pozycja
+   absolutna wyjmuje je z ukladu flex (odstep ich nie dotyczy), a nie z drzewa - iframe
+   nadal sie laduje i wykonuje swoj skrypt, inaczej padlby manifest PWA i cache offline. */
+div[class*="st-key-ukryty_skrypt_"],
+[data-testid="stLayoutWrapper"]:has(> div[class*="st-key-ukryty_skrypt_"]),
+[data-testid="stVerticalBlock"] > .stElementContainer:has(div[data-testid="stMarkdownContainer"] > style:only-child) {
+    position: absolute !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+}
 .stApp { background-color: #B4C29D !important; color: #2F241D !important; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 [data-testid="stSidebar"] { background-color: #F6F0DD !important; border-right: 1.5px solid #E2DEC8 !important; }
 [data-testid="stSidebar"] * { color: #2B2118 !important; }
@@ -1602,7 +1628,7 @@ div[data-testid="stPopover"] > button:hover { border-color: #8C5338 !important; 
    (czyli cały st.session_state) ginęła - stąd dawne przepychanie profilu przez parametr user w URL.
    Przycisk wywołuje sam rerun skryptu, bez przeładowania dokumentu i bez utraty stanu.
    Ikona wjeżdża przez ::before, żeby zachować dwuliniowy układ (emoji nad podpisem) mimo jednoliniowej etykiety. */
-div.st-key-top_nav { position: sticky; top: 0; z-index: 999; background-color: #B4C29D; padding: 6px 0 10px 0; margin-bottom: 6px; border-bottom: 1.5px solid rgba(255, 255, 255, 0.2); }
+div.st-key-top_nav { position: sticky; top: 0; z-index: 999; background-color: #B4C29D; padding: 0 0 6px 0; margin-bottom: 0; border-bottom: 1.5px solid rgba(255, 255, 255, 0.2); }
 div.st-key-top_nav div[data-testid="stHorizontalBlock"] { gap: 8px !important; }
 div[class*="st-key-nav_btn_"] button { width: 100% !important; background-color: #EFE8D6 !important; border: 1.5px solid #D6CEBC !important; border-radius: 14px !important; padding: 7px 4px !important; min-height: 0 !important; font-size: 11px !important; font-weight: 800 !important; line-height: 1.15 !important; box-shadow: 0 2px 6px rgba(0,0,0,0.03) !important; }
 div[class*="st-key-nav_btn_"] button, div[class*="st-key-nav_btn_"] button * { color: #6B5B50 !important; }
@@ -2060,7 +2086,7 @@ with st.sidebar:
     })();
     </script>
     """
-    st.components.v1.html(sync_user_js, height=0)
+    wstrzyknij_ukryty_skrypt(sync_user_js, "synchronizacja_profilu")
 
     current_device_id = pobierz_id_biezacego_urzadzenia()
     saved_device_user = pobierz_uzytkownika_urzadzenia(current_device_id)
@@ -2099,7 +2125,7 @@ with st.sidebar:
     window.localStorage.setItem('cretai_active_user', '{aktualny_uzytkownik}');
     </script>
     """
-    st.components.v1.html(persist_user_js, height=0)
+    wstrzyknij_ukryty_skrypt(persist_user_js, "zapis_profilu")
 
     # Upewniamy się, że obecny wybór jest trwale skojarzony z tym urządzeniem
     if saved_device_user != aktualny_uzytkownik:
@@ -5696,7 +5722,7 @@ def wstrzyknij_automatyczny_cache_offline(wycieczka_id, df_wszystkie_miejsca_ref
     }})();
     </script>
     """
-    st.components.v1.html(js_code, height=0)
+    wstrzyknij_ukryty_skrypt(js_code, "cache_offline")
 
 # --- GŁÓWNY ROUTING ZAKŁADEK I PARAMETRÓW POWROTNYCH ---
 if "tab" in st.query_params:
@@ -5997,7 +6023,12 @@ elif st.session_state.active_tab == "zabytek":
     if tryb_karty_miejsca:
         # Filtry sluza wyszukiwaniu na liscie miejsc. W karcie jednego miejsca zostaja w DOM
         # (inaczej Streamlit czysci stan checkboxa), ale sa ukryte.
-        st.markdown("<style>div.st-key-filtry_miejsc_wrapper { display: none !important; }</style>", unsafe_allow_html=True)
+        st.markdown(
+            "<style>div.st-key-filtry_miejsc_wrapper, "
+            "[data-testid=\"stLayoutWrapper\"]:has(> div.st-key-filtry_miejsc_wrapper) "
+            "{ display: none !important; }</style>",
+            unsafe_allow_html=True,
+        )
 
     with st.container(key="filtry_miejsc_wrapper"):
         with st.popover(filtr_label, use_container_width=True):
@@ -6133,8 +6164,12 @@ elif st.session_state.active_tab == "zabytek":
             lat_m, lon_m = sparsuj_wspolrzedne(p.get('wspolrzedne'))
             st.markdown('<div class="overview-card-title" style="margin-top: 2px;"><span>🗺️</span> POŁOŻENIE</div>', unsafe_allow_html=True)
             if lat_m is not None and lon_m is not None:
-                m_jedno = folium.Map(location=[lat_m, lon_m], zoom_start=14, tiles="OpenStreetMap")
+                # ZMIANA: zoom 11 zamiast 14 - kadr obejmuje kawal wyspy wokol miejsca,
+                # wiec od razu widac, w ktorej czesci Krety ono lezy. Domek w kadrze daje
+                # punkt odniesienia dla odleglosci.
+                m_jedno = folium.Map(location=[lat_m, lon_m], zoom_start=10, tiles="OpenStreetMap")
                 zaaplikuj_style_mapy(m_jedno)
+                dodaj_marker_domku(m_jedno)
                 folium.Marker(
                     [lat_m, lon_m],
                     icon=folium.DivIcon(
@@ -6179,7 +6214,7 @@ elif st.session_state.active_tab == "zabytek":
 
             zadania_miejsca = sparsuj_liste_zadan(p.get('zadania_dla_dzieci', ''))
             if zadania_miejsca:
-                with st.expander("🎯 Zadania dla dzieci", expanded=False):
+                with st.expander("🎯 Zadania dla dzieci", expanded=True):
                     for idx, zad in enumerate(zadania_miejsca):
                         klucz = f"place_{docelowy_nr}_task_{idx}"
                         stan = pobierz_status_zadania(klucz)
