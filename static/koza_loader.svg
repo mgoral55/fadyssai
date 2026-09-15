@@ -1,0 +1,182 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 200" class="kozal-svg" role="img" aria-label="Tańcząca koza CretAi — trwa myślenie">
+<title>Tańcząca koza CretAi</title>
+<style>
+.kozal-svg{width:100%;height:auto;display:block}
+.kozal-svg *{transform-box:view-box}
+.kozal-koza{animation:kozal-hop .95s cubic-bezier(.36,.07,.19,.97) infinite;transform-origin:100px 150px}
+.kozal-glowa{animation:kozal-glowa .95s ease-in-out infinite;transform-origin:134px 100px}
+.kozal-ogon{animation:kozal-ogon .48s ease-in-out infinite;transform-origin:64px 118px}
+.kozal-cien{animation:kozal-cien .95s cubic-bezier(.36,.07,.19,.97) infinite;transform-origin:100px 171px}
+.kozal-noga{animation:kozal-noga-a .95s ease-in-out infinite}
+.kozal-noga--b{animation-name:kozal-noga-b}
+.kozal-noga--tyl-daleka{transform-origin:72px 130px}
+.kozal-noga--przod-daleka{transform-origin:116px 128px}
+.kozal-noga--tyl-bliska{transform-origin:80px 134px}
+.kozal-noga--przod-bliska{transform-origin:110px 134px}
+.kozal-blysk{animation:kozal-blysk 1.9s ease-in-out infinite}
+.kozal-nuta{animation:kozal-nuta 1.9s linear infinite;opacity:0}
+.kozal-nuta--2{animation-delay:.63s}
+.kozal-nuta--3{animation-delay:1.26s}
+.kozal-ramka-koral{animation:kozal-chroma 1.9s ease-in-out infinite;transform-origin:110px 100px}
+.kozal-ramka-teal{animation:kozal-chroma 1.9s ease-in-out infinite reverse;transform-origin:110px 100px}
+
+@keyframes kozal-hop{
+  0%,100%{transform:translateY(0) rotate(-2.5deg)}
+  25%{transform:translateY(-7px) rotate(1.5deg)}
+  50%{transform:translateY(-1px) rotate(3deg)}
+  75%{transform:translateY(-7px) rotate(-1.5deg)}
+}
+@keyframes kozal-glowa{
+  0%,100%{transform:rotate(-7deg)}
+  30%{transform:rotate(4deg)}
+  50%{transform:rotate(9deg)}
+  80%{transform:rotate(-3deg)}
+}
+@keyframes kozal-noga-a{
+  0%,100%{transform:rotate(-21deg)}
+  50%{transform:rotate(17deg)}
+}
+@keyframes kozal-noga-b{
+  0%,100%{transform:rotate(19deg)}
+  50%{transform:rotate(-17deg)}
+}
+@keyframes kozal-ogon{
+  0%,100%{transform:rotate(-17deg)}
+  50%{transform:rotate(21deg)}
+}
+@keyframes kozal-cien{
+  0%,100%{transform:scale(1,1);opacity:.22}
+  25%{transform:scale(.8,.7);opacity:.12}
+  50%{transform:scale(.97,.95);opacity:.2}
+  75%{transform:scale(.8,.7);opacity:.12}
+}
+@keyframes kozal-blysk{
+  0%,72%,100%{opacity:.18}
+  80%{opacity:.85}
+  88%{opacity:.25}
+}
+@keyframes kozal-nuta{
+  0%{transform:translate(0,0) scale(.5) rotate(-8deg);opacity:0}
+  18%{opacity:.95}
+  100%{transform:translate(-16px,-48px) scale(1.05) rotate(12deg);opacity:0}
+}
+@keyframes kozal-chroma{
+  0%,100%{transform:translate(0,0)}
+  50%{transform:translate(1.4px,-1px)}
+}
+@media (prefers-reduced-motion:reduce){
+  .kozal-koza,.kozal-glowa,.kozal-ogon,.kozal-cien,.kozal-noga,.kozal-blysk,.kozal-nuta,
+  .kozal-ramka-koral,.kozal-ramka-teal{animation:none}
+  .kozal-nuta{opacity:.5}
+}
+</style>
+<defs>
+  <clipPath id="kozal-clip"><rect x="5" y="5" width="210" height="190" rx="34"/></clipPath>
+  <g id="kozal-nuta-glif" transform="scale(1.35)">
+    <ellipse cx="0" cy="6" rx="3.6" ry="2.7" transform="rotate(-20)"/>
+    <rect x="2.5" y="-8" width="1.7" height="14" rx=".8"/>
+    <path d="M4.2 -8.2C8.4-7.2 9.8-4.4 9.2-1.6 8.6-4.4 6.6-5.4 4.2-5.4Z"/>
+  </g>
+</defs>
+
+<rect x="5" y="5" width="210" height="190" rx="34" fill="#0F1B2D"/>
+
+<g clip-path="url(#kozal-clip)">
+  <!-- tło: łuk technologiczny i góry jak w logo -->
+  <circle cx="110" cy="96" r="72" fill="none" stroke="#2EE6C5" stroke-width="1.6" opacity=".22" stroke-dasharray="120 26 46 30"/>
+  <circle cx="110" cy="96" r="60" fill="none" stroke="#F4614C" stroke-width="1.4" opacity=".18" stroke-dasharray="70 140"/>
+  <path d="M2 156 L34 110 L49 128 L62 108 L92 156Z" fill="none" stroke="#FFFFFF" stroke-width="2.2" opacity=".45" stroke-linejoin="round"/>
+  <path d="M24 156 L44 128 L56 142" fill="none" stroke="#FFFFFF" stroke-width="1.6" opacity=".28" stroke-linejoin="round"/>
+  <path d="M130 156 L164 102 L179 122 L193 100 L222 156Z" fill="none" stroke="#2EE6C5" stroke-width="2.2" opacity=".42" stroke-linejoin="round"/>
+  <path d="M150 156 L172 126 L184 140" fill="none" stroke="#2EE6C5" stroke-width="1.6" opacity=".24" stroke-linejoin="round"/>
+
+  <!-- cień i parkiet -->
+  <ellipse class="kozal-cien" cx="100" cy="171" rx="42" ry="5.5" fill="#2EE6C5"/>
+  <path d="M30 171H190" stroke="#2EE6C5" stroke-width="3.2" stroke-linecap="round"/>
+
+  <g class="kozal-koza">
+    <!-- nogi dalekie -->
+    <g class="kozal-noga kozal-noga--tyl-daleka">
+      <path d="M72 130 L66 160" fill="none" stroke="#A88A66" stroke-width="8" stroke-linecap="round"/>
+      <rect x="60.5" y="158" width="11" height="7" rx="2.5" fill="#241B12"/>
+    </g>
+    <g class="kozal-noga kozal-noga--b kozal-noga--przod-daleka">
+      <path d="M116 128 L122 160" fill="none" stroke="#A88A66" stroke-width="8" stroke-linecap="round"/>
+      <rect x="116.5" y="158" width="11" height="7" rx="2.5" fill="#241B12"/>
+    </g>
+
+    <!-- ogon -->
+    <g class="kozal-ogon">
+      <path d="M64 118 C56 114 50 106 55 97" fill="none" stroke="#EDE3D0" stroke-width="7" stroke-linecap="round"/>
+      <path d="M57 101 C54 97 54 93 56 90" fill="none" stroke="#2EE6C5" stroke-width="3" stroke-linecap="round" opacity=".7"/>
+    </g>
+
+    <!-- tors -->
+    <path d="M62 117 C68 106 86 99 105 103 C117 106 125 114 127 124 C129 135 120 147 104 149 C86 151 68 145 62 133Z" fill="#C9B08C"/>
+    <path d="M64 116 C73 105 89 100 106 104" fill="none" stroke="#EDE3D0" stroke-width="4.5" stroke-linecap="round" opacity=".9"/>
+    <ellipse cx="113" cy="121" rx="13" ry="16" fill="#DFCBAA" opacity=".85"/>
+    <path d="M70 132 L76 139 M80 136 L86 142 M90 138 L96 144" fill="none" stroke="#A88A66" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+
+    <!-- nogi bliskie -->
+    <g class="kozal-noga kozal-noga--b kozal-noga--tyl-bliska">
+      <path d="M80 134 L78 163" fill="none" stroke="#C9B08C" stroke-width="8.5" stroke-linecap="round"/>
+      <rect x="72.5" y="161" width="11" height="7" rx="2.5" fill="#2B2118"/>
+    </g>
+    <g class="kozal-noga kozal-noga--przod-bliska">
+      <path d="M110 134 L113 163" fill="none" stroke="#C9B08C" stroke-width="8.5" stroke-linecap="round"/>
+      <rect x="107.5" y="161" width="11" height="7" rx="2.5" fill="#2B2118"/>
+    </g>
+
+    <!-- szyja -->
+    <path d="M110 112 C116 101 127 92 137 86 L152 101 C144 111 132 121 124 127 C117 123 111 118 110 112Z" fill="#D9C3A2"/>
+    <path d="M118 106 L124 112 M126 98 L133 104 M134 91 L141 97" fill="none" stroke="#EDE3D0" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+
+    <g class="kozal-glowa">
+      <!-- rogi: daleki, potem bliski, prążki przez dasharray -->
+      <g>
+        <path d="M153 76 C142 61 139 43 152 35 C162 29 175 34 179 47" fill="none" stroke="#B99B76" stroke-width="6.5" stroke-linecap="round"/>
+        <path d="M153 76 C142 61 139 43 152 35 C162 29 175 34 179 47" fill="none" stroke="#0F1B2D" stroke-width="6.5" stroke-linecap="butt" stroke-dasharray="1.5 6.5" opacity=".45"/>
+      </g>
+      <g>
+        <path d="M138 80 C124 66 118 44 132 34 C143 26 160 30 166 45" fill="none" stroke="#E8DCC6" stroke-width="8" stroke-linecap="round"/>
+        <path d="M138 80 C124 66 118 44 132 34 C143 26 160 30 166 45" fill="none" stroke="#0F1B2D" stroke-width="8" stroke-linecap="butt" stroke-dasharray="1.8 7.5" opacity=".5"/>
+      </g>
+
+      <!-- czaszka i pysk -->
+      <path d="M132 84 C144 75 161 81 170 94 C175 100 174 107 167 109 C158 111 148 112 144 110 C134 106 127 95 132 84Z" fill="#EDE3D0"/>
+      <path d="M155 85 C162 88 167 92 171 97" fill="none" stroke="#C9B08C" stroke-width="1.4" opacity=".7"/>
+      <ellipse cx="170" cy="99" rx="2.4" ry="1.8" fill="#2B2118" transform="rotate(20 170 99)"/>
+      <path d="M163 104 C166 107 169 106 170 103" fill="none" stroke="#2B2118" stroke-width="1.5" stroke-linecap="round"/>
+
+      <!-- ucho -->
+      <path d="M152 80 C156.5 74 163 71.5 167.5 73 C164.5 78.5 158.5 82.5 154 83.5Z" fill="#D9C3A2" stroke="#F4614C" stroke-width="1.1" stroke-linejoin="round"/>
+      <path d="M155.5 79.5 C158.5 77 162 75.5 164.5 75" fill="none" stroke="#B99B76" stroke-width="1" opacity=".8"/>
+
+      <!-- broda -->
+      <path d="M141 107 L137 124 L143 117 L144 130 L150 116 L153 124 L156 108Z" fill="#EDE3D0"/>
+
+      <!-- okulary: cala oprawka w jednej grupie obroconej o 14 stopni (nachylenie pyska),
+           dzieki temu oba szkla leza na wspolnej linii brwi, a nie schodkowo -->
+      <g transform="translate(1 2) rotate(14 140 92)">
+        <path d="M136.5 87.5 L131 90" fill="none" stroke="#F4614C" stroke-width="1.6" stroke-linecap="round"/>
+        <rect x="136" y="84.8" width="13.6" height="8.6" rx="2.4" fill="#141F2E" stroke="#F4614C" stroke-width="1.1"/>
+        <rect x="151.6" y="84.8" width="12.2" height="8.6" rx="2.4" fill="#141F2E" stroke="#F4614C" stroke-width="1.1"/>
+        <path d="M149.8 86.3 H151.6" fill="none" stroke="#F4614C" stroke-width="1.6" stroke-linecap="round"/>
+        <rect x="135.2" y="83.6" width="29.4" height="1.9" rx="0.95" fill="#F4614C"/>
+        <g class="kozal-blysk" fill="#FFFFFF" opacity=".18">
+          <path d="M138.8 92.7 L142.2 85.7 L144.4 85.7 L141 92.7Z"/>
+          <path d="M154.4 92.6 L157.2 85.8 L159 85.8 L156.2 92.6Z"/>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- nuty -->
+  <g class="kozal-nuta" transform="translate(58 104)" fill="#2EE6C5"><use href="#kozal-nuta-glif"/></g>
+  <g class="kozal-nuta kozal-nuta--2" transform="translate(186 118)" fill="#F4614C"><use href="#kozal-nuta-glif"/></g>
+  <g class="kozal-nuta kozal-nuta--3" transform="translate(104 74)" fill="#FFFFFF"><use href="#kozal-nuta-glif"/></g>
+</g>
+
+<rect class="kozal-ramka-koral" x="8" y="8" width="204" height="184" rx="31" fill="none" stroke="#F4614C" stroke-width="3" opacity=".9"/>
+<rect class="kozal-ramka-teal" x="12.5" y="12.5" width="195" height="175" rx="27" fill="none" stroke="#2EE6C5" stroke-width="3"/>
+</svg>

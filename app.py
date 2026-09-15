@@ -2122,6 +2122,40 @@ def pobierz_logo_b64(sciezka_pliku="logo.png"):
             return None
     return None
 
+@st.cache_data
+def pobierz_animacje_kozy(sciezka_pliku="static/koza_loader.svg"):
+    """Wczytuje animowany znak firmowy (tańcząca koza ze znaku CretAi) używany jako loader AI."""
+    if os.path.exists(sciezka_pliku):
+        try:
+            with open(sciezka_pliku, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception:
+            return None
+    return None
+
+
+def render_loader_kozy(komunikat, rozmiar_px=104):
+    """Zwraca HTML loadera: animacja kozy plus komunikat o etapie pracy modelu.
+
+    SVG jedzie inline (nie przez <img> ani /static), bo animacja musi działać także
+    przy pustym cache i na statycznym punkcie wejścia PWA, bez dodatkowego żądania.
+    """
+    svg = pobierz_animacje_kozy()
+    if not svg:
+        # Brak pliku animacji nie może blokować informacji o stanie - zostaje sam komunikat.
+        return f"*{komunikat}*"
+    # Unikalny prefiks klas i ID: ta sama animacja może trafić na stronę w kilku instancjach,
+    # a zduplikowany identyfikator clipPath sklejałby maski między kopiami.
+    svg = svg.replace("kozal-", f"kz{random.randrange(16 ** 6):06x}-")
+    return (
+        '<div style="display: flex; align-items: center; gap: 12px; margin: 4px 0 2px 0;">'
+        f'<div style="flex: 0 0 {rozmiar_px}px; width: {rozmiar_px}px; line-height: 0;">{svg}</div>'
+        '<div style="font-size: 9pt; font-weight: 700; font-style: italic; color: #2B2118; line-height: 1.35;">'
+        f'{komunikat}</div>'
+        '</div>'
+    )
+
+
 _PL_MAP = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
 
 def generuj_slug_miejsca(nazwa):
@@ -4209,15 +4243,21 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                             wyniki_narzedzi = []
                             historia_dla_modelu = przytnij_historie_czatu(chat_historia_z_db)
 
+                            # ZMIANA: Jeden placeholder loadera na cały cykl pętli - st.empty() w każdej iteracji
+                            # dokładał kolejny wiersz statusu, więc animacja kozy zostawałaby w 4 kopiach.
+                            status_komunikaty = [
+                                "🧠 Sprawdzam strefy cienia i okno sjesty...",
+                                "🚗 Weryfikuję czasy dojazdu i postoje sensoryczne...",
+                                "🥪 Pilnuję licznika głodu (Safe Foods i 4h)...",
+                                "💡 Dopasowuję bezpieczny harmonogram dnia..."
+                            ]
+                            status_placeholder = st.empty()
+
                             for loop_idx in range(max_loops):
-                                status_placeholder = st.empty()
-                                status_komunikaty = [
-                                    "🧠 Sprawdzam strefy cienia i okno sjesty...",
-                                    "🚗 Weryfikuję czasy dojazdu i postoje sensoryczne...",
-                                    "🥪 Pilnuję licznika głodu (Safe Foods i 4h)...",
-                                    "💡 Dopasowuję bezpieczny harmonogram dnia..."
-                                ]
-                                status_placeholder.markdown(f"*{random.choice(status_komunikaty)}*")
+                                status_placeholder.markdown(
+                                    render_loader_kozy(random.choice(status_komunikaty)),
+                                    unsafe_allow_html=True
+                                )
 
                                 odpowiedz_modelu = wywolaj_model_claude(
                                     aktywny_system_prompt,
@@ -4294,6 +4334,9 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                                         "argumenty": args,
                                         "wynik": wynik_bazy if isinstance(wynik_bazy, dict) else {"result": str(wynik_bazy)}
                                     })
+
+                            # Koniec pracy modelu - animacja znika przed złożeniem odpowiedzi.
+                            status_placeholder.empty()
 
                             # ZMIANA: Zero fałszywych potwierdzeń CRUD – blokada bezprawnych deklaracji sukcesu
                             if not has_db_mutations:
