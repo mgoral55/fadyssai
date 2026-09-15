@@ -19,6 +19,8 @@ import threading
 # ZMIANA: Alias zegar, bo nazwa time jest zasłonięta przez datetime.time w imporcie poniżej.
 import time as zegar
 from datetime import datetime, date, time, timedelta
+from html import escape as escapuj_html
+from urllib.parse import quote as zakoduj_url
 
 # Stałe koordynatów
 DOMEK_LAT, DOMEK_LON = 35.5914, 24.0918
@@ -762,6 +764,29 @@ def przelicz_i_zsynchronizuj_wycieczke(id_wycieczki, force_pobudka_str=None, for
     # ZMIANA: Zrzut do plików roboczych CSV po każdej synchronizacji i przeliczeniu trasy
     zsynchronizuj_baze_do_csv()
 
+# ZMIANA: Migracja stoi przed init_db(), które biegnie na poziomie modułu zanim powstanie reszta
+# modułu planowania po dacie.
+def zmigruj_aktywna_wycieczke_na_daty(cursor):
+    """Jednorazowa migracja starej bazy: wskaźnik `aktywna_wycieczka` znika, a daty importu tracą sens.
+
+    Zostaje wyłącznie data wycieczki, która była aktywna - reszta wraca do niezaplanowanych.
+    Zwraca id zachowanej wycieczki albo None, gdy migracji nie było.
+    """
+    cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'aktywna_wycieczka'")
+    if not cursor.fetchone():
+        return None
+    cursor.execute('SELECT aktualne_id_wycieczki FROM aktywna_wycieczka WHERE id = 1')
+    wiersz = cursor.fetchone()
+    aktywna_id = str(wiersz[0]).strip() if wiersz and wiersz[0] is not None else ""
+    if not aktywna_id:
+        aktywna_id = None
+        cursor.execute('UPDATE wycieczka SET planowana_data = NULL')
+    else:
+        cursor.execute('UPDATE wycieczka SET planowana_data = NULL WHERE id != ?', (aktywna_id,))
+    cursor.execute('DROP TABLE aktywna_wycieczka')
+    return aktywna_id
+
+
 # --- INICJALIZACJA BAZY DANYCH ---
 def init_db():
     with get_db() as conn:
@@ -894,14 +919,10 @@ def init_db():
             )
         ''')
 
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS aktywna_wycieczka (
-                id INTEGER PRIMARY KEY,
-                aktualne_id_wycieczki TEXT
-            )
-        ''')
-        cursor.execute('INSERT OR IGNORE INTO aktywna_wycieczka (id, aktualne_id_wycieczki) VALUES (1, "1")')
-        
+        # ZMIANA: "Aktywna wycieczka" nie jest już osobnym wskaźnikiem w bazie - Trasę Dnia wybiera data.
+        # Stara baza dostaje jednorazową migrację: daty importu znikają, zostaje tylko data aktywnej.
+        zmigruj_aktywna_wycieczke_na_daty(cursor)
+
         # ZMIANA: Tabela per-urządzenie (kluczowana unikalnym fingerprintem klienta)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS profil_urzadzenia (
@@ -1032,7 +1053,6 @@ def init_db():
                     try:
                         df_csv = pd.read_csv(plik_wycieczki, encoding=enc)
                         df_csv.columns = [str(col).strip() for col in df_csv.columns]
-                        dzisiaj_str = date.today().strftime("%Y-%m-%d")
                         unikalne_wycieczki = df_csv['id_wycieczki'].unique()
 
                         col_nr_miejsca_csv = find_col(['numer_miejsca', 'numer miejsca', 'id_miejsca', 'nr_miejsca'], df_csv)
@@ -1048,12 +1068,14 @@ def init_db():
                             opis_val = str(first_row.get('calosciowy_opis_wycieczki', ''))
                             taktyka_val = str(first_row.get('calosciowa_taktyka_dnia', ''))
 
+                            # ZMIANA: Wycieczka z CSV wchodzi bez daty - zaplanowanie to świadoma decyzja w aplikacji,
+                            # a nie dzień importu.
                             cursor.execute('''
                                 INSERT INTO wycieczka (
                                     id, tytul_wycieczki, calosciowy_opis_wycieczki, calosciowa_taktyka_dnia,
                                     pobudka, planowana_data, szacowany_czas_ogarniania_rano, odbyta
-                                ) VALUES (?, ?, ?, ?, ?, ?, '0.5h', 0)
-                            ''', (str(wid), tytul_val, opis_val, taktyka_val, pobudka_val, dzisiaj_str))
+                                ) VALUES (?, ?, ?, ?, ?, NULL, '0.5h', 0)
+                            ''', (str(wid), tytul_val, opis_val, taktyka_val, pobudka_val))
 
                             step_counter = 0
                             for _, r in w_df.iterrows():
@@ -1276,8 +1298,8 @@ def resetuj_i_przywroc_baze_z_csv():
         cursor = conn.cursor()
         tabele = [
             "czasy_dojazdu", "posilki_kroku", "zakupy", "notatki", 
-            "statusy_zadan", "czat_historia", "krok_wycieczki", 
-            "wycieczka", "miejsca", "aktywna_wycieczka"
+            "statusy_zadan", "czat_historia", "krok_wycieczki",
+            "wycieczka", "miejsca"
         ]
         for t in tabele:
             cursor.execute(f"DELETE FROM {t}")
@@ -1582,8 +1604,6 @@ div[data-baseweb="input"], div[data-baseweb="input"] > div, div[data-baseweb="in
 div[data-testid="stHorizontalBlock"] { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 8px !important; }
 div[data-testid="stHorizontalBlock"] > div { flex: 1 1 0px !important; min-width: 0 !important; }
 
-div.st-key-btn_date_picker button { background-color: #F6F0DD !important; color: #2B2118 !important; border: 1.5px solid #E2DEC8 !important; border-radius: 20px !important; padding: 12px 14px !important; min-height: 48px !important; font-size: 0.98rem !important; font-weight: 800 !important; width: 100% !important; box-shadow: 0 4px 12px rgba(0,0,0,0.03) !important; }
-div.st-key-btn_date_picker button:hover { border-color: #8C5338 !important; background-color: #EFE8D1 !important; }
 
 div.st-key-btn_powrot_static button, div[class*="btn_powrot_static"] button:disabled {
     background-color: #2E251E !important;
@@ -1657,6 +1677,35 @@ div.st-key-nav_btn_route button p::before { content: "🚗"; }
    przycisku o tym samym kluczu. `display: none` nie przeszkadza w programowym kliknięciu. */
 div[class*="st-key-navlink_"] { display: none !important; }
 
+/* Data na karcie wycieczki (tab Wycieczki) - statyczna linia zamiast dawnego przycisku z date pickerem. */
+.trip-date-line { font-size: 9.5pt; font-weight: 800; color: #8C5338; margin: 0 0 4px 0; }
+.trip-date-line-brak { color: #8C827A; font-style: italic; }
+
+/* Nagłówek Trasy Dnia: strzałki po bokach, data w środku, chip stanu pod datą. */
+div.st-key-btn_trasa_poprz button, div.st-key-btn_trasa_nast button { min-height: 52px !important; font-size: 14pt !important; font-weight: 900 !important; border-radius: 16px !important; }
+.trasa-data-box { text-align: center; padding: 2px 0; }
+.trasa-data-label { font-size: 7.5pt; font-weight: 800; color: #8C827A; text-transform: uppercase; letter-spacing: 0.04em; }
+.trasa-data-value { font-size: 11.5pt; font-weight: 900; color: #2B2118; line-height: 1.2; }
+.trasa-data-chip { display: inline-block; margin-top: 3px; font-size: 7.5pt; font-weight: 900; padding: 2px 8px; border-radius: 10px; background-color: #F6F0DD; border: 1.5px solid #C8B79C; color: #7A4429; }
+.trasa-data-chip-dzis { background-color: #8C5338; border-color: #6F3F28; color: #FAF8F2; }
+.trasa-data-chip-odbyta { background-color: #E6E2D6; border-color: #C8C0AC; color: #4A3E36; }
+.trasa-data-chip-minela { background-color: #FAF8F2; border-color: #D6CEBA; color: #8C827A; }
+
+/* Agenda planu wyjazdu: jeden wiersz na dzień, wolne dni jako dziury do zaplanowania. */
+.agenda-lista { display: flex; flex-direction: column; gap: 4px; }
+.agenda-wiersz { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 12px; border: 1.5px solid #E2DEC8; background-color: #FAF8F2; text-decoration: none !important; color: #2B2118 !important; }
+a.agenda-wiersz:hover { border-color: #8C5338; }
+.agenda-wiersz-wybrana { background-color: #F6F0DD; border-color: #8C5338; box-shadow: 0 0 0 1px #8C5338 inset; }
+.agenda-wiersz-dzis .agenda-data { color: #FAF8F2; background-color: #8C5338; border-radius: 8px; padding: 1px 5px; }
+.agenda-wiersz-wolny { border-style: dashed; color: #8C827A !important; background-color: transparent; }
+.agenda-wiersz-odbyta { opacity: 0.65; }
+.agenda-data { flex: 0 0 62px; font-size: 8.5pt; font-weight: 900; color: #7A4429; white-space: nowrap; }
+.agenda-tytul { flex: 1 1 auto; font-size: 9pt; font-weight: 700; line-height: 1.25; min-width: 0; }
+.agenda-tytul-wolny { font-style: italic; font-weight: 600; }
+.agenda-znacznik { flex: 0 0 auto; font-size: 8pt; font-weight: 800; color: #8C827A; }
+.agenda-naglowek { font-size: 8pt; font-weight: 800; color: #8C827A; text-transform: uppercase; letter-spacing: 0.04em; margin: 8px 0 4px 0; }
+.agenda-info { font-size: 8.5pt; color: #4A3E36; font-weight: 600; margin: 2px 0 6px 0; }
+
 /* Powrót z karty miejsca do planu: zwykły przycisk Streamlita doprowadzony do wyglądu dawnej kotwicy. */
 div.st-key-btn_powrot_do_planu { margin-bottom: 8px !important; }
 div.st-key-btn_powrot_do_planu button { width: 100% !important; border: 2px solid #D6CEBA !important; border-radius: 16px !important; padding: 10px 14px !important; font-weight: 900 !important; box-shadow: 0 4px 12px rgba(0,0,0,0.18) !important; }
@@ -1667,7 +1716,6 @@ div.st-key-btn_powrot_do_planu button { width: 100% !important; border: 2px soli
 
 .trip-top-section { padding: 2px 4px 4px 4px; margin-top: 2px; }
 .trip-main-title { font-size: 22pt; font-weight: 900; color: #2B2118; letter-spacing: -0.5px; line-height: 1.15; margin-bottom: 4px; }
-div.st-key-btn_date_picker { margin-bottom: 10px !important; }
 
 .section-unified-header { font-size: 1.15rem !important; font-weight: 800 !important; color: #2B2118 !important; margin-top: 14px !important; margin-bottom: 6px !important; display: flex; align-items: center; gap: 6px; }
 .section-body-text { font-size: 9pt; color: #2B2118; font-weight: 600; line-height: 1.4; margin-bottom: 10px; }
@@ -3164,31 +3212,231 @@ def pobierz_wszystkie_miejsca():
     with get_db() as conn:
         return pd.read_sql('SELECT * FROM miejsca ORDER BY CAST(numer_miejsca AS INTEGER) ASC', conn)
 
-def pobierz_aktywna_wycieczke_id():
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT aktualne_id_wycieczki FROM aktywna_wycieczka WHERE id = 1')
-        res = cursor.fetchone()
-        if not res:
-            cursor.execute('INSERT INTO aktywna_wycieczka (id, aktualne_id_wycieczki) VALUES (1, "1")')
-            conn.commit()
-            return "1"
-    return str(res[0]) if res else "1"
+# --- PLANOWANIE WYCIECZEK PO DACIE ---
+# ZMIANA: Jedno źródło prawdy o planie wyjazdu to kolumna `wycieczka.planowana_data`. NULL = wycieczka
+# niezaplanowana, data = zaplanowana. Trasa Dnia nie ma już osobnego wskaźnika w bazie - pokazuje wycieczkę
+# z datą najbliższą dziś, więc wszystkie telefony widzą to samo i przełom o północy działa sam.
+# Jeden dzień mieści jedną wycieczkę; zaplanowanie na zajęty dzień wymaga jawnego zastąpienia.
 
-def ustaw_aktywna_wycieczke_id(nowe_id):
+DNI_TYGODNIA_SKROT_PL = ["pn", "wt", "śr", "cz", "pt", "so", "nd"]
+
+
+def sparsuj_date_iso(data_str):
+    """'RRRR-MM-DD' -> date. None dla pustych wartości, 'nan', 'None', '-' i wszystkiego, co nie jest datą."""
+    if data_str is None:
+        return None
+    tekst = str(data_str).strip()
+    if not tekst or tekst.lower() in ("nan", "none", "-", "nat"):
+        return None
+    try:
+        return datetime.strptime(tekst, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def sformatuj_date_krotko_pl(dt):
+    """'wt 17.09' - etykieta mieszcząca się w jednej trzeciej szerokości telefonu."""
+    return f"{DNI_TYGODNIA_SKROT_PL[dt.weekday()]} {dt.day:02d}.{dt.month:02d}"
+
+
+def opisz_odleglosc_dnia(data_wycieczki, dzis, odbyta=False):
+    """Krótki chip stanu przy dacie: odbyta / dziś / jutro / za N dni / minęła N dni temu."""
+    if odbyta:
+        return "odbyta ✓"
+    roznica = (data_wycieczki - dzis).days
+    if roznica == 0:
+        return "dziś"
+    if roznica == 1:
+        return "jutro"
+    if roznica > 1:
+        return f"za {roznica} dni"
+    if roznica == -1:
+        return "wczoraj"
+    return f"minęła {-roznica} dni temu"
+
+
+def pobierz_zaplanowane_wycieczki():
+    """Wycieczki z datą, posortowane po (data, id). Każda: {data, id, tytul, odbyta}."""
+    with get_db() as conn:
+        df = pd.read_sql(
+            'SELECT id, tytul_wycieczki, planowana_data, odbyta FROM wycieczka '
+            'WHERE planowana_data IS NOT NULL AND TRIM(planowana_data) != ""',
+            conn,
+        )
+    wynik = []
+    for _, r in df.iterrows():
+        dt = sparsuj_date_iso(r['planowana_data'])
+        if dt is None:
+            continue
+        wynik.append({
+            "data": dt,
+            "id": str(r['id']),
+            "tytul": str(r['tytul_wycieczki'] or '').strip(),
+            "odbyta": bool(r['odbyta']) if pd.notna(r['odbyta']) else False,
+        })
+    return posortuj_zaplanowane(wynik)
+
+
+def posortuj_zaplanowane(zaplanowane):
+    return sorted(zaplanowane, key=lambda w: (w["data"], int(w["id"]) if str(w["id"]).isdigit() else 0))
+
+
+def pobierz_niezaplanowane_wycieczki():
+    """Wycieczki bez daty i nieodbyte - kandydatki do wstawienia w plan."""
+    with get_db() as conn:
+        df = pd.read_sql(
+            'SELECT id, tytul_wycieczki FROM wycieczka '
+            'WHERE (planowana_data IS NULL OR TRIM(planowana_data) = "") AND COALESCE(odbyta, 0) = 0 '
+            'ORDER BY CAST(id AS INTEGER) ASC',
+            conn,
+        )
+    return [{"id": str(r['id']), "tytul": str(r['tytul_wycieczki'] or '').strip()} for _, r in df.iterrows()]
+
+
+def wybierz_trase_dnia(zaplanowane, dzis, wybrane_id=None):
+    """Zwraca (id_wybranej, id_poprzedniej, id_nastepnej) dla posortowanej listy zaplanowanych wycieczek.
+
+    Domyślnie pierwsza wycieczka z datą >= dziś; gdy wszystkie minęły - ostatnia (przegląd po wyjeździe).
+    `wybrane_id` (strzałki) wygrywa, o ile nadal jest w planie; stary wybór po odplanowaniu wraca do domyślnej.
+    Strzałki chodzą po wycieczkach, nie po dniach kalendarza - puste dni nie dają pustych ekranów.
+    """
+    if not zaplanowane:
+        return None, None, None
+    indeks = None
+    if wybrane_id is not None:
+        indeks = next((i for i, w in enumerate(zaplanowane) if str(w["id"]) == str(wybrane_id)), None)
+    if indeks is None:
+        indeks = next((i for i, w in enumerate(zaplanowane) if w["data"] >= dzis), len(zaplanowane) - 1)
+    poprzednia = zaplanowane[indeks - 1]["id"] if indeks > 0 else None
+    nastepna = zaplanowane[indeks + 1]["id"] if indeks + 1 < len(zaplanowane) else None
+    return zaplanowane[indeks]["id"], poprzednia, nastepna
+
+
+def pobierz_id_trasy_dnia():
+    """ID wycieczki pokazywanej na Trasie Dnia: wybór strzałkami z tej sesji albo najbliższa zaplanowana."""
+    wybrane, _, _ = wybierz_trase_dnia(
+        pobierz_zaplanowane_wycieczki(), date.today(), st.session_state.get("trasa_dnia_wybrana_id")
+    )
+    return wybrane
+
+
+def zbuduj_wiersze_agendy(zaplanowane, dzis, prog_zwijania=3):
+    """Agenda dzień po dniu od pierwszej do ostatniej zaplanowanej daty.
+
+    Wolne dni zostają widoczne jako dziury do zaplanowania; ciąg wolnych dni dłuższy niż `prog_zwijania`
+    zwija się do jednego wiersza, żeby miesięczna przerwa nie rozciągała listy. Każdy wiersz to słownik
+    z polem `typ`: 'wycieczka' (z danymi wycieczki), 'wolny' (jedna data) albo 'wolne' (zakres od-do, liczba dni).
+    """
+    if not zaplanowane:
+        return []
+    start, koniec = zaplanowane[0]["data"], zaplanowane[-1]["data"]
+    po_dacie = {w["data"]: w for w in zaplanowane}
+    wiersze = []
+    biezaca = start
+    while biezaca <= koniec:
+        wycieczka = po_dacie.get(biezaca)
+        if wycieczka:
+            wiersze.append({"typ": "wycieczka", "data": biezaca, "wycieczka": wycieczka, "dzis": biezaca == dzis})
+            biezaca += timedelta(days=1)
+            continue
+        poczatek_luki = biezaca
+        while biezaca <= koniec and biezaca not in po_dacie:
+            biezaca += timedelta(days=1)
+        koniec_luki = biezaca - timedelta(days=1)
+        dni = (koniec_luki - poczatek_luki).days + 1
+        if dni > prog_zwijania:
+            wiersze.append({"typ": "wolne", "od": poczatek_luki, "do": koniec_luki, "dni": dni, "dzis": poczatek_luki <= dzis <= koniec_luki})
+        else:
+            for i in range(dni):
+                d = poczatek_luki + timedelta(days=i)
+                wiersze.append({"typ": "wolny", "data": d, "dzis": d == dzis})
+    return wiersze
+
+
+def znajdz_wycieczke_w_dniu(data_str, poza_id=None, cursor=None):
+    """Inna wycieczka zaplanowana na `data_str` ({id, tytul}) albo None."""
+    def _szukaj(kursor):
+        kursor.execute(
+            'SELECT id, tytul_wycieczki FROM wycieczka WHERE planowana_data = ? AND id != ? ORDER BY CAST(id AS INTEGER) ASC LIMIT 1',
+            (str(data_str), str(poza_id) if poza_id is not None else ''),
+        )
+        wiersz = kursor.fetchone()
+        return {"id": str(wiersz[0]), "tytul": str(wiersz[1] or '').strip()} if wiersz else None
+
+    if cursor is not None:
+        return _szukaj(cursor)
+    with get_db() as conn:
+        return _szukaj(conn.cursor())
+
+
+def zaplanuj_wycieczke(id_wycieczki, data_str, zastap=False):
+    """Ustawia datę wycieczki. Zajęty dzień blokuje zapis, chyba że `zastap=True` - wtedy tamta traci datę.
+
+    Sprawdzenie i zapis idą w jednej transakcji (BEGIN IMMEDIATE), żeby dwa telefony nie zaplanowały
+    dwóch wycieczek na ten sam dzień w tej samej sekundzie.
+    """
+    if sparsuj_date_iso(data_str) is None:
+        return {"success": False, "action": "zaplanuj_wycieczke", "error": f"Nieprawidłowa data '{data_str}' - oczekiwano RRRR-MM-DD."}
+    data_txt = str(data_str).strip()
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute('UPDATE aktywna_wycieczka SET aktualne_id_wycieczki = ? WHERE id = 1', (str(nowe_id),))
+        cursor.execute('BEGIN IMMEDIATE')
+        zajeta = znajdz_wycieczke_w_dniu(data_txt, poza_id=id_wycieczki, cursor=cursor)
+        if zajeta and not zastap:
+            conn.rollback()
+            return {
+                "success": False,
+                "action": "zaplanuj_wycieczke",
+                "zajete_przez": zajeta,
+                "error": (
+                    f"Dnia {data_txt} jest już zaplanowana wycieczka #{zajeta['id']}: '{zajeta['tytul']}'. "
+                    "Jeden dzień mieści jedną wycieczkę. Zapytaj rodzica, czy ją zastąpić, i dopiero po potwierdzeniu "
+                    "wywołaj ponownie z zastap_wycieczke_w_tym_dniu=True."
+                ),
+            }
+        if zajeta:
+            cursor.execute('UPDATE wycieczka SET planowana_data = NULL WHERE id = ?', (zajeta["id"],))
+        cursor.execute('UPDATE wycieczka SET planowana_data = ? WHERE id = ?', (data_txt, str(id_wycieczki)))
         conn.commit()
-        
+    komunikat = f"Zaplanowano wycieczkę #{id_wycieczki} na {data_txt}."
+    if zajeta:
+        komunikat += f" Wycieczka #{zajeta['id']} '{zajeta['tytul']}' straciła ten dzień i wróciła do niezaplanowanych."
+    return {"success": True, "action": "zaplanuj_wycieczke", "zastapiono": zajeta, "message": komunikat}
+
+
+def odplanuj_wycieczke(id_wycieczki):
+    """Zdejmuje wycieczkę z planu wyjazdu (data -> NULL)."""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('UPDATE wycieczka SET planowana_data = NULL WHERE id = ?', (str(id_wycieczki),))
+        conn.commit()
+    return {"success": True, "action": "odplanuj_wycieczke", "message": f"Wycieczka #{id_wycieczki} nie ma już daty w planie wyjazdu."}
+
+
+def opisz_plan_wyjazdu_dla_ai(zaplanowane, niezaplanowane, dzis):
+    """Zwięzły opis planu wyjazdu do kontekstu modelu: kto kiedy, co bez daty."""
+    if zaplanowane:
+        pozycje = [
+            f"{w['data'].strftime('%Y-%m-%d')} ({DNI_TYGODNIA_SKROT_PL[w['data'].weekday()]}) #{w['id']} {w['tytul']}"
+            + (" [odbyta]" if w["odbyta"] else "")
+            for w in zaplanowane
+        ]
+        opis = "Plan wyjazdu (jeden dzień = jedna wycieczka): " + "; ".join(pozycje) + "."
+    else:
+        opis = "Plan wyjazdu: żadna wycieczka nie ma jeszcze daty."
+    if niezaplanowane:
+        opis += " Bez daty: " + ", ".join(f"#{w['id']} {w['tytul']}" for w in niezaplanowane) + "."
+    return opis
+
+
 def pobierz_liste_dostepnych_wycieczek():
     """Zwraca listę wszystkich zarejestrowanych wycieczek w bazie z ich ID, tytułami i godzinami."""
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT id, tytul_wycieczki, calkowity_czas_wycieczki_godziny, 
-                   szacowana_godzina_powrotu, calosciowy_opis_wycieczki 
-            FROM wycieczka 
+            SELECT id, tytul_wycieczki, calkowity_czas_wycieczki_godziny,
+                   szacowana_godzina_powrotu, calosciowy_opis_wycieczki, planowana_data
+            FROM wycieczka
             WHERE odbyta = 0
             ORDER BY CAST(id AS INTEGER) ASC
         ''')
@@ -3200,7 +3448,8 @@ def pobierz_liste_dostepnych_wycieczek():
                 "tytul": r[1],
                 "czas_trwania_h": r[2],
                 "godzina_powrotu": r[3],
-                "cel": r[4]
+                "cel": r[4],
+                "planowana_data": r[5] if r[5] else None
             })
     return {"wycieczki": wycieczki}
     
@@ -3527,7 +3776,22 @@ def utworz_nowa_wycieczke(tytul_wycieczki, planowana_data=None, pobudka="06:00",
         cursor.execute("SELECT id FROM wycieczka")
         wszystkie_id = [int(r[0]) for r in cursor.fetchall() if str(r[0]).isdigit()]
         nowe_id = str(max(wszystkie_id) + 1 if wszystkie_id else 1)
-        data_val = planowana_data or date.today().strftime("%Y-%m-%d")
+        # ZMIANA: Nowa wycieczka bez daty jest niezaplanowana. Data wchodzi tylko wolna - zajęty dzień
+        # nie jest po cichu nadpisywany, tylko zgłaszany w komunikacie.
+        data_val = None
+        uwaga_daty = ""
+        if planowana_data:
+            if sparsuj_date_iso(planowana_data) is None:
+                uwaga_daty = f" Data '{planowana_data}' nie jest w formacie RRRR-MM-DD, wycieczka pozostała bez daty."
+            else:
+                zajeta = znajdz_wycieczke_w_dniu(planowana_data, poza_id=nowe_id, cursor=cursor)
+                if zajeta:
+                    uwaga_daty = (
+                        f" Dzień {planowana_data} zajmuje już wycieczka #{zajeta['id']} '{zajeta['tytul']}', więc nowa "
+                        "pozostała bez daty. Aby ją tam wstawić, użyj edytuj_wycieczke z zastap_wycieczke_w_tym_dniu=True po potwierdzeniu rodzica."
+                    )
+                else:
+                    data_val = str(planowana_data).strip()
 
         cursor.execute('''
             INSERT INTO wycieczka (
@@ -3581,8 +3845,9 @@ def utworz_nowa_wycieczke(tytul_wycieczki, planowana_data=None, pobudka="06:00",
     return {
         "success": True, 
         "action": "utworz_nowa_wycieczke", 
-        "id_wycieczki": nowe_id, 
-        "message": f"Utworzono nową wycieczkę #{nowe_id}: '{tytul_wycieczki}' w bazie planów."
+        "id_wycieczki": nowe_id,
+        "planowana_data": data_val,
+        "message": f"Utworzono nową wycieczkę #{nowe_id}: '{tytul_wycieczki}' w bazie planów." + uwaga_daty
     }
 
 def dodaj_sklep_przy_domku_do_wycieczki(id_wycieczki, pozycja="koniec"):
@@ -3663,15 +3928,21 @@ def usun_rynek_z_wycieczki_handler(id_wycieczki, pozycja=None):
     przelicz_i_zsynchronizuj_wycieczke(id_wycieczki)
     return {"success": True, "action": "usun_rynek_z_wycieczki", "message": "Pomyślnie usunięto rynek z wycieczki."}
 
-def edytuj_wycieczke(id, tytul_wycieczki=None, planowana_data=None, czas_wyjazdu=None, szacowany_czas_ogarniania_rano=None, calosciowa_taktyka_dnia=None, calosciowy_opis_wycieczki=None):
+def edytuj_wycieczke(id, tytul_wycieczki=None, planowana_data=None, czas_wyjazdu=None, szacowany_czas_ogarniania_rano=None, calosciowa_taktyka_dnia=None, calosciowy_opis_wycieczki=None, zastap_wycieczke_w_tym_dniu=False):
+    # ZMIANA: Data idzie przez zaplanuj_wycieczke (jeden dzień = jedna wycieczka). Zajęty dzień blokuje całą
+    # edycję zanim cokolwiek się zmieni, żeby model nie zapisał pół żądania i nie zgłosił sukcesu.
+    komunikat_daty = ""
+    if planowana_data:
+        wynik_daty = zaplanuj_wycieczke(id, planowana_data, zastap=bool(zastap_wycieczke_w_tym_dniu))
+        if not wynik_daty.get("success"):
+            return {"success": False, "action": "edytuj_wycieczke", "zajete_przez": wynik_daty.get("zajete_przez"), "error": wynik_daty.get("error")}
+        komunikat_daty = " " + wynik_daty.get("message", "")
     with get_db() as conn:
         cursor = conn.cursor()
         if tytul_wycieczki:
             cursor.execute('UPDATE wycieczka SET tytul_wycieczki = ? WHERE id = ?', (tytul_wycieczki, str(id)))
         if calosciowy_opis_wycieczki is not None:
             cursor.execute('UPDATE wycieczka SET calosciowy_opis_wycieczki = ? WHERE id = ?', (calosciowy_opis_wycieczki, str(id)))
-        if planowana_data:
-            cursor.execute('UPDATE wycieczka SET planowana_data = ? WHERE id = ?', (planowana_data, str(id)))
         if czas_wyjazdu:
             cursor.execute('UPDATE wycieczka SET czas_wyjazdu = ? WHERE id = ?', (czas_wyjazdu, str(id)))
         if szacowany_czas_ogarniania_rano:
@@ -3680,7 +3951,7 @@ def edytuj_wycieczke(id, tytul_wycieczki=None, planowana_data=None, czas_wyjazdu
             cursor.execute('UPDATE wycieczka SET calosciowa_taktyka_dnia = ? WHERE id = ?', (calosciowa_taktyka_dnia, str(id)))
         conn.commit()
     przelicz_i_zsynchronizuj_wycieczke(id, force_wyjazd_str=czas_wyjazdu)
-    return {"success": True, "action": "edytuj_wycieczke", "message": "Pomyślnie zaktualizowano parametry wycieczki."}
+    return {"success": True, "action": "edytuj_wycieczke", "message": "Pomyślnie zaktualizowano parametry wycieczki." + komunikat_daty}
 
 def dodaj_krok_wycieczki(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania="12:00 - 13:30", podsumowanie_taktyki="", wzgledem_kroku=None, relacja="przed"):
     ok, err_msg = sprawdz_ryzyka_audhd_dla_kroku(id_wycieczki, nazwa_z_bazy, okienko_zwiedzania)
@@ -4112,7 +4383,8 @@ def duplikuj_wycieczke(id_zrodlowe):
         ''', (
             nowe_id, nowy_tytul, trip_dict.get('calosciowy_opis_wycieczki'), trip_dict.get('calosciowa_taktyka_dnia'),
             trip_dict.get('calkowity_czas_wycieczki_godziny'), trip_dict.get('szacowana_godzina_powrotu'),
-            trip_dict.get('pobudka'), trip_dict.get('czas_wyjazdu'), trip_dict.get('planowana_data'),
+            # ZMIANA: Kopia nie dziedziczy daty - dwie wycieczki nie mogą dzielić jednego dnia
+            trip_dict.get('pobudka'), trip_dict.get('czas_wyjazdu'), None,
             trip_dict.get('czas_powrotu_do_domku'), trip_dict.get('szacowany_czas_ogarniania_rano', '0.5h')
         ))
 
@@ -4202,15 +4474,6 @@ def usun_wycieczke(id_wycieczki):
         cursor.execute("DELETE FROM notatki WHERE id_wycieczki = ?", (str(id_wycieczki),))
         cursor.execute("DELETE FROM krok_wycieczki WHERE id_wycieczki = ?", (str(id_wycieczki),))
         cursor.execute("DELETE FROM wycieczka WHERE id = ?", (str(id_wycieczki),))
-        
-        cursor.execute("SELECT aktualne_id_wycieczki FROM aktywna_wycieczka WHERE id = 1")
-        akt_res = cursor.fetchone()
-        if akt_res and str(akt_res[0]) == str(id_wycieczki):
-            cursor.execute("SELECT id FROM wycieczka ORDER BY CAST(id AS INTEGER) ASC LIMIT 1")
-            pierwsza_w = cursor.fetchone()
-            nowe_akt_id = str(pierwsza_w[0]) if pierwsza_w else "1"
-            cursor.execute("UPDATE aktywna_wycieczka SET aktualne_id_wycieczki = ? WHERE id = 1", (nowe_akt_id,))
-
         conn.commit()
 
     return {"success": True, "action": "usun_wycieczke", "message": f"Pomyślnie usunięto wycieczkę #{id_wycieczki}: '{tytul}'."}
@@ -4271,7 +4534,7 @@ tools_definitions = [
             "type": "object",
             "properties": {
                 "tytul_wycieczki": {"type": "string", "description": "Tytuł trasy"},
-                "planowana_data": {"type": "string", "description": "RRRR-MM-DD"},
+                "planowana_data": {"type": "string", "description": "RRRR-MM-DD, opcjonalnie. Bez daty wycieczka jest niezaplanowana. Zajęty dzień nie jest nadpisywany - wycieczka powstaje bez daty, a komunikat mówi kto zajmuje dzień."},
                 "pobudka": {"type": "string", "description": "Godzina pobudki np. '06:00'"},
                 "czas_wyjazdu": {"type": "string", "description": "Godzina wyjazdu np. '06:30'"},
                 "opis": {"type": "string", "description": "Cel trasy"},
@@ -4318,7 +4581,8 @@ tools_definitions = [
                 "tytul_wycieczki": {"type": "string", "description": "Nowy lub zaktualizowany tytuł"},
                 "calosciowy_opis_wycieczki": {"type": "string", "description": "Zaktualizowany cel całej wycieczki, podsumowujący nowy przebieg dnia"},
                 "calosciowa_taktyka_dnia": {"type": "string", "description": "Zaktualizowana taktyka całościowa dnia: bezpieczne strefy cienia w 11:30–15:30, ewakuacja, Safe Foods, regeneracja AuDHD"},
-                "planowana_data": {"type": "string", "description": "RRRR-MM-DD"},
+                "planowana_data": {"type": "string", "description": "RRRR-MM-DD. Wstawia wycieczkę do planu wyjazdu. Jeden dzień mieści jedną wycieczkę - zajęty dzień zwraca błąd z id zajmującej wycieczki."},
+                "zastap_wycieczke_w_tym_dniu": {"type": "boolean", "description": "True tylko po wyraźnym potwierdzeniu rodzica: wycieczka zajmująca ten dzień traci datę, a ta wchodzi na jej miejsce."},
                 "czas_wyjazdu": {"type": "string", "description": "Godzina np. '06:30'"},
                 "szacowany_czas_ogarniania_rano": {"type": "string", "description": "np. '0.5h' lub '45m'"},
             },
@@ -4568,7 +4832,9 @@ def wczytaj_kontekst_zewnetrzny(id_wycieczki):
     opis = ""
     if not wyc_df.empty:
         w = wyc_df.iloc[0]
-        opis += f"Aktywna wycieczka #{w['id']}: {w.get('tytul_wycieczki')} (Pobudka: {w.get('pobudka')}, Wyjazd: {w.get('czas_wyjazdu')}, Powrót: {w.get('szacowana_godzina_powrotu')}).\n"
+        data_planu_w = sparsuj_date_iso(w.get('planowana_data'))
+        data_opis = f"zaplanowana na {data_planu_w.strftime('%Y-%m-%d')}" if data_planu_w else "bez daty w planie wyjazdu"
+        opis += f"Wycieczka w tle #{w['id']}: {w.get('tytul_wycieczki')} ({data_opis}; Pobudka: {w.get('pobudka')}, Wyjazd: {w.get('czas_wyjazdu')}, Powrót: {w.get('szacowana_godzina_powrotu')}).\n"
         if pd.notna(w.get('calosciowa_taktyka_dnia')) and str(w.get('calosciowa_taktyka_dnia')).strip():
             opis += f"Aktualna taktyka dnia: {w.get('calosciowa_taktyka_dnia')}\n"
 
@@ -4602,7 +4868,8 @@ def sprobuj_wykonac_komende_lokalnie(prompt, id_wycieczki):
 # kod najwyższego poziomu, którego rerun fragmentu nie uruchamia.
 @st.fragment
 def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
-    akt_wyc_id = str(id_wycieczki) if id_wycieczki else pobierz_aktywna_wycieczke_id()
+    # ZMIANA: Bez wskazanej wycieczki czat pracuje na Trasie Dnia; gdy nic nie jest zaplanowane, tło zostaje puste
+    akt_wyc_id = str(id_wycieczki) if id_wycieczki else pobierz_id_trasy_dnia()
     
     if not inline:
         st.markdown('<div class="floating-ai-container">', unsafe_allow_html=True)
@@ -4612,7 +4879,8 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
         
         col_h1, col_h2 = st.columns([5, 1])
         with col_h1:
-            st.markdown(f"<div style='font-size: 8pt; font-weight: 800; padding-top: 6px;'>🧠 AuDHD • Wycieczka #{akt_wyc_id}</div>", unsafe_allow_html=True)
+            etykieta_tla = f"Wycieczka #{akt_wyc_id}" if akt_wyc_id else "bez wycieczki w tle"
+            st.markdown(f"<div style='font-size: 8pt; font-weight: 800; padding-top: 6px;'>🧠 AuDHD • {etykieta_tla}</div>", unsafe_allow_html=True)
         with col_h2:
             if st.button("🗑️", key=f"btn_clear_{uzytkownik}_{akt_wyc_id}_{'inline' if inline else 'float'}", use_container_width=True, help="Wyczyść historię"):
                 wyczysc_historie_czatu_w_db(uzytkownik)
@@ -4667,11 +4935,15 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                     # tylko dla pozycji z kontekstu systemowego lub z narzędzia straciłaby sens, bo stan bazy jedzie teraz w wiadomości rodzica.
                     system_prompt = (
                         "Rola: Planer wycieczek - Kreta.\n"
-                        "Kontekst systemowy (rodzic, data, ID aktywnej wycieczki, stan bazy) otrzymujesz w bloku "
+                        "Kontekst systemowy (rodzic, data, ID wycieczki w tle, plan wyjazdu, stan bazy) otrzymujesz w bloku "
                         "\"KONTEKST APLIKACJI\" na początku wiadomości rodzica.\n\n"
                         f"ZASADY SYSTEMOWE I PROTOKOŁY:\n{rules_content}"
                     )
-                    kontekst_aplikacji = f"Rodzic: {uzytkownik}. Data: {dzisiaj_str}. Aktywna wycieczka w tle ID: {akt_wyc_id}.\n{zewnetrzny_kontekst}"
+                    plan_wyjazdu_opis = opisz_plan_wyjazdu_dla_ai(pobierz_zaplanowane_wycieczki(), pobierz_niezaplanowane_wycieczki(), date.today())
+                    kontekst_aplikacji = (
+                        f"Rodzic: {uzytkownik}. Data: {dzisiaj_str}. Wycieczka w tle (Trasa Dnia) ID: {akt_wyc_id or 'brak'}.\n"
+                        f"{plan_wyjazdu_opis}\n{zewnetrzny_kontekst}"
+                    )
 
                     try:
                         with st.status("🧭 Przygotowuję plan...", expanded=True) as status:
@@ -4887,22 +5159,43 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
         st.markdown('</div>', unsafe_allow_html=True)
 
 # --- DIALOGI ZARZĄDZANIA WYCIECZKĄ I MIEJSCAMI ---
-@st.dialog("Wybierz nową datę")
-def edit_date_dialog(wycieczka_id, aktualna_data):
+@st.dialog("Zaplanuj wycieczkę")
+def edit_date_dialog(wycieczka_id, aktualna_data, czy_zaplanowana=False):
     dzisiaj = date.today()
     # ZMIANA: Wycieczka z przeszłą datą nie może wywrócić widgetu (StreamlitValueBelowMinError) -
     # dolna granica schodzi do jej własnej daty, ale nigdy poniżej.
     min_data = min(aktualna_data, dzisiaj)
-    nowa_data = st.date_input("Wybierz nową datę wycieczki", value=aktualna_data, min_value=min_data)
+    nowa_data = st.date_input("Wybierz dzień wycieczki", value=aktualna_data, min_value=min_data)
+    str_data = nowa_data.strftime("%Y-%m-%d")
+    # ZMIANA: Jeden dzień = jedna wycieczka. Zajęty dzień pokazuje wprost, kogo zapis wyrzuci z planu,
+    # a przycisk zapisu zmienia się w "Zastąp", żeby nikt nie kliknął tego odruchowo.
+    zajeta = znajdz_wycieczke_w_dniu(str_data, poza_id=wycieczka_id)
+    if zajeta:
+        st.warning(
+            f"⚠️ Tego dnia jest już zaplanowana wycieczka **#{zajeta['id']} {zajeta['tytul']}**. "
+            f"Zapis ją zastąpi: #{zajeta['id']} straci datę i wróci do niezaplanowanych."
+        )
     col_save, col_cancel = st.columns(2)
     with col_save:
-        if st.button("💾 Zapisz", use_container_width=True):
-            str_data = nowa_data.strftime("%Y-%m-%d")
-            edytuj_wycieczke(wycieczka_id, planowana_data=str_data)
-            st.session_state["flash_toast"] = f"📅 Zmieniono datę: {str_data}"
-            st.rerun()
+        etykieta_zapisu = f"🔁 Zastąp #{zajeta['id']}" if zajeta else "💾 Zapisz"
+        if st.button(etykieta_zapisu, use_container_width=True):
+            wynik_planu = zaplanuj_wycieczke(wycieczka_id, str_data, zastap=True)
+            if not wynik_planu.get("success"):
+                st.error(f"Nie udało się zaplanować: {wynik_planu.get('error', 'nieznany błąd')}")
+            else:
+                zastapiona = wynik_planu.get("zastapiono")
+                if zastapiona:
+                    st.session_state["flash_toast"] = f"📅 Zaplanowano na {str_data}, wycieczka #{zastapiona['id']} straciła ten dzień"
+                else:
+                    st.session_state["flash_toast"] = f"📅 Zaplanowano na {str_data}"
+                st.rerun()
     with col_cancel:
         if st.button("Anuluj", use_container_width=True):
+            st.rerun()
+    if czy_zaplanowana:
+        if st.button("🗑️ Usuń z planu wyjazdu", use_container_width=True):
+            odplanuj_wycieczke(wycieczka_id)
+            st.session_state["flash_toast"] = f"📅 Wycieczka #{wycieczka_id} nie ma już daty"
             st.rerun()
 
 @st.dialog("Status wycieczki")
@@ -4992,8 +5285,155 @@ def render_timeline_row_simple(time_start, badge_icon, badge_class, title, desc,
 # ZMIANA: Karta wycieczki jako fragment - kliknięcie w checkbox zadania, pozycję listy zakupów czy popover
 # godziny przerysowuje samą kartę, a nie cały skrypt (mapa, pogoda, czat i pakiet offline zostają).
 # Jawne st.rerun() bez zasięgu nadal idą przez całą aplikację, bo ustawiają flash_toast czytany na górnym poziomie.
+# --- TRASA DNIA: NAGŁÓWEK Z DATĄ, AGENDA PLANU, STAN PUSTY ---
+def odmien_wycieczki(liczba):
+    """1 wycieczka, 2-4 wycieczki, 5+ wycieczek (z regułą dla 12-14, 22-24...)."""
+    if liczba == 1:
+        return "wycieczka"
+    if 2 <= liczba % 10 <= 4 and not 12 <= liczba % 100 <= 14:
+        return "wycieczki"
+    return "wycieczek"
+
+
+def _ustaw_trase_dnia_w_sesji(id_wycieczki):
+    st.session_state["trasa_dnia_wybrana_id"] = str(id_wycieczki)
+
+
+def _przejdz_do_planowania_wycieczki(id_wycieczki):
+    """Z agendy do karty wycieczki w tabie Wycieczki - tam siedzi przycisk planowania."""
+    przelacz_zakladke("map")
+    st.session_state["target_trip_id"] = str(id_wycieczki)
+    st.query_params["trip"] = str(id_wycieczki)
+
+
+def renderuj_naglowek_trasy_dnia(zaplanowane, akt_id, poprz_id, nast_id, dzis):
+    """'◀ Wybrana data: wtorek, 17 września [chip] ▶' - strzałki chodzą po zaplanowanych wycieczkach.
+
+    Klik idzie przez on_click, więc stan sesji zmienia się przed przebiegiem skryptu i strona renderuje się
+    raz, z nową wycieczką. Czat pod kartą bierze id z tego samego przebiegu, więc nie zostaje w tyle.
+    """
+    wycieczka = next((w for w in zaplanowane if str(w["id"]) == str(akt_id)), None)
+    if wycieczka is None:
+        return
+    dt = wycieczka["data"]
+    chip_tekst = opisz_odleglosc_dnia(dt, dzis, wycieczka["odbyta"])
+    klasa_chip = "trasa-data-chip"
+    if wycieczka["odbyta"]:
+        klasa_chip += " trasa-data-chip-odbyta"
+    elif dt == dzis:
+        klasa_chip += " trasa-data-chip-dzis"
+    elif dt < dzis:
+        klasa_chip += " trasa-data-chip-minela"
+
+    col_l, col_c, col_r = st.columns([1, 4, 1], gap="small", vertical_alignment="center")
+    with col_l:
+        st.button(
+            "◀", key="btn_trasa_poprz", disabled=poprz_id is None, use_container_width=True,
+            help="Poprzednia zaplanowana wycieczka",
+            on_click=_ustaw_trase_dnia_w_sesji, args=(poprz_id,),
+        )
+    with col_c:
+        st.markdown(
+            f'<div class="trasa-data-box"><div class="trasa-data-label">Wybrana data</div>'
+            f'<div class="trasa-data-value">{DNI_TYGODNIA_PL[dt.weekday()]}, {dt.day} {MIESIACE_PL[dt.month - 1]}</div>'
+            f'<span class="{klasa_chip}">{chip_tekst}</span></div>',
+            unsafe_allow_html=True,
+        )
+    with col_r:
+        st.button(
+            "▶", key="btn_trasa_nast", disabled=nast_id is None, use_container_width=True,
+            help="Następna zaplanowana wycieczka",
+            on_click=_ustaw_trase_dnia_w_sesji, args=(nast_id,),
+        )
+
+
+def renderuj_agende_planu(zaplanowane, akt_id, dzis, uzytkownik):
+    """Expander z agendą wyjazdu: dzień po dniu, wolne dni jako dziury, pod spodem wycieczki bez daty.
+
+    Wiersze to HTML z kotwicami `data-cretai-nav` - mostek nawigacji przekłada klik na ukryty przycisk,
+    a href zostaje jako zapas (`?tab=route&date=` albo `?tab=map&trip=`), gdyby mostek nie wstał.
+    """
+    wiersze = zbuduj_wiersze_agendy(zaplanowane, dzis)
+    niezaplanowane = pobierz_niezaplanowane_wycieczki()
+    liczba = len(zaplanowane)
+    with st.expander(f"📆 Plan wyjazdu ({liczba} {odmien_wycieczki(liczba)})", expanded=False):
+        pierwsza, ostatnia = zaplanowane[0]["data"], zaplanowane[-1]["data"]
+        if dzis < pierwsza:
+            st.markdown(f'<div class="agenda-info">Dziś {sformatuj_date_krotko_pl(dzis)} · do pierwszej wycieczki {(pierwsza - dzis).days} dni</div>', unsafe_allow_html=True)
+        elif dzis > ostatnia:
+            st.markdown(f'<div class="agenda-info">Dziś {sformatuj_date_krotko_pl(dzis)} · ostatnia wycieczka minęła {(dzis - ostatnia).days} dni temu</div>', unsafe_allow_html=True)
+
+        czesci_html = []
+        ukryte_przyciski = []
+        for wiersz in wiersze:
+            if wiersz["typ"] == "wycieczka":
+                w = wiersz["wycieczka"]
+                klasy = ["agenda-wiersz"]
+                if str(w["id"]) == str(akt_id):
+                    klasy.append("agenda-wiersz-wybrana")
+                if wiersz["dzis"]:
+                    klasy.append("agenda-wiersz-dzis")
+                if w["odbyta"]:
+                    klasy.append("agenda-wiersz-odbyta")
+                znacznik = "✓" if w["odbyta"] else ("▶" if str(w["id"]) == str(akt_id) else "")
+                klucz_nav = f"navlink_agenda_{re.sub(r'[^A-Za-z0-9_]', '_', str(w['id']))}"
+                ukryte_przyciski.append((klucz_nav, w["id"]))
+                href = f"?tab=route&date={wiersz['data'].strftime('%Y-%m-%d')}&user={zakoduj_url(str(uzytkownik))}"
+                czesci_html.append(
+                    f'<a href="{href}" target="_self" data-cretai-nav="{klucz_nav}" class="{" ".join(klasy)}">'
+                    f'<span class="agenda-data">{sformatuj_date_krotko_pl(wiersz["data"])}</span>'
+                    f'<span class="agenda-tytul">#{escapuj_html(str(w["id"]))} {escapuj_html(w["tytul"])}</span>'
+                    f'<span class="agenda-znacznik">{znacznik}</span></a>'
+                )
+            elif wiersz["typ"] == "wolny":
+                klasy = "agenda-wiersz agenda-wiersz-wolny" + (" agenda-wiersz-dzis" if wiersz["dzis"] else "")
+                czesci_html.append(
+                    f'<div class="{klasy}"><span class="agenda-data">{sformatuj_date_krotko_pl(wiersz["data"])}</span>'
+                    f'<span class="agenda-tytul agenda-tytul-wolny">wolny dzień</span></div>'
+                )
+            else:
+                klasy = "agenda-wiersz agenda-wiersz-wolny" + (" agenda-wiersz-dzis" if wiersz["dzis"] else "")
+                czesci_html.append(
+                    f'<div class="{klasy}"><span class="agenda-data">{wiersz["od"].day:02d}.{wiersz["od"].month:02d}–{wiersz["do"].day:02d}.{wiersz["do"].month:02d}</span>'
+                    f'<span class="agenda-tytul agenda-tytul-wolny">wolne {wiersz["dni"]} dni</span></div>'
+                )
+        st.markdown(f'<div class="agenda-lista">{"".join(czesci_html)}</div>', unsafe_allow_html=True)
+        for klucz_nav, id_w in ukryte_przyciski:
+            st.button(f"Pokaż wycieczkę #{id_w}", key=klucz_nav, on_click=_ustaw_trase_dnia_w_sesji, args=(id_w,))
+
+        st.markdown(f'<div class="agenda-naglowek">Bez daty ({len(niezaplanowane)})</div>', unsafe_allow_html=True)
+        if niezaplanowane:
+            czesci_bez_daty = []
+            for w in niezaplanowane:
+                klucz_nav = f"navlink_agenda_plan_{re.sub(r'[^A-Za-z0-9_]', '_', str(w['id']))}"
+                href = f"?tab=map&trip={zakoduj_url(str(w['id']))}&user={zakoduj_url(str(uzytkownik))}"
+                czesci_bez_daty.append(
+                    f'<a href="{href}" target="_self" data-cretai-nav="{klucz_nav}" class="agenda-wiersz">'
+                    f'<span class="agenda-data">📅 —</span>'
+                    f'<span class="agenda-tytul">#{escapuj_html(str(w["id"]))} {escapuj_html(w["tytul"])}</span>'
+                    f'<span class="agenda-znacznik">zaplanuj ›</span></a>'
+                )
+                st.button(f"Zaplanuj wycieczkę #{w['id']}", key=klucz_nav, on_click=_przejdz_do_planowania_wycieczki, args=(w["id"],))
+            st.markdown(f'<div class="agenda-lista">{"".join(czesci_bez_daty)}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="agenda-info">Wszystkie nieukończone wycieczki mają datę.</div>', unsafe_allow_html=True)
+
+
+def renderuj_pusta_trase_dnia():
+    """Jawny stan pusty zamiast wyjątku, gdy żadna wycieczka nie ma daty."""
+    st.markdown(
+        '<div class="overview-card" style="margin-top: 8px; border: 2px dashed #8C5338;">'
+        '<div class="overview-card-title">📅 Brak zaplanowanych wycieczek</div>'
+        '<div class="overview-card-text">Żadna wycieczka nie ma jeszcze daty. Otwórz wycieczkę w zakładce '
+        '<b>Wycieczki</b> i kliknij <b>📅 Zaplanuj</b>, albo poproś asystenta, np. '
+        '<i>„zaplanuj Knossos na czwartek”</i>.</div></div>',
+        unsafe_allow_html=True,
+    )
+    st.button("🗺️ Przejdź do wycieczek", key="btn_pusta_trasa_do_wycieczek", use_container_width=True, on_click=przelacz_zakladke, args=("map",))
+
+
 @st.fragment
-def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=True, pokaz_pogode=False):
+def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=True, pokaz_pogode=False, pokaz_date=True):
     with get_db() as conn:
         wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
         kroki_df = pd.read_sql('SELECT * FROM krok_wycieczki WHERE id_wycieczki = ? ORDER BY CAST(krok_wycieczki AS INTEGER) ASC', conn, params=(str(wycieczka_id),))
@@ -5007,12 +5447,20 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
 
     w_gen = wycieczka_row.iloc[0]
     tytul_wycieczki = tekst_z_bazy(w_gen.get('tytul_wycieczki'), 'Wycieczka')
-    planowana_data_val = tekst_z_bazy(w_gen.get('planowana_data'))
-    parsed_date, dzien_val, miesiac_val, dzien_tyg_val = sformatuj_date_pl(planowana_data_val)
-    
-    if st.button(f"📅 Planowana data: {dzien_val} {miesiac_val} ({dzien_tyg_val}) ▾", key=f"btn_date_picker_{wycieczka_id}", use_container_width=True):
-        edit_date_dialog(wycieczka_id, parsed_date)
-        
+    # ZMIANA: Brak daty jest jawnym stanem "niezaplanowana", a nie cichym "dziś". Pogoda, rynek i prognozy
+    # kroków dostają pusty tekst zamiast dnia dzisiejszego.
+    data_planu = sparsuj_date_iso(w_gen.get('planowana_data'))
+    planowana_data_val = data_planu.strftime("%Y-%m-%d") if data_planu else ''
+
+    # ZMIANA: Date picker znika z góry karty - planowanie siedzi w przycisku "📅" w Zarządzaniu Wycieczką,
+    # a na Trasie Dnia datę pokazuje nagłówek ze strzałkami (pokaz_date=False).
+    if pokaz_date:
+        if data_planu:
+            _, dzien_val, miesiac_val, dzien_tyg_val = sformatuj_date_pl(planowana_data_val)
+            st.markdown(f'<div class="trip-date-line">📅 {dzien_tyg_val}, {dzien_val} {miesiac_val}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="trip-date-line trip-date-line-brak">📅 Niezaplanowana - bez daty w planie wyjazdu</div>', unsafe_allow_html=True)
+
     st.markdown(f'<div class="trip-top-section"><div class="trip-main-title">{tytul_wycieczki}</div></div>', unsafe_allow_html=True)
     
     opis_wycieczki = tekst_z_bazy(w_gen.get('calosciowy_opis_wycieczki'))
@@ -5529,7 +5977,6 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
     czy_odbyta = bool(w_gen.get('odbyta', 0))
     st.markdown('<div class="section-unified-header">⚙️ Zarządzanie Wycieczką</div>', unsafe_allow_html=True)
     
-    akt_id = pobierz_aktywna_wycieczke_id()
     col_stat, col_dup, col_active = st.columns(3)
     
     with col_stat:
@@ -5547,13 +5994,16 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                 st.rerun()
 
     with col_active:
-        if str(wycieczka_id) == str(akt_id):
-            st.button("⭐ Aktywna", disabled=True, key=f"btn_is_active_{wycieczka_id}", use_container_width=True)
+        # ZMIANA: "Aktywuj" ustępuje planowaniu po dacie. Krótka etykieta (jedna trzecia szerokości telefonu):
+        # bez daty "Zaplanuj", z datą sama data - pełne "zmień datę" idzie w podpowiedź.
+        if data_planu:
+            etykieta_planu = f"📅 {sformatuj_date_krotko_pl(data_planu)}"
+            podpowiedz_planu = f"Zaplanowana na {planowana_data_val}. Kliknij, aby zmienić datę lub usunąć z planu."
         else:
-            if st.button("⭐ Aktywuj", key=f"btn_make_active_{wycieczka_id}", use_container_width=True):
-                ustaw_aktywna_wycieczke_id(wycieczka_id)
-                st.session_state["flash_toast"] = f"⭐ Ustawiono wycieczkę #{wycieczka_id} jako Trasę Dnia!"
-                st.rerun()
+            etykieta_planu = "📅 Zaplanuj"
+            podpowiedz_planu = "Wybierz dzień wyjazdu dla tej wycieczki."
+        if st.button(etykieta_planu, key=f"btn_plan_trip_{wycieczka_id}", use_container_width=True, help=podpowiedz_planu):
+            edit_date_dialog(wycieczka_id, data_planu or date.today(), czy_zaplanowana=bool(data_planu))
                 
     # Przycisk otwarcia widoku offline dopasowany idealnie do szerokości kontenera
     # ZMIANA: Ten sam pakiet co zapis w tle, wzięty z cache zamiast budowany po raz drugi w tym samym przebiegu
@@ -6166,9 +6616,11 @@ def przelacz_zakladke(nowa_zakladka):
     st.session_state.return_tab = None
     st.session_state.return_trip = None
     st.session_state.pop("target_trip_id", None)
+    # ZMIANA: Wejście w Trasę Dnia od zera = najbliższa zaplanowana, nie ostatnio przeglądana strzałkami
+    st.session_state.pop("trasa_dnia_wybrana_id", None)
     st.query_params["tab"] = nowa_zakladka
     _ustaw_user_w_adresie()
-    for klucz_url in ("place", "trip", "return_tab", "return_trip"):
+    for klucz_url in ("place", "trip", "return_tab", "return_trip", "date"):
         if klucz_url in st.query_params:
             del st.query_params[klucz_url]
 
@@ -6281,15 +6733,35 @@ if st.session_state.active_tab in dict(ZAKLADKI_NAWIGACJI):
     </style>""", unsafe_allow_html=True)
 
 if st.session_state.active_tab == "route":
-    akt_id = pobierz_aktywna_wycieczke_id()
-    
-    # ⚡ AUTOMATYCZNE POBRANIE DO PAMIĘCI TELEFONU
-    wstrzyknij_automatyczny_cache_offline(akt_id, df_miejsca)
+    dzis = date.today()
+    zaplanowane = pobierz_zaplanowane_wycieczki()
 
-    render_adventure_header("CretAi • Aktualna Wycieczka")
-    renderuj_karte_wycieczki(akt_id, df_miejsca, pokaz_mape=True, pokaz_pogode=True)
-    st.markdown('<div class="section-unified-header">🤖 Asystent AI</div>', unsafe_allow_html=True)
-    renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=akt_id, inline=True)
+    # ZMIANA: Głęboki link ?date=RRRR-MM-DD (zapas kotwic agendy, udostępnienie dnia) wybiera wycieczkę z tego
+    # dnia. Parametr kasujemy od razu, żeby nie przykuwał widoku przy kolejnych przebiegach.
+    data_z_adresu = sparsuj_date_iso(st.query_params.get("date"))
+    if "date" in st.query_params:
+        del st.query_params["date"]
+    if data_z_adresu:
+        for w in zaplanowane:
+            if w["data"] == data_z_adresu:
+                st.session_state["trasa_dnia_wybrana_id"] = w["id"]
+
+    akt_id, poprz_id, nast_id = wybierz_trase_dnia(zaplanowane, dzis, st.session_state.get("trasa_dnia_wybrana_id"))
+
+    render_adventure_header("CretAi • Trasa Dnia")
+    if akt_id is None:
+        renderuj_pusta_trase_dnia()
+        st.markdown('<div class="section-unified-header">🤖 Asystent AI</div>', unsafe_allow_html=True)
+        renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=None, inline=True)
+    else:
+        # ⚡ AUTOMATYCZNE POBRANIE DO PAMIĘCI TELEFONU
+        wstrzyknij_automatyczny_cache_offline(akt_id, df_miejsca)
+
+        renderuj_naglowek_trasy_dnia(zaplanowane, akt_id, poprz_id, nast_id, dzis)
+        renderuj_agende_planu(zaplanowane, akt_id, dzis, aktualny_uzytkownik)
+        renderuj_karte_wycieczki(akt_id, df_miejsca, pokaz_mape=True, pokaz_pogode=True, pokaz_date=False)
+        st.markdown('<div class="section-unified-header">🤖 Asystent AI</div>', unsafe_allow_html=True)
+        renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=akt_id, inline=True)
 
 elif st.session_state.active_tab == "ryby":
     render_adventure_header("CretAi • Ryby Krety")
@@ -6421,7 +6893,7 @@ elif st.session_state.active_tab == "map":
         </div>
         """, unsafe_allow_html=True)
         st.markdown('<div class="section-unified-header">🤖 Asystent AI (Projektant tras)</div>', unsafe_allow_html=True)
-        renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=pobierz_aktywna_wycieczke_id(), inline=True)
+        renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=pobierz_id_trasy_dnia(), inline=True)
 
 elif st.session_state.active_tab == "zabytek":
     # ZMIANA: Widok jednego miejsca to osobny tryb - bez belki tytulowej, filtrow i mapy przegladowej.
@@ -6765,4 +7237,4 @@ elif st.session_state.active_tab == "zabytek":
             label_visibility="collapsed"
         )
 
-    renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=pobierz_aktywna_wycieczke_id(), inline=False)
+    renderuj_globalny_czat_ai(aktualny_uzytkownik, id_wycieczki=pobierz_id_trasy_dnia(), inline=False)
