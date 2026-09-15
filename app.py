@@ -2709,7 +2709,10 @@ def render_shopping_checkbox_list(df_items, key_prefix):
         nowy_status = st.checkbox(f"{z_nazwa}{z_ilosc}", value=z_kup, key=f"cb_{key_prefix}_{z_id}")
         if nowy_status != z_kup:
             zmien_status_zakupu(z_id, nowy_status)
-            st.rerun()
+            # ZMIANA: Odhaczenie produktu przerysowuje tylko kartę wycieczki, w której ta lista żyje.
+            # Zasięg "fragment" wymaga wywołania z wnętrza fragmentu - jedyne miejsca wywołania tej funkcji
+            # są w renderuj_karte_wycieczki, która jest fragmentem.
+            st.rerun(scope="fragment")
 
 def pobierz_wszystkie_miejsca():
     with get_db() as conn:
@@ -4147,6 +4150,11 @@ def sprobuj_wykonac_komende_lokalnie(prompt, id_wycieczki):
     return None
     
 # --- GŁÓWNY WIDOK CZATU AI ---
+# ZMIANA: Czat jest fragmentem, więc wysłanie wiadomości przerysowuje tylko okno rozmowy zamiast całego skryptu
+# (karta wycieczki z mapą Folium, prognoza pogody i pakiet offline zostają nietknięte). Rerun w zasięgu całej
+# aplikacji zostaje tam, gdzie model naprawdę ruszył bazę albo gdzie trzeba pokazać toast - flash_toast czyta
+# kod najwyższego poziomu, którego rerun fragmentu nie uruchamia.
+@st.fragment
 def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
     akt_wyc_id = str(id_wycieczki) if id_wycieczki else pobierz_aktywna_wycieczke_id()
     
@@ -4163,7 +4171,7 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
             if st.button("🗑️", key=f"btn_clear_{uzytkownik}_{akt_wyc_id}_{'inline' if inline else 'float'}", use_container_width=True, help="Wyczyść historię"):
                 wyczysc_historie_czatu_w_db(uzytkownik)
                 st.session_state["flash_toast"] = "🗑️ Wyczyszczono czat."
-                st.rerun()
+                st.rerun(scope="app")
 
         chat_container = st.container(height=340)
         with chat_container:
@@ -4182,7 +4190,8 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
             if odpowiedz_lokalna:
                 zapisz_wiadomosc_w_db(uzytkownik, "model", odpowiedz_lokalna)
                 st.session_state["flash_toast"] = "⚡ Zaktualizowano listę zakupów!"
-                st.rerun()
+                # ZMIANA: Zasięg aplikacji, bo lista zakupów żyje w karcie wycieczki poza tym fragmentem
+                st.rerun(scope="app")
 
             if not sciezka_claude_cli():
                 st.warning("⚠️ Brak Claude Code CLI w kontenerze — doradca AI jest niedostępny.")
@@ -4411,9 +4420,12 @@ def renderuj_globalny_czat_ai(uzytkownik, id_wycieczki=None, inline=False):
                         # przelicz_i_zsynchronizuj_wycieczke zapisuje w czasy_dojazdu (a utworz_nowe_miejsce w miejsca.czas_dojazdu),
                         # zostaje w bazie aż do kolejnego przeliczenia - dokładnie tak jak przed tą zmianą; rejestr rządzi wyłącznie
                         # tym, kiedy ponawiamy zapytanie do API. Twardy reset bazy z CSV nadal czyści cache.
+                        # ZMIANA: Pełny rerun tylko wtedy, gdy model faktycznie zmienił bazę - inaczej zwykła odpowiedź
+                        # doradcy przerysowuje wyłącznie okno czatu, bez odbudowy mapy, pogody i pakietu offline.
                         if has_db_mutations:
                             st.session_state["flash_toast"] = "🧭 Zaktualizowano bazę wycieczek!"
-                        st.rerun()
+                            st.rerun(scope="app")
+                        st.rerun(scope="fragment")
 
                     except Exception as e:
                         naglowek_bledu, komunikat = formatuj_komunikat_bledu_ai(e)
@@ -4530,6 +4542,10 @@ def render_timeline_row_simple(time_start, badge_icon, badge_class, title, desc,
         f'</div>'
     )
 
+# ZMIANA: Karta wycieczki jako fragment - kliknięcie w checkbox zadania, pozycję listy zakupów czy popover
+# godziny przerysowuje samą kartę, a nie cały skrypt (mapa, pogoda, czat i pakiet offline zostają).
+# Jawne st.rerun() bez zasięgu nadal idą przez całą aplikację, bo ustawiają flash_toast czytany na górnym poziomie.
+@st.fragment
 def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=True, pokaz_pogode=False):
     with get_db() as conn:
         wycieczka_row = pd.read_sql('SELECT * FROM wycieczka WHERE id = ?', conn, params=(str(wycieczka_id),))
@@ -5036,7 +5052,8 @@ def renderuj_karte_wycieczki(wycieczka_id, df_wszystkie_miejsca_ref, pokaz_mape=
                         nowy_stan = st.checkbox(zad, value=stan, key=f"cb_{klucz}")
                         if nowy_stan != stan:
                             zapisz_status_zadania(klucz, nowy_stan)
-                            st.rerun()
+                            # ZMIANA: Odhaczenie zadania dotyczy tylko tej karty - zasięg fragmentu zamiast pełnego reruna
+                            st.rerun(scope="fragment")
         else:
             st.markdown("<div style='font-size: 8.5pt; color: #8C827A; font-style: italic; margin: 4px 0;'>Brak zadań dla tej wycieczki.</div>", unsafe_allow_html=True)
     
@@ -5482,8 +5499,13 @@ def przelacz_zakladke(nowa_zakladka):
     st.session_state.return_tab = None
     st.session_state.return_trip = None
     st.session_state.pop("target_trip_id", None)
-    # ZMIANA: Bez doklejania ?user= - profil przestał ginąć razem z sesją, a i tak siedzi w bazie urządzeń.
     st.query_params["tab"] = nowa_zakladka
+    # ZMIANA: Parametr user musi zostać w adresie. Skrypt synchronizujący profil z localStorage przeładowuje
+    # stronę, gdy w URL brakuje ?user=, a zapis w pamięci telefonu istnieje - bez tego każde przejście między
+    # zakładkami kończyłoby się właśnie tym pełnym przeładowaniem, które ta zmiana likwiduje.
+    uzytkownik_sesji = st.session_state.get("aktualny_uzytkownik")
+    if uzytkownik_sesji:
+        st.query_params["user"] = uzytkownik_sesji
     for klucz_url in ("place", "trip", "return_tab", "return_trip"):
         if klucz_url in st.query_params:
             del st.query_params[klucz_url]
