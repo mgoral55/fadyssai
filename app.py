@@ -1765,9 +1765,36 @@ header[data-testid="stHeader"] { background-color: transparent !important; box-s
 [data-testid="stHeaderActionElements"] { display: none !important; }
 /* ZMIANA: Pasek narzedzi Streamlita ("Deploy" i menu) jest przyklejony do prawego gornego
    rogu okna i nachodzil na trzeci przycisk gornej nawigacji. Aplikacja jest PWA na telefon,
-   wiec deweloperski pasek i tak nie ma tu zastosowania. */
-[data-testid="stToolbar"] { display: none !important; }
+   wiec deweloperski pasek i tak nie ma tu zastosowania.
+
+   ALE: w tym samym pasku siedzi przycisk rozwijajacy panel boczny, a Streamlit zwija panel
+   na waskich ekranach. `display: none` na calym pasku zabieral wiec na telefonie jedyna droge
+   do szybkiej nawigacji (Domek, Sklep, Market, Rynek) - panel wisial za krawedzia ekranu i nie
+   bylo czego dotknac. Zamiast ukrywac pasek, zerujemy jego wysokosc z `overflow: hidden`:
+   "Deploy" i menu zostaja obciete, a przycisk rozwijania wyciagamy z niego przez `position: fixed`.
+   Klikniecia przepuszcza tylko on - pasek ma `pointer-events: none`.
+
+   Podniesiony z-index naglowka jest konieczny: panel boczny ma 999991, naglowek domyslnie 999990,
+   wiec zwiniety panel przykrywal przycisk i dotyk nie dochodzil. */
+[data-testid="stToolbar"] {
+    display: block !important; height: 0 !important; min-height: 0 !important;
+    overflow: hidden !important; pointer-events: none !important; background: transparent !important;
+}
 header[data-testid="stHeader"], .stAppHeader { height: 0 !important; min-height: 0 !important; }
+header[data-testid="stHeader"], .stAppHeader { z-index: 999995 !important; pointer-events: none !important; }
+header[data-testid="stHeader"] button[data-testid="stExpandSidebarButton"] {
+    display: flex !important; position: fixed !important; top: 6px !important; left: 6px !important;
+    width: 40px !important; height: 40px !important; min-width: 40px !important; min-height: 40px !important;
+    align-items: center !important; justify-content: center !important;
+    background-color: #F6F0DD !important; border: 1.5px solid #D6D2C4 !important; border-radius: 12px !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12) !important;
+    pointer-events: auto !important; overflow: visible !important;
+}
+header[data-testid="stHeader"] button[data-testid="stExpandSidebarButton"] svg,
+header[data-testid="stHeader"] button[data-testid="stExpandSidebarButton"] span {
+    width: 24px !important; height: 24px !important; font-size: 24px !important;
+    fill: #8C5338 !important; color: #8C5338 !important;
+}
 .block-container { padding-top: 0 !important; padding-bottom: 120px !important; max-width: 540px; }
 /* ZMIANA: Elementy bez wlasnego widoku - wstrzykiwane arkusze stylow i skrypty w iframe
    zerowej wysokosci - i tak dostawaly 16px odstepu z pionowego bloku Streamlita, co
