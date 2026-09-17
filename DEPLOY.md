@@ -167,6 +167,37 @@ docker compose -f /opt/magda-crete/docker-compose.yml up -d
 
 Klucz musi mieć włączone Routes API i ograniczenie do tego jednego API.
 
+### Współrzędne miejsc są ważniejsze od silnika
+
+Audyt z 17 września 2026: 51 z 54 pinezek w `miejsca.csv` sprawdzone przez wyszukiwanie miejsc
+w Google Maps. 31 mieści się w 600 m od prawdziwej, ale jedenaście było przesuniętych na tyle, że
+psuły czas przejazdu bardziej niż jakikolwiek wybór silnika - najgorsza o 21 km. Zostały poprawione
+na współrzędne z pinezki miejsca w Google.
+
+Kalibracja silnika kupiła 2 min dokładności. Jedna zła pinezka kosztowała 80 min. **Przy każdej
+skardze na czas przejazdu najpierw sprawdź pinezkę, potem silnik.**
+
+Cztery pinezki zostały nietknięte, bo nie ma dla nich dowodu: Google zwraca na nie stronę wyników,
+a nie konkretne miejsce (jaskinia Koutalas, zatoka w wąwozie Katholiko), albo pokazuje inny punkt
+obiektu niż nazywa baza (wejście do wąwozu Imbros zamiast wyjścia). Przy zatoce Katholiko dochodzi
+pytanie, czy współrzędna ma wskazywać parking, czy samą zatokę na końcu godzinnego marszu.
+
+Dwa wiersze przeczą same sobie i wymagają decyzji człowieka, który wie, gdzie rodzina faktycznie
+była - opis i adres wskazują różne wioski:
+
+| miejsce | opis mówi | adres mówi | Google stawia |
+| --- | --- | --- | --- |
+| Ilys Ceramics | Margarites | Chania, Epimenidou 15 | Margarites (60 km od pinezki w bazie) |
+| Flakatoras Ceramics | Chania | Gavalochori | Chania (17 km od pinezki w bazie) |
+
+Przy dwóch winnicach poprawiona pinezka przeczy adresowi z bazy i wygrywa pinezka: Stemfilo ma
+w bazie adres w Voukolies, a Google stawia ją pod Fournes; Manousakis ma Vatolakkos, a Google
+5 km dalej na zachód. Aplikacja generuje linki nawigacyjne do Google Maps, więc zgodność z pinezką
+Google jest tym, co faktycznie dowozi rodzinę na miejsce.
+
+Geokoder Nominatim nie nadaje się do tego audytu: rozstrzygnął tylko 24 z 54 nazw i nie zna właśnie
+farmy Arevitis, czyli najgorszego przypadku.
+
 ### Statyczna kolumna "czas dojazdu ze Stavros"
 
 Wartości w tej kolumnie w `miejsca.csv` są policzone skalibrowaną Valhallą, a nie wpisane ręcznie -
