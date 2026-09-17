@@ -1315,49 +1315,32 @@ def init_db():
 
 
 # ZMIANA: Zamiast trzymać krótki opis jako oddzielne pole, trafia on w formie 1-2 słów
-# w nawiasie na końcu nazwy miejsca w miejsca.csv. Ten synchronizator aktualizuje nazwy
-# w istniejącej bazie SQLite z pliku CSV.
-def zsynchronizuj_nazwy_miejsc_z_csv(plik_csv='miejsca.csv'):
-    if not os.path.exists(plik_csv):
-        return 0
-    try:
-        with get_db() as conn:
-            cursor = conn.cursor()
-            df_csv = pd.read_csv(plik_csv, encoding='utf-8')
-            df_csv.columns = [str(c).strip() for c in df_csv.columns]
-            kol_nr = next((c for c in df_csv.columns if c.lower() in ['numer miejsca', 'numer_miejsca']), None)
-            kol_nazwa = next((c for c in df_csv.columns if c.lower() in ['nazwa', 'nazwa miejsca', 'name']), None)
-            if not kol_nr or not kol_nazwa:
-                return 0
-
-            zaktualizowane = 0
-            for _, r in df_csv.iterrows():
-                nr = str(r.get(kol_nr, '')).strip()
-                nazwa = str(r.get(kol_nazwa, '')).strip() if pd.notna(r.get(kol_nazwa)) else ''
-                if not nr or nr == 'nan' or not nazwa or nazwa == 'nan':
-                    continue
-                cursor.execute(
-                    "UPDATE miejsca SET nazwa = ? WHERE TRIM(numer_miejsca) = ? AND nazwa != ?",
-                    (nazwa, nr, nazwa)
-                )
-                zaktualizowane += cursor.rowcount
-            conn.commit()
-            return zaktualizowane
-    except Exception as e:
-        print(f"Błąd synchronizacji nazw miejsc z CSV: {e}")
-        return 0
-
-
-# ZMIANA: Kolumna "czas dojazdu ze Stavros" była wpisana ręcznie i rozjeżdżała się z trasowaniem o medianę
-# 7.5 min (najgorszy przypadek 84 min), a do bazy trafiała tylko przy pierwszym imporcie CSV - po wdrożeniu
-# na serwer z istniejącą bazą poprawione wartości nie miałyby jak wejść. Ta synchronizacja działa jak
-# zsynchronizuj_nazwy_miejsc_z_csv: przepisuje kolumnę z pliku fabrycznego przy każdym starcie, bez ruchu
-# sieciowego. Same wartości w miejsca.csv są policzone silnikiem trasowania (Valhalla), a nie na oko.
+# w nawiasie na końcu nazwy miejsca w miejsca.csv.
 #
-# Leci przy każdym rerunie skryptu, tak jak synchronizacja nazw. Zmierzony koszt: 2-5 ms na odczyt
-# miejsca.csv (119 kB) plus 0.2 ms na 54 UPDATE-y, które nic nie zmieniają - za mało, żeby dokładać
-# tu cache i jego unieważnianie.
-def zsynchronizuj_czasy_dojazdu_z_csv(plik_csv='miejsca.csv'):
+# ZMIANA: Zamiast osobnej funkcji na każdą kolumnę (były dwie, prawie identyczne, a przy poprawianiu
+# współrzędnych doszłaby trzecia) jedna synchronizacja obsługuje tabelę kolumn. Plik fabryczny jest
+# źródłem prawdy dla tych pól, bo do bazy wchodziły tylko przy pierwszym imporcie CSV - na serwerze
+# z istniejącą bazą żadna późniejsza poprawka nie miałaby jak wejść.
+#
+# Współrzędne są tu najważniejsze: audyt 51 z 54 pinezek wykazał jedenaście przesuniętych, najgorszą
+# o 21 km, co psuło czas przejazdu mocniej niż jakikolwiek wybór silnika trasowania. Żaden UPDATE
+# w aplikacji nie rusza `wspolrzedne` ani `adresu` istniejącego miejsca, więc nadpisanie z pliku
+# nie może zadeptać zmiany zrobionej w interfejsie. Miejsca dodane w aplikacji nie są w pliku
+# fabrycznym, więc synchronizacja ich nie dotyczy.
+KOLUMNY_MIEJSC_Z_CSV = (
+    ("nazwa", ("nazwa", "nazwa miejsca", "name")),
+    ("adres", ("adres", "address", "ulica", "lokalizacja")),
+    ("wspolrzedne", ("współrzędne", "wspolrzedne", "coordinates", "coords")),
+    ("czas_dojazdu", ("czas dojazdu ze stavros", "czas dojazdu", "czas_dojazdu")),
+)
+
+
+def zsynchronizuj_miejsca_z_csv(plik_csv='miejsca.csv'):
+    """Przepisuje kolumny z KOLUMNY_MIEJSC_Z_CSV z pliku fabrycznego do bazy. Zwraca liczbę zmian.
+
+    Leci przy każdym rerunie skryptu Streamlita i nie rusza sieci. Zmierzony koszt: 2-5 ms na odczyt
+    miejsca.csv (119 kB) plus 0.2 ms na UPDATE-y, które nic nie zmieniają - za mało, żeby dokładać
+    tu cache i jego unieważnianie."""
     if not os.path.exists(plik_csv):
         return 0
     try:
@@ -1366,33 +1349,47 @@ def zsynchronizuj_czasy_dojazdu_z_csv(plik_csv='miejsca.csv'):
             df_csv = pd.read_csv(plik_csv, encoding='utf-8')
             df_csv.columns = [str(c).strip() for c in df_csv.columns]
             kol_nr = next((c for c in df_csv.columns if c.lower() in ['numer miejsca', 'numer_miejsca']), None)
-            kol_czas = next((c for c in df_csv.columns if c.lower() in ['czas dojazdu ze stavros', 'czas dojazdu', 'czas_dojazdu']), None)
-            if not kol_nr or not kol_czas:
+            if not kol_nr:
+                return 0
+
+            # Kolumny nieobecne w pliku są pomijane, więc plik bez współrzędnych ich nie wyczyści.
+            pary = [
+                (kolumna_db, kol_csv)
+                for kolumna_db, warianty in KOLUMNY_MIEJSC_Z_CSV
+                for kol_csv in [next((c for c in df_csv.columns if c.lower() in warianty), None)]
+                if kol_csv
+            ]
+            if not pary:
                 return 0
 
             zaktualizowane = 0
             for _, r in df_csv.iterrows():
                 nr = str(r.get(kol_nr, '')).strip()
-                czas = str(r.get(kol_czas, '')).strip() if pd.notna(r.get(kol_czas)) else ''
-                if not nr or nr == 'nan' or not czas or czas == 'nan':
+                if not nr or nr == 'nan':
                     continue
-                # `IS NOT`, a nie `!=`: dla wiersza z NULL-em w czas_dojazdu porównanie `!= ?` daje NULL,
-                # czyli fałsz, i miejsce bez czasu dojazdu nigdy by go nie dostało.
-                cursor.execute(
-                    "UPDATE miejsca SET czas_dojazdu = ? WHERE TRIM(numer_miejsca) = ? AND czas_dojazdu IS NOT ?",
-                    (czas, nr, czas)
-                )
-                zaktualizowane += cursor.rowcount
+                for kolumna_db, kol_csv in pary:
+                    wartosc = str(r.get(kol_csv, '')).strip() if pd.notna(r.get(kol_csv)) else ''
+                    if not wartosc or wartosc == 'nan':
+                        continue
+                    # Nazwa kolumny wchodzi do SQL przez f-string, ale pochodzi z KOLUMNY_MIEJSC_Z_CSV,
+                    # czyli ze stałej modułu - nie z pliku ani z wejścia użytkownika.
+                    # `IS NOT`, a nie `!=`: dla wiersza z NULL-em w tej kolumnie porównanie `!= ?` daje
+                    # NULL, czyli fałsz, i puste pole nigdy by nie dostało wartości z pliku.
+                    cursor.execute(
+                        f"UPDATE miejsca SET {kolumna_db} = ? "
+                        f"WHERE TRIM(numer_miejsca) = ? AND {kolumna_db} IS NOT ?",
+                        (wartosc, nr, wartosc)
+                    )
+                    zaktualizowane += cursor.rowcount
             conn.commit()
             return zaktualizowane
     except Exception as e:
-        print(f"Błąd synchronizacji czasów dojazdu z CSV: {e}")
+        print(f"Błąd synchronizacji miejsc z CSV: {e}")
         return 0
 
 
 init_db()
-zsynchronizuj_nazwy_miejsc_z_csv()
-zsynchronizuj_czasy_dojazdu_z_csv()
+zsynchronizuj_miejsca_z_csv()
 
 # ZMIANA: Pobranie unikalnego identyfikatora urządzenia klienta z nagłówków żądania HTTP Streamlit
 import hashlib

@@ -29,7 +29,7 @@ import pytest
 from conftest import SCIEZKA_APP, wczytaj_funkcje_z_app
 
 BADANE_FUNKCJE = [
-    "zsynchronizuj_czasy_dojazdu_z_csv",
+    "zsynchronizuj_miejsca_z_csv",
     "sparsuj_wspolrzedne",
     "sparsuj_godzine_minuty",
     "sparsuj_czas_ogarniania_na_minuty",
@@ -527,10 +527,12 @@ def test_sprzatanie_z_init_db_jest_idempotentne(tmp_path):
     assert list(conn.execute("SELECT id_kroku_z, id_kroku_do FROM czasy_dojazdu")) == [(1, 2)]
 
 
-# --- (f) Synchronizacja kolumny "czas dojazdu ze Stavros" z pliku fabrycznego ---
+# --- (f) Synchronizacja kolumn miejsc z pliku fabrycznego ---
 #
-# Kolumna wchodziła do bazy tylko przy pierwszym imporcie CSV, więc na serwerze z istniejącą bazą
-# poprawione czasy nie miałyby jak się pojawić. Synchronizacja jedzie przy każdym starcie i nie rusza sieci.
+# Nazwa, adres, współrzędne i czas dojazdu wchodziły do bazy tylko przy pierwszym imporcie CSV, więc
+# na serwerze z istniejącą bazą żadna późniejsza poprawka nie miałaby jak się pojawić. Synchronizacja
+# jedzie przy każdym starcie i nie rusza sieci. Najważniejsze są współrzędne: audyt wykazał jedenaście
+# przesuniętych pinezek, najgorszą o 21 km, co psuło czas przejazdu mocniej niż wybór silnika.
 
 def _baza_z_miejscami(tmp_path, wiersze):
     """Baza z tabelą `miejsca` wypełnioną parami (numer, czas dojazdu)."""
@@ -557,17 +559,19 @@ def _csv_z_czasami(tmp_path, wiersze):
     return sciezka
 
 
-def _uruchom_synchronizacje(sciezka_db, sciezka_csv):
+def _uruchom_synchronizacje(sciezka_db, sciezka_csv, kolumna="czas_dojazdu"):
     ns = {
         "pd": pd,
         "os": __import__("os"),
         "sqlite3": sqlite3,
         "get_db": lambda: sqlite3.connect(str(sciezka_db), timeout=30.0),
     }
-    exec(SEGMENTY_FUNKCJI["zsynchronizuj_czasy_dojazdu_z_csv"], ns)
-    zmienione = ns["zsynchronizuj_czasy_dojazdu_z_csv"](str(sciezka_csv))
+    for kod in _segmenty_stalych(["KOLUMNY_MIEJSC_Z_CSV"]):
+        exec(kod, ns)
+    exec(SEGMENTY_FUNKCJI["zsynchronizuj_miejsca_z_csv"], ns)
+    zmienione = ns["zsynchronizuj_miejsca_z_csv"](str(sciezka_csv))
     conn = sqlite3.connect(str(sciezka_db))
-    stan = dict(conn.execute("SELECT numer_miejsca, czas_dojazdu FROM miejsca"))
+    stan = dict(conn.execute(f"SELECT numer_miejsca, {kolumna} FROM miejsca"))
     conn.close()
     return zmienione, stan
 
@@ -613,6 +617,49 @@ def test_brak_pliku_csv_nie_rusza_bazy(tmp_path):
     assert stan == {"1": "20 min"}
 
 
+def test_synchronizacja_poprawia_wspolrzedne(tmp_path):
+    """Sedno audytu pinezek: przesunięta współrzędna musi dać się poprawić przez plik fabryczny.
+
+    Bez tego poprawki z miejsca.csv nie weszłyby do bazy na serwerze, a to z bazy aplikacja czyta
+    punkty do trasowania."""
+    sciezka = tmp_path / "miejsca.db"
+    conn = sqlite3.connect(str(sciezka))
+    conn.executescript(SCHEMAT)
+    conn.execute(
+        "INSERT INTO miejsca (numer_miejsca, nazwa, wspolrzedne, odwiedzone)"
+        " VALUES ('9', 'Arevitis Farm', '35.40530, 23.92120', 0)"
+    )
+    conn.commit()
+    conn.close()
+    csv_plik = tmp_path / "miejsca.csv"
+    pd.DataFrame([{"numer miejsca": "9", "nazwa": "Arevitis Farm",
+                   "współrzędne": "35.35152, 24.15713"}]).to_csv(csv_plik, index=False, encoding="utf-8")
+
+    zmienione, stan = _uruchom_synchronizacje(sciezka, csv_plik, kolumna="wspolrzedne")
+
+    assert zmienione == 1
+    assert stan == {"9": "35.35152, 24.15713"}
+
+
+def test_plik_bez_kolumny_nie_czysci_pola_w_bazie(tmp_path):
+    """CSV bez współrzędnych ma je zostawić w spokoju, a nie nadpisać pustym napisem."""
+    sciezka = tmp_path / "miejsca.db"
+    conn = sqlite3.connect(str(sciezka))
+    conn.executescript(SCHEMAT)
+    conn.execute(
+        "INSERT INTO miejsca (numer_miejsca, nazwa, wspolrzedne, czas_dojazdu, odwiedzone)"
+        " VALUES ('1', 'miejsce 1', '35.5, 24.0', '20 min', 0)"
+    )
+    conn.commit()
+    conn.close()
+    csv_plik = _csv_z_czasami(tmp_path, [("1", "25 min")])
+
+    zmienione, stan = _uruchom_synchronizacje(sciezka, csv_plik, kolumna="wspolrzedne")
+
+    assert zmienione == 1, "Zmienić się miał tylko czas dojazdu"
+    assert stan == {"1": "35.5, 24.0"}
+
+
 def test_synchronizacja_stoi_po_init_db_w_kolejnosci_startu():
     """Bez tabeli `miejsca` nie ma czego synchronizować - wywołanie musi być po init_db()."""
     wywolania = [
@@ -621,5 +668,5 @@ def test_synchronizacja_stoi_po_init_db_w_kolejnosci_startu():
         if isinstance(w, ast.Expr) and isinstance(w.value, ast.Call)
         and isinstance(w.value.func, ast.Name)
     ]
-    assert "init_db" in wywolania and "zsynchronizuj_czasy_dojazdu_z_csv" in wywolania
-    assert wywolania.index("init_db") < wywolania.index("zsynchronizuj_czasy_dojazdu_z_csv")
+    assert "init_db" in wywolania and "zsynchronizuj_miejsca_z_csv" in wywolania
+    assert wywolania.index("init_db") < wywolania.index("zsynchronizuj_miejsca_z_csv")

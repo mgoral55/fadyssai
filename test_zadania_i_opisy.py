@@ -30,11 +30,13 @@ BADANE_FUNKCJE = [
     "pobierz_grupy_zadan_dla_wycieczki",
     "pobierz_flage_profilu",
     "zapisz_flage_profilu",
-    "zsynchronizuj_nazwy_miejsc_z_csv",
+    "zsynchronizuj_miejsca_z_csv",
 ]
 
 # Stałe modułowe czytane wprost ze źródła aplikacji, żeby testy nie dublowały ich wartości.
-STALE_Z_APP = ["FRAZY_KROKU_BAZOWEGO"]
+STALE_Z_APP = ["FRAZY_KROKU_BAZOWEGO",
+    "KOLUMNY_MIEJSC_Z_CSV",
+]
 
 SCHEMAT_USTAWIEN = """
 CREATE TABLE ustawienia_profilu (
@@ -241,7 +243,7 @@ def test_synchronizacja_aktualizuje_nazwy_w_bazie(app_ns, tmp_path):
         {"numer miejsca": "2", "nazwa": "Cretaquarium (akwarium)", "Opis": "Akwarium."},
     ])
 
-    assert app_ns["zsynchronizuj_nazwy_miejsc_z_csv"](plik) == 2
+    assert app_ns["zsynchronizuj_miejsca_z_csv"](plik) == 2
     assert _nazwy_w_bazie(app_ns) == {
         "1": "Pałac w Knossos (ruiny pałacu)",
         "2": "Cretaquarium (akwarium)",
@@ -254,13 +256,13 @@ def test_synchronizacja_nie_rusza_zgodnych_nazw(app_ns, tmp_path):
         {"numer miejsca": "1", "nazwa": "Pałac w Knossos (ruiny pałacu)", "Opis": "Pałac minojski."},
     ])
 
-    assert app_ns["zsynchronizuj_nazwy_miejsc_z_csv"](plik) == 0
+    assert app_ns["zsynchronizuj_miejsca_z_csv"](plik) == 0
     assert _nazwy_w_bazie(app_ns) == {"1": "Pałac w Knossos (ruiny pałacu)"}
 
 
 def test_synchronizacja_bez_pliku_csv_nic_nie_robi(app_ns, tmp_path):
     _wstaw_miejsca(app_ns, [("1", "Knossos", "Pałac minojski.")])
-    assert app_ns["zsynchronizuj_nazwy_miejsc_z_csv"](str(tmp_path / "nie_ma.csv")) == 0
+    assert app_ns["zsynchronizuj_miejsca_z_csv"](str(tmp_path / "nie_ma.csv")) == 0
 
 
 # --- OPISY MIEJSC W NAWIASIE PRZY NAZWIE W miejsca.csv ---
