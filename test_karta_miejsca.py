@@ -6,17 +6,20 @@ wyciągają badane funkcje ze źródła przez AST i uruchamiają je w kontrolowa
 Uruchomienie:  pytest test_karta_miejsca.py
 """
 
+import io
+import os
 import re
 import urllib.parse
 
 import pytest
 
-from conftest import wczytaj_funkcje_z_app, wczytaj_stale_z_app
+from conftest import SCIEZKA_APP, wczytaj_funkcje_z_app, wczytaj_stale_z_app
 
 BADANE_FUNKCJE = [
     "sparsuj_wspolrzedne",
     "tekst_z_bazy",
     "rozbij_stan_i_opis",
+    "przygotuj_konieczna_akcje",
     "_svg_slupki_trudnosci",
     "ikona_trudnosci",
     "ikona_slonca",
@@ -288,3 +291,99 @@ def test_kazde_miejsce_z_csv_ma_ikone_slonca(app_ns):
             if "{TODO}" in etykieta:
                 bez_dopasowania.append((wiersz["numer miejsca"], kolumna, stan))
     assert not bez_dopasowania, bez_dopasowania
+
+
+# --- kolumna "Konieczna akcja" z miejsca.csv ---
+#
+# Wyświetlanie tej kolumny usunął commit "Redesign"; dane leżały w bazie nietknięte, ale nic ich nie
+# pokazywało, więc rodzina nie widziała, że na Knossos czy warsztaty mydła trzeba rezerwować wcześniej.
+# Pułapka jest w danych: dziesięć miejsc trzyma treść w formie "Brak (rekomendowany zakup biletów...)",
+# więc odsiew po samym prefiksie "Brak" zgubiłby właśnie te wpisy.
+
+@pytest.mark.parametrize("puste", ["", "   ", "Brak", "brak", "BRAK", "Brak.", "  brak . ", None])
+def test_brak_akcji_nie_daje_nic_do_pokazania(app_ns, puste):
+    """Czyste "Brak" ma nie rysować karty - inaczej połowa miejsc dostałaby pustą ramkę."""
+    assert app_ns["przygotuj_konieczna_akcje"](puste) is None
+
+
+@pytest.mark.parametrize(
+    "wejscie, oczekiwany_tekst",
+    [
+        ("Brak (bilety kupuje się w kasie przy wejściu do jaskini).",
+         "Bilety kupuje się w kasie przy wejściu do jaskini."),
+        ("Brak (rekomendowany zakup biletów online w sezonie, by pominąć kolejkę).",
+         "Rekomendowany zakup biletów online w sezonie, by pominąć kolejkę."),
+        ("Brak (wygodny parking tuż przy plaży).", "Wygodny parking tuż przy plaży."),
+        # Trzecia forma z danych: "Brak." i zdanie, bez nawiasu (Plaża Marathi, miejsce 52).
+        ("Brak. Wyjątkowo łatwy dostęp bezpośrednio z parkingu bez żadnych schodów.",
+         "Wyjątkowo łatwy dostęp bezpośrednio z parkingu bez żadnych schodów."),
+    ],
+)
+def test_brak_z_trescia_w_nawiasie_zostaje_jako_informacja(app_ns, wejscie, oczekiwany_tekst):
+    """Treść w nawiasie niesie informację, ale nie jest akcją - nie może iść pod czerwonym nagłówkiem."""
+    czy_ostrzezenie, tekst = app_ns["przygotuj_konieczna_akcje"](wejscie)
+    assert czy_ostrzezenie is False
+    assert tekst == oczekiwany_tekst
+
+
+@pytest.mark.parametrize(
+    "wejscie",
+    [
+        "Rekomendowana rezerwacja biletów online w sezonie.",
+        "Wymagana wcześniejsza rezerwacja w przypadku chęci udziału w warsztatach.",
+        "Zejście z parkingu na plażę to stroma, kamienista ścieżka klifowa.",
+    ],
+)
+def test_prawdziwa_akcja_jest_ostrzezeniem_i_nie_jest_przerabiana(app_ns, wejscie):
+    """Rezerwacje i ostrzeżenia o zejściu idą jako ostrzeżenie, w treści co do znaku z bazy."""
+    czy_ostrzezenie, tekst = app_ns["przygotuj_konieczna_akcje"](wejscie)
+    assert czy_ostrzezenie is True
+    assert tekst == wejscie
+
+
+@pytest.mark.parametrize("zaslepka", ["Brak ()", "Brak -", "Brak:", "Brak ( )"])
+def test_brak_bez_tresci_nie_daje_nic(app_ns, zaslepka):
+    """Zaślepka bez treści nie może wylądować pod czerwonym nagłówkiem "Konieczna akcja"."""
+    assert app_ns["przygotuj_konieczna_akcje"](zaslepka) is None
+
+
+def test_slowo_zaczynajace_sie_na_brak_nie_jest_zaslepka(app_ns):
+    """`brak\\b` nie może zjeść "Brakuje" - to zwykłe zdanie, czyli prawdziwa akcja."""
+    czy_ostrzezenie, tekst = app_ns["przygotuj_konieczna_akcje"]("Brakuje miejsc parkingowych w sezonie.")
+    assert czy_ostrzezenie is True
+    assert tekst == "Brakuje miejsc parkingowych w sezonie."
+
+
+def test_wszystkie_wpisy_z_repo_daja_sensowny_wynik(app_ns):
+    """Przejście po prawdziwej kolumnie z miejsca.csv - żadne miejsce nie może dostać pustej treści."""
+    import csv
+    sciezka = os.path.join(os.path.dirname(SCIEZKA_APP), "miejsca.csv")
+    with io.open(sciezka, encoding="utf-8", newline="") as plik:
+        wiersze = list(csv.DictReader(plik))
+
+    ostrzezenia, informacje, pominiete = 0, 0, 0
+    for r in wiersze:
+        wynik = app_ns["przygotuj_konieczna_akcje"](r["Konieczna akcja"])
+        if wynik is None:
+            pominiete += 1
+            continue
+        czy_ostrzezenie, tekst = wynik
+        assert tekst.strip(), f"Puste tresc dla miejsca {r['numer miejsca']}"
+        assert not tekst.lower().startswith("brak"), (
+            f"Miejsce {r['numer miejsca']} pokazuje tekst zaczynajacy sie od 'Brak': {tekst!r}"
+        )
+        ostrzezenia += czy_ostrzezenie
+        informacje += not czy_ostrzezenie
+
+    assert ostrzezenia + informacje + pominiete == len(wiersze)
+    assert ostrzezenia >= 15, f"Za malo prawdziwych akcji ({ostrzezenia}) - kolumna chyba sie wyczyscila"
+    assert informacje >= 5, f"Za malo wpisow 'Brak (...)' ({informacje}) - odsiew chyba je zjada"
+
+
+def test_kolumna_akcji_jest_synchronizowana_z_pliku_fabrycznego():
+    """Bez tego dopisanie rezerwacji w miejsca.csv nie weszłoby do istniejącej bazy na serwerze."""
+    with io.open(SCIEZKA_APP, encoding="utf-8") as plik:
+        zrodlo = plik.read()
+    blok = re.search(r"KOLUMNY_MIEJSC_Z_CSV\s*=\s*\((.*?)\n\)", zrodlo, re.S)
+    assert blok, "Nie znaleziono tabeli kolumn synchronizowanych z CSV"
+    assert "konieczna_akcja" in blok.group(1)

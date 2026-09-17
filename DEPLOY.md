@@ -208,7 +208,8 @@ Poprawiona pinezka musi przejść przez wszystkie trzy, inaczej poprawka jest ty
 
 1. `miejsca.csv` - plik fabryczny, źródło prawdy.
 2. `miejsca.wspolrzedne` w bazie - stąd czyta karta miejsca. Przepisywane przez
-   `zsynchronizuj_miejsca_z_csv()` przy każdym starcie.
+   `zsynchronizuj_miejsca_z_csv()` przy każdym starcie; ta sama funkcja pilnuje nazwy, adresu,
+   czasu dojazdu i kolumny „Konieczna akcja" (rezerwacje biletów, stolików, warsztatów).
 3. `krok_wycieczki.wspolrzedne` - **stąd trasuje wycieczka**. Krok dostaje kopię przy wstawieniu
    i w całym `app.py` nie ma ani jednego `UPDATE krok_wycieczki SET wspolrzedne`. Przepisuje je
    `zsynchronizuj_wspolrzedne_krokow()`, wiążąc krok z miejscem przez `numer_miejsca` (nie przez

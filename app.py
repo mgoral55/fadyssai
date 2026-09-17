@@ -1332,6 +1332,7 @@ KOLUMNY_MIEJSC_Z_CSV = (
     ("adres", ("adres", "address", "ulica", "lokalizacja")),
     ("wspolrzedne", ("współrzędne", "wspolrzedne", "coordinates", "coords")),
     ("czas_dojazdu", ("czas dojazdu ze stavros", "czas dojazdu", "czas_dojazdu")),
+    ("konieczna_akcja", ("konieczna akcja", "konieczna_akcja", "akcja")),
 )
 
 
@@ -2119,6 +2120,8 @@ details.state-chip:nth-child(3) > .state-chip-panel { margin-left: calc(-200% - 
 .step-evac-pill { background-color: rgba(220, 80, 80, 0.08); border: 1.5px solid rgba(220, 80, 80, 0.3); border-radius: 14px; padding: 8px 12px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
 .step-evac-pill-title { font-size: 8.5pt; font-weight: 800; color: #DC5050; text-transform: uppercase; }
 .step-evac-pill-val { font-size: 10.5pt; font-weight: 900; color: #DC5050; }
+.akcja-card-warn { border-color: rgba(226, 140, 50, 0.45) !important; background-color: rgba(226, 140, 50, 0.08) !important; }
+.akcja-card-warn .overview-card-title { color: #C06C4E; }
 .step-warn-box { background-color: rgba(226, 140, 50, 0.1); border: 1.5px solid rgba(226, 140, 50, 0.35); border-radius: 14px; padding: 8px 12px; margin-bottom: 8px; }
 .step-warn-title { font-size: 8pt; font-weight: 800; color: #C06C4E; text-transform: uppercase; }
 .step-warn-text { font-size: 8.5pt; font-weight: 700; color: #2B2118; }
@@ -2780,6 +2783,44 @@ def render_action_bar(coords_clean, search_name="", search_name_en="", address="
 # --- CHIPY STANU MIEJSCA (trudnosc / slonce / meltdown) ---
 # Kolumny trzymaja dlugi tekst w formie "<stan> - <uzasadnienie>" albo "<stan>. <uzasadnienie>",
 # wiec ikona chipa bierze sie z prefiksu, a cale zdanie ladu w rozwinieciu.
+# ZMIANA: Kolumna "Konieczna akcja" z miejsca.csv (rezerwacje biletów, stolików, warsztatów, a także
+# ostrzeżenia o zejściu i obuwiu) wróciła na kartę miejsca. Wyświetlanie usunął commit "Redesign";
+# dane leżały w bazie nietknięte, ale nic ich nie pokazywało.
+#
+# Filtrowanie po samym prefiksie "Brak" zgubiłoby dziesięć miejsc, bo trzymają treść w nawiasie:
+# Spinalonga ma "Brak (rekomendowany zakup biletów online w sezonie...)". Dlatego odpada wyłącznie
+# czyste "Brak", a wpis w formie "Brak (...)" idzie dalej jako informacja, nie ostrzeżenie - inaczej
+# czerwona ramka "Konieczna akcja" mówiłaby, że akcji nie ma.
+def przygotuj_konieczna_akcje(wartosc):
+    """Zwraca (czy_ostrzezenie, tekst) dla kolumny "Konieczna akcja" albo None, gdy nie ma co pokazać.
+
+    Kolumna ma trzy formy i wszystkie trzy trafiają się w miejsca.csv:
+      "Rekomendowana rezerwacja..."            -> prawdziwa akcja, idzie jako ostrzeżenie
+      "Brak (bilety kupuje się na miejscu)."   -> informacja w nawiasie
+      "Brak. Wyjątkowo łatwy dostęp..."        -> informacja po kropce, bez nawiasu
+      "Brak" / "Brak." / "Brak ()"             -> nic do pokazania
+    Odsiew po samym prefiksie "Brak" zgubiłby dwie środkowe formy, a to one mówią, czy trzeba
+    rezerwować. Wzorce siedzą w środku funkcji, bo `re` i tak je cache'uje, a funkcja zostaje
+    samowystarczalna dla testów wyciągających ją z app.py przez AST."""
+    tekst = tekst_z_bazy(wartosc).strip()
+    if not tekst:
+        return None
+
+    # `brak\b` nie złapie "Brakuje" - między "k" i "u" nie ma granicy słowa.
+    zaczyna_od_brak = re.match(r'(?i)^\s*brak\b[\s.:,\u2013\u2014-]*(.*)$', tekst, re.S)
+    if not zaczyna_od_brak:
+        return True, tekst
+
+    reszta = zaczyna_od_brak.group(1).strip()
+    w_nawiasie = re.fullmatch(r'\((.*)\)[\s.]*', reszta, re.S)
+    if w_nawiasie:
+        reszta = w_nawiasie.group(1).strip()
+    reszta = reszta.strip().rstrip('.').strip()
+    if not reszta:
+        return None
+    return False, reszta[0].upper() + reszta[1:] + '.'
+
+
 def rozbij_stan_i_opis(wartosc):
     s = tekst_z_bazy(wartosc)
     if not s:
@@ -7396,6 +7437,22 @@ elif st.session_state.active_tab == "zabytek":
 </div>
 {render_chipy_stanu(p, f"chipy_miejsca_{docelowy_nr}")}
 </div>""", unsafe_allow_html=True)
+
+            akcja_miejsca = przygotuj_konieczna_akcje(p.get('konieczna_akcja'))
+            if akcja_miejsca:
+                czy_ostrzezenie, tresc_akcji = akcja_miejsca
+                klasa_akcji = "overview-card akcja-card-warn" if czy_ostrzezenie else "overview-card"
+                naglowek_akcji = (
+                    "<span>⚠️</span> KONIECZNA AKCJA" if czy_ostrzezenie
+                    else "<span>ℹ️</span> BEZ REZERWACJI"
+                )
+                st.markdown(
+                    f'<div class="{klasa_akcji}">'
+                    f'<div class="overview-card-title">{naglowek_akcji}</div>'
+                    f'<div class="overview-card-text">{escapuj_html(tresc_akcji)}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
 
             zadania_miejsca = sparsuj_liste_zadan(p.get('zadania_dla_dzieci', ''))
             if zadania_miejsca:
