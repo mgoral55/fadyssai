@@ -106,29 +106,57 @@ docker compose exec magda-crete claude -p --model claude-opus-5 'odpowiedz OK'
 
 Czasy dojazdu liczy kolejka silników, a nie jeden serwis. Pierwszy, który odpowie, wygrywa;
 każdy ma osobny wpis w rejestrze awarii, więc padnięcie jednego nie wycisza pozostałych.
+Odpowiedź silnika przechodzi jeszcze przez kalibrację (`_czas_przejazdu_z_trasy`).
 
-| silnik | klucz | mediana błędu wobec Google | uwagi |
-| --- | --- | --- | --- |
-| Google Routes v2 | wymagany | odniesienie | uwzględnia ruch, jedyny płatny |
-| Valhalla (publiczna OSM) | nie | +5 min (MAE 4.9 min) | domyślny, mediana opóźnienia 0.89 s |
-| OSRM (serwer demo) | nie | -23 do +35 min (MAE 16.4 min) | zapas |
-| szacunek geometryczny | nie | bez sieci | min/km z dystansu w linii prostej |
+Odniesieniem jest **27 tras zmierzonych ręcznie w Google Maps** przy ruchu z 17 września 2026,
+dojazd z domku w Stavros, od 0.3 km do 223 km:
 
-Pomiar: 54 miejsca z bazy przeliczone każdym silnikiem plus 12 tras sprawdzonych ręcznie w Google Maps
-(dojazd z domku w Stavros). Profil demo OSRM liczy dojazd na lotnisko w Heraklionie na 2 h 58 min,
-a Google i Valhalla zgodnie dają 2 h 29 min / 2 h 31 min — dlatego OSRM zszedł na drugie miejsce.
-Geometria trasy rysowana na mapie nadal idzie z OSRM, więc kształt linii i czas nad nią pochodzą
-z dwóch różnych silników.
+| silnik | klucz | MAE | mediana błędu | max błąd |
+| --- | --- | --- | --- | --- |
+| Google Routes v2 | wymagany | odniesienie | — | — |
+| Valhalla po kalibracji | nie | **3.6 min** | 0.0 min | 9 min |
+| Valhalla surowa | nie | 5.5 min | +5.0 min | 13.4 min |
+| OSRM surowy | nie | 9.2 min | -3.7 min | 34.5 min |
+| szacunek geometryczny | nie | 5.0 min | 0.0 min | 19 min |
 
-Valhalla jest konsekwentnie o ok. 9% ostrożniejsza od Google, a na odcinkach poniżej 5 km potrafi
-podwoić czas (Google daje 5 min na plażę w Stavros, Valhalla 9 min). Zapas na przyjazd przed czasem
-jest tu celowo zostawiony bez korekty — nie ma go jak rzetelnie dopasować na 12 punktach odniesienia.
+Valhalla myliła się nie skalą, a **stałym narzutem** +5 min niemal wszędzie. Na dojeździe na plażę
+Tersanas (Google 8 min) dawała 13 min, a na Seitan Limania (Google 27 min) 38 min. Parametry costing
+Valhalli tego nie ruszają: `top_speed`, `maneuver_penalty`, `use_living_streets` i `service_penalty`
+dają MAE 5.4-5.5, czyli tyle samo co domyślny profil.
+
+Kalibracja to `wsp_czas * minuty_silnika + wsp_km * kilometry_trasy`. Dystans wchodzi do wzoru, bo to
+on rozdziela trasy szybkie od wolnych: przy tym samym czasie więcej kilometrów znaczy więcej VOAK-u,
+gdzie Valhalla jest dokładna, a mniej kilometrów znaczy serpentyny i miasteczka, gdzie zawyża. Model
+z samą skalą czasu daje MAE 5.8 min zamiast 3.4. Walidacja leave-one-out: MAE 3.9 min.
+
+Google zostaje bez korekty, bo jest odniesieniem. **OSRM zostaje surowy świadomie**: jego błąd nie jest
+ani skalą, ani przesunięciem, tylko rozrzutem od -23 do +35 min. Sama skala pogarsza MAE z 9.2 na 11.8
+(max 71 min), a dopasowanie dwucechowe wychodzi niestabilne - współczynniki o przeciwnych znakach
+i max 23.6 min w walidacji. Lepszy szorstki zapas niż zapas z fałszywą precyzją.
+
+Zaokrąglanie do 5 minut zostaje: na tych samych 27 trasach kosztuje 0.06 min MAE (3.56 wobec 3.50).
+
+Ograniczenia, o których trzeba wiedzieć:
+
+- Kalibracja jest dopasowana do tras **z domku w Stavros** przy ruchu z jednego popołudnia. Odcinki
+  między kolejnymi punktami wycieczki dostają ten sam wzór, bo koduje on sposób, w jaki Valhalla
+  modeluje prędkości klas dróg na Krecie, a nie tę jedną trasę - ale nie jest to na nich zmierzone.
+- Największy pozostały błąd to Seitan Limania (+8 min) i Maravel Garden (+8 min). Bez danych o ruchu
+  nie ma czym tego poprawić.
+- Geometria trasy rysowana na mapie nadal idzie z OSRM, więc kształt linii i czas nad nią pochodzą
+  z dwóch różnych silników.
 
 ### Włączenie Google Routes
 
-Silnik Google wchodzi na początek kolejki tylko wtedy, gdy kontener widzi klucz w zmiennej
-`GOOGLE_ROUTES_API_KEY`. Bez niej aplikacja działa bez żadnych poświadczeń, tak jak dotąd.
-Klucz trzeba trzymać poza repozytorium (publiczne) — w pliku `.env` obok `docker-compose.yml`,
+Google to sufit dokładności - jedyny silnik z ruchem drogowym. Wchodzi na początek kolejki tylko wtedy,
+gdy kontener widzi klucz w `GOOGLE_ROUTES_API_KEY`. Bez niej aplikacja działa bez żadnych poświadczeń.
+
+SKU `Routes: Compute Routes Essentials` ma **10 000 darmowych wywołań miesięcznie**, a potem 5 USD
+za tysiąc. Przy 54 miejscach i cache na 24 h realne zużycie to kilkaset wywołań na miesiąc, czyli zero.
+Warto sprawdzić w rozliczeniach, czy `routingPreference: TRAFFIC_AWARE` trafia w Essentials, a nie
+w droższy tier - jeśli trafia w droższy, zostaje `TRAFFIC_UNAWARE` albo brak klucza.
+
+Klucz trzeba trzymać poza repozytorium (publiczne) - w pliku `.env` obok `docker-compose.yml`,
 z prawami `0600`:
 
 ```
@@ -137,18 +165,21 @@ printf 'GOOGLE_ROUTES_API_KEY=%s\n' '<klucz>' > /opt/magda-crete/.env
 docker compose -f /opt/magda-crete/docker-compose.yml up -d
 ```
 
-Klucz musi mieć włączone Routes API i ograniczenie do tego jednego API. Odpowiedzi są cache'owane
-na 24 h (`@st.cache_data`), więc jedno miejsce to jedno zapytanie na dobę.
+Klucz musi mieć włączone Routes API i ograniczenie do tego jednego API.
 
 ### Statyczna kolumna "czas dojazdu ze Stavros"
 
-Wartości w tej kolumnie w `miejsca.csv` są policzone Valhallą, a nie wpisane ręcznie — dawne
-wpisy rozjeżdżały się z trasowaniem o medianę 7.5 min, a w skrajnym przypadku o 84 min.
+Wartości w tej kolumnie w `miejsca.csv` są policzone skalibrowaną Valhallą, a nie wpisane ręcznie -
+dawne wpisy rozjeżdżały się z trasowaniem o medianę 7.5 min, a w skrajnym przypadku o 84 min.
 Kolumna wchodziła do bazy tylko przy pierwszym imporcie CSV, więc `zsynchronizuj_czasy_dojazdu_z_csv()`
-przepisuje ją z pliku fabrycznego przy każdym starcie — bez ruchu sieciowego, tak samo jak nazwy miejsc.
+przepisuje ją z pliku fabrycznego przy każdym starcie - bez ruchu sieciowego, tak samo jak nazwy miejsc.
 
 Jeden wiersz jest pomijany świadomie: „Zatoka w Wąwozie Katholiko” trzyma tam prozę
 (`15 min do parkingu + 1 godz. spaceru wąwozem`), której trasowanie nie odtworzy.
+
+Przeliczenie kolumny po zmianie kalibracji robi się skryptem korzystającym z `_valhalla_czas_przejazdu`
+wyciągniętego z `app.py` przez `conftest.wczytaj_funkcje_z_app` - dzięki temu plik i aplikacja liczą
+tym samym kodem.
 
 ## Krótkie opisy miejsc w nazwie (1-2 słowa w nawiasie)
 

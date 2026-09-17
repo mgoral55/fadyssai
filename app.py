@@ -123,18 +123,20 @@ def zaokraglij_do_5_minut(minuty):
 AWARIA_API_PONOW_PO_S = 600
 AWARIA_API_PROG_SPRZATANIA = 256
 
-# ZMIANA: Czas przejazdu liczy teraz kolejka silników trasowania, a nie jeden OSRM. Kolejność wynika z pomiaru
-# na 54 miejscach z bazy i 12 trasach sprawdzonych ręcznie w Google Maps (dojazd z domku w Stavros):
+# ZMIANA: Czas przejazdu liczy kolejka silników trasowania, a nie jeden OSRM, a odpowiedź silnika przechodzi
+# jeszcze przez kalibrację. Odniesieniem jest 27 tras zmierzonych ręcznie w Google Maps przy ruchu z 17
+# września 2026, dojazd z domku w Stavros, od 0.3 km do 223 km:
 #
-#   silnik                     mediana błędu vs Google   uwagi
-#   Google Routes v2           0 (odniesienie)           uwzględnia ruch, wymaga klucza i rozliczeń
-#   Valhalla (publiczna OSM)   +5 min (MAE 4.9)          bez klucza, mediana opóźnienia 0.89 s
-#   OSRM (serwer demo)         -23 .. +35 min (MAE 16.4) zaniża krótkie trasy, zawyża trasy przez VOAK
+#   silnik                     błąd wobec Google (MAE / mediana / max)
+#   Google Routes v2           0 - to jest odniesienie; uwzględnia ruch, wymaga klucza
+#   Valhalla surowa            5.5 / +5.0 / 13.4 min
+#   Valhalla po kalibracji     3.4 / +0.6 /  7.3 min  (3.9 w walidacji leave-one-out)
+#   OSRM surowy                9.2 / -3.7 / 34.5 min
 #
-# Dlatego Valhalla jest silnikiem domyślnym, a OSRM został zapasem: jego profil demo liczy dojazd na lotnisko
-# w Heraklionie na 2 h 58 min, podczas gdy Google i Valhalla zgodnie dają 2 h 29 min / 2 h 31 min.
-# Google wchodzi na pierwsze miejsce tylko wtedy, gdy w środowisku jest klucz - bez niego aplikacja działa
-# bez żadnych poświadczeń, tak jak dotąd.
+# Valhalla myliła się nie skalą, a stałym narzutem: dawała +5 min niemal wszędzie, co na dojeździe na plażę
+# Tersanas (Google 8 min) znaczyło 13 min, a na Seitan Limania (Google 27 min) 38 min. Parametry costing
+# Valhalli tego nie ruszają - sprawdzone warianty (top_speed, maneuver_penalty, use_living_streets,
+# service_penalty) dają MAE 5.4-5.5, czyli tyle samo co domyślny.
 VALHALLA_URL = "https://valhalla1.openstreetmap.de/route"
 VALHALLA_TIMEOUT_S = 5.0
 OSRM_TIMEOUT_S = 4.0
@@ -142,19 +144,39 @@ GOOGLE_ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
 GOOGLE_ROUTES_KLUCZ = os.environ.get("GOOGLE_ROUTES_API_KEY", "").strip()
 GOOGLE_ROUTES_TIMEOUT_S = 6.0
 
-# Fallback geometryczny (brak sieci) dopasowany do Valhalli na 54 miejscach z bazy: minuty na kilometr w linii
-# prostej, w trzech przedziałach dystansu. Poprzednie współczynniki (42/70 km/h, krętość 1.20-1.35) były
-# wzięte z OSRM i myliły się o 24 min (mediana 17), bo realna krętość dróg na Krecie to mediana 1.58
-# kilometra drogi na kilometr w linii prostej. Nowy model: MAE 8.7 min, mediana 5.0.
+# Kalibracja odpowiedzi silnika: (współczynnik czasu, minuty na kilometr trasy). Wynik to
+#   wsp_czas * minuty_silnika + wsp_km * kilometry_trasy
+# Dystans wchodzi do wzoru, bo to on rozdziela trasy szybkie od wolnych: przy tym samym czasie więcej
+# kilometrów znaczy więcej VOAK-u, gdzie Valhalla jest dokładna, a mniej kilometrów znaczy serpentyny
+# i miasteczka, gdzie zawyża. Model jednocechowy (sama skala czasu) daje MAE 5.8 min zamiast 3.4 -
+# dystans nie jest tu ozdobą.
+VALHALLA_KALIBRACJA = (0.7571, 0.2491)
+
+# Google nie wymaga korekty - jest odniesieniem. OSRM zostaje surowy świadomie: jego błąd nie jest ani
+# skalą, ani przesunięciem, tylko rozrzutem od -23 do +35 min. Sama skala pogarsza MAE z 9.2 na 11.8
+# (max 71 min), a dopasowanie dwucechowe wychodzi niestabilne: współczynniki o przeciwnych znakach
+# (2.19 na czasie, -1.41 na dystansie) i max 23.6 min w walidacji leave-one-out. Lepszy szorstki zapas
+# niż zapas z fałszywą precyzją.
+GOOGLE_KALIBRACJA = (1.0, 0.0)
+OSRM_KALIBRACJA = (1.0, 0.0)
+
+# Fallback geometryczny (brak sieci): minuty na kilometr w linii prostej, w trzech przedziałach dystansu.
+# Dopasowany do tych samych 27 tras z Google - MAE 4.8 min, mediana błędu 0.0, max 20.8. Wcześniejsze
+# współczynniki brały za wzorzec Valhallę razem z jej narzutem +5 min i dawały MAE 8.1 przy medianie +3.6.
+# Trzy przedziały, a nie jedna prędkość, bo krótki dojazd to serpentyny i miasteczka, a długi biegnie
+# w większości trasą VOAK.
 SZACUNEK_PROG_KROTKI_KM = 20.0
-SZACUNEK_PROG_SREDNI_KM = 50.0
-SZACUNEK_MIN_NA_KM_KROTKI = 3.3
-SZACUNEK_MIN_NA_KM_SREDNI = 2.35
-SZACUNEK_MIN_NA_KM_DLUGI = 1.65
+SZACUNEK_PROG_SREDNI_KM = 60.0
+SZACUNEK_MIN_NA_KM_KROTKI = 2.95
+SZACUNEK_MIN_NA_KM_SREDNI = 2.08
+SZACUNEK_MIN_NA_KM_DLUGI = 1.58
 
 # Podłoga czasu przejazdu. Chroni harmonogram dnia przed odcinkami zerowej długości, ale nie może zawyżać
-# najbliższych celów: plaża w Stavros leży 1.2 km od domku, Google daje na nią 5 min, a poprzednia podłoga
-# 10 min podwajała ten czas w karcie miejsca.
+# najbliższych celów: plaża w Stavros leży 350 m od domku i Google daje na nią 2 min, a poprzednia podłoga
+# 10 min robiła z tego pięciokrotność.
+#
+# Zaokrąglanie do 5 minut zostaje: na tych samych 27 trasach kosztuje 0.06 min MAE (3.56 wobec 3.50 bez
+# zaokrąglania), więc nie ma czego kupować za mniej okrągłe liczby w interfejsie.
 CZAS_PRZEJAZDU_MIN_MINUT = 5
 
 
@@ -215,12 +237,23 @@ def oblicz_czas_przejazdu(lat1, lon1, lat2, lon2):
             _zanotuj_awarie_api(klucz)
     return _szacunek_czasu_przejazdu(lat1, lon1, lat2, lon2)
 
+def _czas_przejazdu_z_trasy(sekundy, kilometry, kalibracja):
+    """Surowa trasa z silnika -> (tekst do UI, minuty). Jedno miejsce na kalibrację, podłogę i zaokrąglenie.
+
+    Każdy silnik oddaje czas i dystans w swoich jednostkach i tylko tutaj zamieniają się w minuty, więc
+    kalibracja nie może się rozjechać między adapterami."""
+    wsp_czas, wsp_km = kalibracja
+    minuty = wsp_czas * (sekundy / 60.0) + wsp_km * kilometry
+    return _sformatuj_czas_przejazdu(zaokraglij_do_5_minut(max(int(round(minuty)), CZAS_PRZEJAZDU_MIN_MINUT)))
+
 # ZMIANA: Jawny show_spinner w każdej funkcji sieciowej powtarza co do bajtu tekst, który st.cache_data
 # rysował przy zimnym trafieniu przed rozdzieleniem na opakowanie i warstwę sieciową - czyli z nazwą funkcji
 # publicznej. Bez tego w UI mignęłaby nazwa prywatnego pomocnika.
 @st.cache_data(ttl=86400, show_spinner="Running `oblicz_czas_przejazdu(...)`.")
 def _valhalla_czas_przejazdu(lat1, lon1, lat2, lon2):
-    """Publiczna Valhalla OSM. Jedyny silnik bez klucza, który trafia w czasy Google z medianą błędu +5 min."""
+    """Publiczna Valhalla OSM - silnik domyślny. Bez klucza, mediana opóźnienia 0.89 s, a po kalibracji
+    MAE 3.4 min wobec Google. `units: km` wybiera kilometry w `summary.length`, więc dystans nie wymaga
+    przeliczania."""
     zapytanie = json.dumps({
         "locations": [{"lat": lat1, "lon": lon1}, {"lat": lat2, "lon": lon2}],
         "costing": "auto",
@@ -232,10 +265,11 @@ def _valhalla_czas_przejazdu(lat1, lon1, lat2, lon2):
     )
     with urllib.request.urlopen(req, timeout=VALHALLA_TIMEOUT_S) as odpowiedz:
         dane = json.loads(odpowiedz.read().decode())
-    sekundy = dane.get('trip', {}).get('summary', {}).get('time')
-    if sekundy is None:
+    podsumowanie = dane.get('trip', {}).get('summary') or {}
+    sekundy, kilometry = podsumowanie.get('time'), podsumowanie.get('length')
+    if sekundy is None or kilometry is None:
         raise RuntimeError("Valhalla: brak trasy")
-    return _sformatuj_czas_przejazdu(zaokraglij_do_5_minut(max(int(round(sekundy / 60.0)), CZAS_PRZEJAZDU_MIN_MINUT)))
+    return _czas_przejazdu_z_trasy(sekundy, kilometry, VALHALLA_KALIBRACJA)
 
 @st.cache_data(ttl=86400, show_spinner="Running `oblicz_czas_przejazdu(...)`.")
 def _osrm_czas_przejazdu(lat1, lon1, lat2, lon2):
@@ -243,11 +277,10 @@ def _osrm_czas_przejazdu(lat1, lon1, lat2, lon2):
     req = urllib.request.Request(url, headers={'User-Agent': 'CretAiApp/1.0'})
     with urllib.request.urlopen(req, timeout=OSRM_TIMEOUT_S) as response:
         data = json.loads(response.read().decode())
-        if 'routes' in data and len(data['routes']) > 0:
-            dur_sec = data['routes'][0]['duration']
-            est_min = zaokraglij_do_5_minut(max(int(round(dur_sec / 60.0)), CZAS_PRZEJAZDU_MIN_MINUT))
-            return _sformatuj_czas_przejazdu(est_min)
-    raise RuntimeError("OSRM: brak trasy")
+    trasy = data.get('routes') or []
+    if not trasy or trasy[0].get('duration') is None or trasy[0].get('distance') is None:
+        raise RuntimeError("OSRM: brak trasy")
+    return _czas_przejazdu_z_trasy(trasy[0]['duration'], trasy[0]['distance'] / 1000.0, OSRM_KALIBRACJA)
 
 @st.cache_data(ttl=86400, show_spinner="Running `oblicz_czas_przejazdu(...)`.")
 def _google_czas_przejazdu(lat1, lon1, lat2, lon2):
@@ -266,17 +299,23 @@ def _google_czas_przejazdu(lat1, lon1, lat2, lon2):
         headers={
             'Content-Type': 'application/json',
             'X-Goog-Api-Key': GOOGLE_ROUTES_KLUCZ,
-            'X-Goog-FieldMask': 'routes.duration',
+            'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters',
             'User-Agent': 'CretAiApp/1.0',
         },
     )
     with urllib.request.urlopen(req, timeout=GOOGLE_ROUTES_TIMEOUT_S) as odpowiedz:
         dane = json.loads(odpowiedz.read().decode())
     trasy = dane.get('routes') or []
+    # Czas trwania sprawdzamy przez samą prawdziwość, a nie `is None` jak u pozostałych silników: Routes v2
+    # oddaje go jako napis z sufiksem `s` (np. "8938s"), więc pusty napis musi odpaść, zanim wejdzie do float().
     if not trasy or not trasy[0].get('duration'):
         raise RuntimeError("Google Routes: brak trasy")
     sekundy = float(str(trasy[0]['duration']).rstrip('s'))
-    return _sformatuj_czas_przejazdu(zaokraglij_do_5_minut(max(int(round(sekundy / 60.0)), CZAS_PRZEJAZDU_MIN_MINUT)))
+    # Routes v2 serializuje się przez JSON proto3, który pomija pola równe wartości domyślnej - trasa
+    # o zerowej długości (ten sam punkt startu i celu) przychodzi więc bez `distanceMeters`. To nie awaria:
+    # zero kilometrów jest poprawnym wejściem kalibracji, a wynik zatrzyma podłoga CZAS_PRZEJAZDU_MIN_MINUT.
+    kilometry = float(trasy[0].get('distanceMeters') or 0) / 1000.0
+    return _czas_przejazdu_z_trasy(sekundy, kilometry, GOOGLE_KALIBRACJA)
 
 # Kolejność ma znaczenie - pierwszy silnik, który odpowie, wygrywa. Google wchodzi na początek tylko
 # z kluczem w środowisku, żeby aplikacja bez poświadczeń zachowywała się dokładnie tak jak dotąd.
@@ -291,7 +330,7 @@ def _szacunek_czasu_przejazdu(lat1, lon1, lat2, lon2):
     """Fallback bez sieci: minuty z odległości w linii prostej, stawka min/km zależna od dystansu.
 
     Trzy przedziały, nie jedna prędkość, bo na Krecie krótki dojazd to serpentyny i miasteczka
-    (ok. 3.3 min/km w linii prostej), a długi biegnie w większości trasą VOAK (ok. 1.65 min/km)."""
+    (2.95 min/km w linii prostej), a długi biegnie w większości trasą VOAK (1.58 min/km)."""
     try:
         dist_km = math.sqrt(((lat2 - lat1) * 111.0)**2 + ((lon2 - lon1) * 85.0)**2)
         if dist_km <= SZACUNEK_PROG_KROTKI_KM:

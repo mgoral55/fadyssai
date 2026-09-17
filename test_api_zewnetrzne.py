@@ -2,8 +2,10 @@
 
 Czas przejazdu liczy kolejka silników: opcjonalny Google Routes (tylko z kluczem w środowisku),
 potem publiczna Valhalla, potem serwer demo OSRM, a na końcu fallback geometryczny bez sieci.
-Testy pilnują kolejności silników, tego że każdy ma własny wpis w rejestrze awarii (padnięcie jednego
-nie wycisza pozostałych) i że Google nie wchodzi do kolejki bez klucza.
+Odpowiedź silnika przechodzi przez `_czas_przejazdu_z_trasy`, które nakłada kalibrację danego silnika,
+podłogę i zaokrąglenie. Testy pilnują kolejności silników, tego że każdy ma własny wpis w rejestrze
+awarii (padnięcie jednego nie wycisza pozostałych), że Google nie wchodzi do kolejki bez klucza
+i że kalibracja Valhalli faktycznie działa - z dystansem, a nie samym czasem.
 
 Cache `@st.cache_data` trzyma wyłącznie udane odpowiedzi, a awaria trafia do rejestru awarii
 (`AWARIA_API_PONOW_PO_S`) żyjącego w `@st.cache_resource`, a nie do cache na 24 h / 8 h. Reszta testów
@@ -39,6 +41,7 @@ BADANE_FUNKCJE = [
     "zaokraglij_do_5_minut",
     "_sformatuj_czas_przejazdu",
     "oblicz_czas_przejazdu",
+    "_czas_przejazdu_z_trasy",
     "_valhalla_czas_przejazdu",
     "_osrm_czas_przejazdu",
     "_google_czas_przejazdu",
@@ -60,6 +63,9 @@ STALE_MODULU = [
     "GOOGLE_ROUTES_URL",
     "GOOGLE_ROUTES_KLUCZ",
     "GOOGLE_ROUTES_TIMEOUT_S",
+    "VALHALLA_KALIBRACJA",
+    "GOOGLE_KALIBRACJA",
+    "OSRM_KALIBRACJA",
     "CZAS_PRZEJAZDU_MIN_MINUT",
     "SZACUNEK_PROG_KROTKI_KM",
     "SZACUNEK_PROG_SREDNI_KM",
@@ -106,10 +112,10 @@ DOMEK = (35.5914, 24.0918)
 KNOSSOS = (35.2980, 25.1631)
 CHANIA = (35.5138, 24.0180)
 
-# Fallback geometryczny po padnięciu wszystkich silników. Wartości wynikają z dopasowania min/km do Valhalli
-# na 54 miejscach z bazy - poprzednie (~1h 40m dla Knossos, ~20 min dla Chanii) brały się ze współczynników
-# zdjętych z OSRM i zaniżały dojazd o medianę 17 min, bo zakładały krętość dróg 1.20-1.35 zamiast realnej 1.58.
-ZASTEPCZY_CZAS = {KNOSSOS: ("~2h 40m", 160), CHANIA: ("~35 min", 35)}
+# Fallback geometryczny po padnięciu wszystkich silników. Współczynniki min/km są dopasowane do 27 tras
+# zmierzonych w Google Maps (MAE 4.8 min, mediana błędu 0.0). Wcześniejsze dopasowanie brało za wzorzec
+# Valhallę razem z jej narzutem +5 min i dawało medianę +3.6.
+ZASTEPCZY_CZAS = {KNOSSOS: ("~2h 35m", 155), CHANIA: ("~30 min", 30)}
 ZASTEPCZA_GEOMETRIA = {
     KNOSSOS: [[35.5914, 24.0918], [35.2980, 25.1631]],
     CHANIA: [[35.5914, 24.0918], [35.5138, 24.0180]],
@@ -270,19 +276,21 @@ class Srodowisko:
         return self._rejestr_z_blokada[0]
 
 
-def odpowiedz_czasu(sekundy):
-    """Odpowiedź OSRM - `duration` w sekundach."""
-    return {"routes": [{"duration": sekundy}]}
+# Każdy silnik oddaje czas ORAZ dystans, bo kalibracja liczy z obu. Domyślne kilometry w atrapach są
+# dobrane tak, żeby po kalibracji wychodziły okrągłe minuty - arytmetyka jest wypisana przy testach.
+def odpowiedz_czasu(sekundy, km=20.0):
+    """Odpowiedź OSRM - `duration` w sekundach, `distance` w metrach."""
+    return {"routes": [{"duration": sekundy, "distance": km * 1000.0}]}
 
 
-def odpowiedz_valhalli(sekundy, km=42.0):
-    """Odpowiedź Valhalli - `trip.summary.time` w sekundach."""
+def odpowiedz_valhalli(sekundy, km=20.0):
+    """Odpowiedź Valhalli - `trip.summary.time` w sekundach, `length` w kilometrach (bo `units: km`)."""
     return {"trip": {"summary": {"time": sekundy, "length": km}}}
 
 
-def odpowiedz_google(sekundy):
-    """Odpowiedź Google Routes v2 - `duration` jako napis z sufiksem `s`."""
-    return {"routes": [{"duration": f"{sekundy}s"}]}
+def odpowiedz_google(sekundy, km=20.0):
+    """Odpowiedź Google Routes v2 - `duration` jako napis z sufiksem `s`, `distanceMeters` w metrach."""
+    return {"routes": [{"duration": f"{sekundy}s", "distanceMeters": km * 1000.0}]}
 
 
 def odpowiedz_geometrii(punkty):
@@ -299,19 +307,48 @@ def odpowiedz_geometrii(punkty):
         (3600, ("~1h", 60)),
         (5400, ("~1h 30m", 90)),
         (60, ("~5 min", 5)),
+        (0, ("~5 min", 5)),
     ],
 )
-def test_udana_odpowiedz_silnika_formatuje_czas(sekundy, oczekiwany):
-    """Sekundy z silnika wychodzą jako napis do UI, z zaokrągleniem do 5 min i podłogą CZAS_PRZEJAZDU_MIN_MINUT.
+def test_surowa_trasa_wychodzi_jako_napis_do_ui(sekundy, oczekiwany):
+    """Sekundy silnika wychodzą jako napis do UI, z zaokrągleniem do 5 min i podłogą CZAS_PRZEJAZDU_MIN_MINUT.
 
-    Podłoga to 5, a nie 10 minut: plaża w Stavros leży 1.2 km od domku i Google daje na nią 5 min,
-    więc dawne 10 minut podwajało czas najbliższych celów."""
-    srodowisko = Srodowisko([odpowiedz_valhalli(sekundy)])
-    assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS) == oczekiwany
+    Kalibracja jednostkowa (taka jak Google i OSRM) izoluje tu samo formatowanie. Podłoga to 5, a nie 10
+    minut: plaża w Stavros leży 350 m od domku i Google daje na nią 2 min, więc dawne 10 minut robiło
+    z tego pięciokrotność."""
+    srodowisko = Srodowisko([])
+    assert srodowisko["_czas_przejazdu_z_trasy"](sekundy, 0.0, srodowisko["GOOGLE_KALIBRACJA"]) == oczekiwany
+
+
+# --- Kalibracja odpowiedzi silnika ---
+
+def test_kalibracja_valhalli_liczy_z_czasu_i_z_dystansu():
+    """0.7571 * 30 min + 0.2491 * 42 km = 33.2 min, po zaokrągleniu 35 - a nie surowe 30 z Valhalli."""
+    srodowisko = Srodowisko([odpowiedz_valhalli(1800, km=42.0)])
+    assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS) == ("~35 min", 35)
+
+
+def test_ten_sam_czas_na_dluzszej_trasie_daje_wiecej_minut():
+    """Dystans nie jest w kalibracji ozdobą: przy tym samym czasie silnika dłuższa trasa ma wyjść dłużej.
+
+    Tak model rozdziela trasy szybkie od wolnych - więcej kilometrów w tym samym czasie to VOAK, gdzie
+    Valhalla jest dokładna, mniej kilometrów to serpentyny, gdzie zawyża. Sama skala czasu, bez dystansu,
+    dawała MAE 5.8 min zamiast 3.4."""
+    krotka = Srodowisko([odpowiedz_valhalli(1800, km=5.0)])["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS)
+    dluga = Srodowisko([odpowiedz_valhalli(1800, km=60.0)])["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS)
+    assert krotka == ("~25 min", 25)
+    assert dluga == ("~40 min", 40)
+
+
+@pytest.mark.parametrize("nazwa", ["GOOGLE_KALIBRACJA", "OSRM_KALIBRACJA"])
+def test_google_i_osrm_zostaja_bez_kalibracji(nazwa):
+    """Google jest odniesieniem, więc nie ma czego korygować. OSRM zostaje surowy, bo jego błąd nie jest
+    ani skalą, ani przesunięciem: sama skala pogarsza MAE z 9.2 na 11.8 min przy maksimum 71 min."""
+    assert Srodowisko([])[nazwa] == (1.0, 0.0)
 
 
 def test_valhalla_jest_pierwszym_silnikiem_i_osrm_nie_jest_pytany():
-    """Valhalla ma medianę błędu +5 min wobec Google, OSRM myli się o -23..+35 min - stąd ta kolejność."""
+    """Valhalla po kalibracji ma MAE 3.4 min wobec Google, OSRM surowy 9.2 min - stąd ta kolejność."""
     srodowisko = Srodowisko([odpowiedz_valhalli(1800)])
 
     assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS) == ("~30 min", 30)
@@ -381,9 +418,18 @@ def test_wyciszona_valhalla_nie_jest_dobijana_a_osrm_liczy_dalej():
     assert srodowisko.siec.zapytania[-1][0].startswith("http://router.project-osrm.org")
 
 
-@pytest.mark.parametrize("bezuzyteczna", [{"code": "NoRoute"}, {"trip": {}}, {}])
+@pytest.mark.parametrize(
+    "bezuzyteczna",
+    [
+        {"code": "NoRoute"},
+        {"trip": {}},
+        {},
+        {"trip": {"summary": {"time": 1800}}},
+        {"trip": {"summary": {"length": 20.0}}},
+    ],
+)
 def test_odpowiedz_bez_trasy_jest_awaria_silnika(bezuzyteczna):
-    """Odpowiedź bez czasu przejazdu traktujemy jak timeout - schodzimy niżej w kolejce."""
+    """Odpowiedź bez czasu albo bez dystansu traktujemy jak timeout - kalibracja potrzebuje obu."""
     srodowisko = Srodowisko([bezuzyteczna, odpowiedz_czasu(1800)])
     assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS) == ("~30 min", 30)
     assert ("valhalla_czas",) + DOMEK + KNOSSOS in srodowisko.rejestr
@@ -415,17 +461,38 @@ def test_zapytanie_do_google_ma_klucz_maske_pol_i_tryb_ruchu():
     cialo, = srodowisko.siec.ciala
     assert url == "https://routes.googleapis.com/directions/v2:computeRoutes"
     assert naglowki["X-Goog-Api-Key"] == "klucz-testowy"
-    assert naglowki["X-Goog-FieldMask"] == "routes.duration"
+    assert naglowki["X-Goog-FieldMask"] == "routes.duration,routes.distanceMeters"
     assert cialo["travelMode"] == "DRIVE"
     assert cialo["routingPreference"] == "TRAFFIC_AWARE"
     assert cialo["origin"]["location"]["latLng"] == {"latitude": 35.5914, "longitude": 24.0918}
     assert timeout == 6.0
 
 
+def test_google_bez_distancemeters_to_trasa_zerowej_dlugosci():
+    """JSON proto3 pomija pola równe domyślnej, więc trasa o zerowej długości przychodzi bez dystansu.
+
+    To nie awaria - zero kilometrów jest poprawnym wejściem kalibracji, a wynik zatrzymuje podłoga."""
+    srodowisko = Srodowisko([{"routes": [{"duration": "30s"}]}], klucz_google="klucz-testowy")
+
+    assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *DOMEK) == ("~5 min", 5)
+    assert srodowisko.siec.liczba_wywolan == 1, "Silnik odpowiedział - nie ma po co pytać następnego"
+    assert srodowisko.rejestr == {}
+
+
+@pytest.mark.parametrize("bez_czasu", [{"routes": [{"distanceMeters": 1000}]}, {"routes": [{"duration": ""}]}])
+def test_google_bez_czasu_trwania_jest_awaria(bez_czasu):
+    """Czas trwania to jedyne pole, bez którego nie ma czego policzyć - pusty napis też odpada."""
+    srodowisko = Srodowisko([bez_czasu, odpowiedz_valhalli(1800)], klucz_google="klucz-testowy")
+
+    assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS) == ("~30 min", 30)
+    assert ("google_czas",) + DOMEK + KNOSSOS in srodowisko.rejestr
+
+
 def test_padniecie_google_schodzi_do_valhalli():
     """Wyczerpany limit albo odrzucony klucz nie mogą zabrać rodzinie czasów przejazdu."""
+    # 0.7571 * 60 min + 0.2491 * 60 km = 60.4 min, czyli po kalibracji i zaokrągleniu równo godzina.
     srodowisko = Srodowisko(
-        [OSError("403 z Google"), odpowiedz_valhalli(3600)], klucz_google="klucz-testowy"
+        [OSError("403 z Google"), odpowiedz_valhalli(3600, km=60.0)], klucz_google="klucz-testowy"
     )
     assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS) == ("~1h", 60)
     assert ("google_czas",) + DOMEK + KNOSSOS in srodowisko.rejestr
@@ -444,11 +511,11 @@ def test_padniecie_wszystkich_silnikow_daje_szacunek_geometryczny(cel):
 @pytest.mark.parametrize(
     "cel, oczekiwany",
     [
-        # Trzy przedziały min/km: poniżej 20 km w linii prostej, do 50 km i powyżej.
-        ((35.6105, 24.1065), ("~10 min", 10)),
-        ((35.5138, 24.0180), ("~35 min", 35)),
-        ((35.3323, 24.2777), ("~1h 15m", 75)),
-        ((35.2980, 25.1631), ("~2h 40m", 160)),
+        # Trzy przedziały min/km: poniżej 20 km w linii prostej, do 60 km i powyżej.
+        ((35.6105, 24.1065), ("~5 min", 5)),
+        ((35.5138, 24.0180), ("~30 min", 30)),
+        ((35.3323, 24.2777), ("~1h 10m", 70)),
+        ((35.2980, 25.1631), ("~2h 35m", 155)),
     ],
 )
 def test_szacunek_stosuje_stawke_min_na_km_wlasciwa_dla_dystansu(cel, oczekiwany):
@@ -488,7 +555,7 @@ def test_awaria_jednej_trasy_nie_blokuje_innej():
     srodowisko = Srodowisko([OSError("brak sieci")])
     srodowisko["oblicz_czas_przejazdu"](*DOMEK, *KNOSSOS)
 
-    srodowisko.siec.reakcje = [odpowiedz_valhalli(3600)]
+    srodowisko.siec.reakcje = [odpowiedz_valhalli(3600, km=60.0)]
     assert srodowisko["oblicz_czas_przejazdu"](*DOMEK, *CHANIA) == ("~1h", 60)
 
 
