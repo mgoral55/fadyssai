@@ -30,6 +30,7 @@ from conftest import SCIEZKA_APP, wczytaj_funkcje_z_app
 
 BADANE_FUNKCJE = [
     "zsynchronizuj_miejsca_z_csv",
+    "zsynchronizuj_wspolrzedne_krokow",
     "sparsuj_wspolrzedne",
     "sparsuj_godzine_minuty",
     "sparsuj_czas_ogarniania_na_minuty",
@@ -670,3 +671,84 @@ def test_synchronizacja_stoi_po_init_db_w_kolejnosci_startu():
     ]
     assert "init_db" in wywolania and "zsynchronizuj_miejsca_z_csv" in wywolania
     assert wywolania.index("init_db") < wywolania.index("zsynchronizuj_miejsca_z_csv")
+
+
+# --- (g) Współrzędne kroków wycieczki nadążają za poprawioną pinezką miejsca ---
+#
+# Krok dostaje kopię współrzędnych przy wstawieniu i w całym app.py nie ma UPDATE-a, który by ją
+# odświeżył. Bez tej synchronizacji poprawka pinezki docierała do karty miejsca, ale wycieczka
+# trasowała dalej ze starego punktu - farma Arevitis siedziała w dwóch wycieczkach 21 km od siebie.
+
+def _baza_z_krokiem(tmp_path, numer_miejsca_kroku, wsp_kroku, wsp_miejsca, numer_miejsca="9"):
+    sciezka = tmp_path / "kroki.db"
+    conn = sqlite3.connect(str(sciezka))
+    conn.executescript(SCHEMAT)
+    conn.execute(
+        "INSERT INTO miejsca (numer_miejsca, nazwa, wspolrzedne, odwiedzone) VALUES (?, ?, ?, 0)",
+        (numer_miejsca, "Arevitis Farm (farma ekologiczna)", wsp_miejsca),
+    )
+    conn.execute(
+        "INSERT INTO krok_wycieczki (id_wycieczki, krok_wycieczki, numer_miejsca, nazwa, wspolrzedne)"
+        " VALUES ('3', 1, ?, 'Arevitis Farm (Wizytacja)', ?)",
+        (numer_miejsca_kroku, wsp_kroku),
+    )
+    conn.commit()
+    conn.close()
+    return sciezka
+
+
+def _uruchom_synchronizacje_krokow(sciezka_db):
+    ns = {"sqlite3": sqlite3, "get_db": lambda: sqlite3.connect(str(sciezka_db), timeout=30.0)}
+    exec(SEGMENTY_FUNKCJI["zsynchronizuj_wspolrzedne_krokow"], ns)
+    zmienione = ns["zsynchronizuj_wspolrzedne_krokow"]()
+    conn = sqlite3.connect(str(sciezka_db))
+    stan = [r[0] for r in conn.execute("SELECT wspolrzedne FROM krok_wycieczki")]
+    conn.close()
+    return zmienione, stan
+
+
+def test_krok_dostaje_poprawiona_wspolrzedna_miejsca(tmp_path):
+    """Nazwy się różnią, więc wiązanie idzie po numer_miejsca, nie po nazwie."""
+    db = _baza_z_krokiem(tmp_path, "9", "35.40530, 23.92120", "35.35152, 24.15713")
+
+    zmienione, stan = _uruchom_synchronizacje_krokow(db)
+
+    assert zmienione == 1
+    assert stan == ["35.35152, 24.15713"]
+
+
+def test_zgodna_wspolrzedna_nie_jest_przepisywana(tmp_path):
+    """Leci przy każdym starcie - na zgodnej bazie nie może niczego ruszyć."""
+    db = _baza_z_krokiem(tmp_path, "9", "35.35152, 24.15713", "35.35152, 24.15713")
+    assert _uruchom_synchronizacje_krokow(db)[0] == 0
+
+
+def test_krok_bez_numeru_miejsca_zostaje_nietkniety(tmp_path):
+    """Wyjazd z domku i powrót nie mają numeru miejsca - nie ma z czym ich wiązać."""
+    db = _baza_z_krokiem(tmp_path, None, "35.59125, 24.09555", "35.35152, 24.15713")
+
+    zmienione, stan = _uruchom_synchronizacje_krokow(db)
+
+    assert zmienione == 0
+    assert stan == ["35.59125, 24.09555"]
+
+
+def test_miejsce_bez_wspolrzednych_nie_czysci_kroku(tmp_path):
+    """Puste pole w tabeli miejsc nie może wymazać punktu, z którego wycieczka trasuje."""
+    db = _baza_z_krokiem(tmp_path, "9", "35.40530, 23.92120", "")
+
+    zmienione, stan = _uruchom_synchronizacje_krokow(db)
+
+    assert zmienione == 0
+    assert stan == ["35.40530, 23.92120"]
+
+
+def test_synchronizacja_krokow_stoi_po_synchronizacji_miejsc():
+    """Kroki czytają z tabeli miejsc, więc miejsca muszą być już przepisane z pliku fabrycznego."""
+    wywolania = [
+        w.value.func.id
+        for w in DRZEWO_APP.body
+        if isinstance(w, ast.Expr) and isinstance(w.value, ast.Call)
+        and isinstance(w.value.func, ast.Name)
+    ]
+    assert wywolania.index("zsynchronizuj_miejsca_z_csv") < wywolania.index("zsynchronizuj_wspolrzedne_krokow")

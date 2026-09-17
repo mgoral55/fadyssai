@@ -198,6 +198,25 @@ Google jest tym, co faktycznie dowozi rodzinę na miejsce.
 Geokoder Nominatim nie nadaje się do tego audytu: rozstrzygnął tylko 24 z 54 nazw i nie zna właśnie
 farmy Arevitis, czyli najgorszego przypadku.
 
+### Trzy miejsca, w których żyje ta sama współrzędna
+
+Poprawiona pinezka musi przejść przez wszystkie trzy, inaczej poprawka jest tylko kosmetyczna:
+
+1. `miejsca.csv` - plik fabryczny, źródło prawdy.
+2. `miejsca.wspolrzedne` w bazie - stąd czyta karta miejsca. Przepisywane przez
+   `zsynchronizuj_miejsca_z_csv()` przy każdym starcie.
+3. `krok_wycieczki.wspolrzedne` - **stąd trasuje wycieczka**. Krok dostaje kopię przy wstawieniu
+   i w całym `app.py` nie ma ani jednego `UPDATE krok_wycieczki SET wspolrzedne`. Przepisuje je
+   `zsynchronizuj_wspolrzedne_krokow()`, wiążąc krok z miejscem przez `numer_miejsca` (nie przez
+   nazwę - krok nazywa się „Arevitis Farm (Wizytacja)", miejsce „Arevitis Farm (farma ekologiczna)").
+
+Jest jeszcze czwarte miejsce, którego synchronizacja **nie** rusza: tabela `czasy_dojazdu` trzyma
+gotowy tekst czasu każdego odcinka, a godziny w agendzie są z niego wyprowadzone. Zapisuje ją tylko
+`przelicz_i_zsynchronizuj_wycieczke`, czyli edycja kroku. Dopóki wycieczka nie zostanie przeliczona,
+agenda pokazuje czasy z momentu jej ostatniej edycji - po zmianie silnika albo pinezki trzeba to
+zrobić świadomie, bo przeliczanie przepisuje też pobudkę, wyjazd, powrót, okienka zwiedzania
+i godziny ewakuacji.
+
 ### Statyczna kolumna "czas dojazdu ze Stavros"
 
 Wartości w tej kolumnie w `miejsca.csv` są policzone skalibrowaną Valhallą, a nie wpisane ręcznie -

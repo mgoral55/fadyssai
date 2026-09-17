@@ -1388,8 +1388,46 @@ def zsynchronizuj_miejsca_z_csv(plik_csv='miejsca.csv'):
         return 0
 
 
+# ZMIANA: Krok wycieczki dostaje własną kopię współrzędnych przy wstawieniu i nigdy jej potem nie
+# aktualizuje - w całym app.py nie ma ani jednego `UPDATE krok_wycieczki SET wspolrzedne`. Poprawienie
+# pinezki w miejsca.csv docierało więc do karty miejsca, ale nie do wycieczki, która dalej trasowała
+# ze starego punktu. Farma Arevitis siedziała tak w dwóch wycieczkach 21 km od siebie samej.
+#
+# Kroki wiąże z miejscami `numer_miejsca`, więc dopasowanie jest dokładne, a nie po nazwie (krok nazywa
+# się "Arevitis Farm (Wizytacja)", miejsce "Arevitis Farm (farma ekologiczna)"). Kroki bez numeru
+# miejsca - wyjazd z domku i powrót - zostają nietknięte.
+#
+# To nie rusza godzin w agendzie. Zapisane czasy odcinków w `czasy_dojazdu` i wyprowadzone z nich
+# okienka zwiedzania przelicza dopiero przelicz_i_zsynchronizuj_wycieczke.
+def zsynchronizuj_wspolrzedne_krokow():
+    """Przepisuje współrzędne kroków wycieczek z tabeli miejsc. Zwraca liczbę poprawionych kroków."""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE krok_wycieczki SET wspolrzedne = (
+                    SELECT m.wspolrzedne FROM miejsca m
+                    WHERE TRIM(m.numer_miejsca) = TRIM(krok_wycieczki.numer_miejsca)
+                )
+                WHERE numer_miejsca IS NOT NULL AND TRIM(numer_miejsca) <> ''
+                  AND EXISTS (
+                    SELECT 1 FROM miejsca m
+                    WHERE TRIM(m.numer_miejsca) = TRIM(krok_wycieczki.numer_miejsca)
+                      AND m.wspolrzedne IS NOT NULL AND TRIM(m.wspolrzedne) <> ''
+                      AND m.wspolrzedne IS NOT krok_wycieczki.wspolrzedne
+                  )
+            """)
+            zaktualizowane = cursor.rowcount
+            conn.commit()
+            return zaktualizowane
+    except Exception as e:
+        print(f"Błąd synchronizacji współrzędnych kroków: {e}")
+        return 0
+
+
 init_db()
 zsynchronizuj_miejsca_z_csv()
+zsynchronizuj_wspolrzedne_krokow()
 
 # ZMIANA: Pobranie unikalnego identyfikatora urządzenia klienta z nagłówków żądania HTTP Streamlit
 import hashlib
