@@ -182,13 +182,17 @@ a nie konkretne miejsce (jaskinia Koutalas, zatoka w wąwozie Katholiko), albo p
 obiektu niż nazywa baza (wejście do wąwozu Imbros zamiast wyjścia). Przy zatoce Katholiko dochodzi
 pytanie, czy współrzędna ma wskazywać parking, czy samą zatokę na końcu godzinnego marszu.
 
-Dwa wiersze przeczą same sobie i wymagają decyzji człowieka, który wie, gdzie rodzina faktycznie
-była - opis i adres wskazują różne wioski:
+Dwa wiersze przeczyły same sobie - opis i adres wskazywały różne wioski. Rozstrzygnięte na korzyść
+opisu, bo Google potwierdza obie nazwy jako sklepy z ceramiką dokładnie tam, gdzie mówi opis.
+Poprawione zostały i pinezka, i adres:
 
-| miejsce | opis mówi | adres mówi | Google stawia |
-| --- | --- | --- | --- |
-| Ilys Ceramics | Margarites | Chania, Epimenidou 15 | Margarites (60 km od pinezki w bazie) |
-| Flakatoras Ceramics | Chania | Gavalochori | Chania (17 km od pinezki w bazie) |
+| miejsce | opis mówił | adres mówił | jest teraz | skok czasu |
+| --- | --- | --- | --- | --- |
+| Ilys Ceramics | Margarites | Chania, Epimenidou 15 | Margarites 750 52 | 30 min na 1 godz. 50 min |
+| Flakatoras Ceramics | Chania | Gavalochori | Zampeliou 19, Chania | 55 min na 30 min |
+
+Ilys wyskoczył na 1 godz. 50 min, więc wycieczki, które go trzymały razem z czymś pod Chanią,
+warto przejrzeć pod kątem sensu, a nie tylko godzin.
 
 Przy dwóch winnicach poprawiona pinezka przeczy adresowi z bazy i wygrywa pinezka: Stemfilo ma
 w bazie adres w Voukolies, a Google stawia ją pod Fournes; Manousakis ma Vatolakkos, a Google
